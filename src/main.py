@@ -69,7 +69,7 @@ def main() -> None:
         
         # Process data
         logger.info(f"Processing {len(all_pr_data)} pull requests...")
-        processor = DataProcessor(logger)
+        processor = DataProcessor(logger, config)
         filtered_pr_data = processor.process_pull_requests(all_pr_data)
         
         # Export to Excel

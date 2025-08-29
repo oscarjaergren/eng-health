@@ -18,6 +18,14 @@ class Config:
         self.api_version = "7.0"
         self.max_results_per_page = 1000
         self.pr_status = "completed"
+        
+        # Filtering configuration
+        self.exclude_iac = os.getenv("EXCLUDE_IAC", "true").lower() in ("true", "1", "yes")
+        self.exclude_personal_approvals = os.getenv("EXCLUDE_PERSONAL_APPROVALS", "true").lower() in ("true", "1", "yes")
+        
+        # Performance configuration
+        self.fetch_pr_details = os.getenv("FETCH_PR_DETAILS", "true").lower() in ("true", "1", "yes")
+        self.max_parallel_workers = int(os.getenv("MAX_PARALLEL_WORKERS", "16"))
     
     def _get_required_env(self, key: str) -> str:
         """Get required environment variable or raise an error."""
