@@ -132,8 +132,9 @@ def create_repository_overview(df: pd.DataFrame):
         st.metric("Avg PRs per Repo", f"{avg_prs:.1f}")
     
     with col4:
-        most_active = repo_counts.index[0]
-        st.metric("Most Active Repo", most_active, f"{repo_counts.iloc[0]} PRs")
+        most_active = repo_metrics['PR Count'].idxmax()
+        most_active_count = int(repo_metrics.loc[most_active, 'PR Count'])
+        st.metric("Most Active Repo", most_active, f"{most_active_count} PRs")
 
 
 def create_temporal_analysis(df: pd.DataFrame):
@@ -536,11 +537,6 @@ def create_review_analytics(df: pd.DataFrame):
                 st.metric(f"Lowest {metric_name}", min_activity)
     else:
         st.warning(f"No data available for {analysis_type.lower()}.")
-
-
-def create_interactive_filters(df: pd.DataFrame):
-        else:
-            st.info("No rejection data available in current dataset.")
 
 
 def main():
