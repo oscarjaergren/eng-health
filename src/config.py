@@ -1,0 +1,49 @@
+"""Configuration management for Azure DevOps PR extraction tool."""
+
+import os
+from typing import Optional
+
+
+class Config:
+    """Configuration class that loads settings from environment variables."""
+    
+    def __init__(self):
+        """Initialize configuration with environment variables."""
+        self.organization = self._get_required_env("AZURE_DEVOPS_ORGANIZATION")
+        self.project = self._get_required_env("AZURE_DEVOPS_PROJECT")
+        self.token = self._get_required_env("AZURE_DEVOPS_PAT")
+        self.output_filename = os.getenv("OUTPUT_FILENAME", "pr_data.xlsx")
+        
+        # API configuration
+        self.api_version = "7.0"
+        self.max_results_per_page = 1000
+        self.pr_status = "completed"
+    
+    def _get_required_env(self, key: str) -> str:
+        """Get required environment variable or raise an error."""
+        value = os.getenv(key)
+        if not value:
+            raise ValueError(
+                f"Required environment variable '{key}' is not set. "
+                f"Please check your .env file or environment configuration."
+            )
+        return value
+    
+    @property
+    def base_url(self) -> str:
+        """Get the base API URL for Azure DevOps."""
+        return f"https://dev.azure.com/{self.organization}/{self.project}/_apis"
+    
+    @property
+    def repositories_url(self) -> str:
+        """Get the repositories API URL."""
+        return f"{self.base_url}/git/repositories?api-version={self.api_version}"
+    
+    def get_pull_requests_url(self, repository_id: str) -> str:
+        """Get the pull requests API URL for a specific repository."""
+        return (
+            f"{self.base_url}/git/repositories/{repository_id}/pullRequests"
+            f"?searchCriteria.status={self.pr_status}"
+            f"&$top={self.max_results_per_page}"
+            f"&api-version={self.api_version}"
+        )
