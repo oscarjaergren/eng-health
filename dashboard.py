@@ -18,25 +18,20 @@ def load_data(file_path: str) -> pd.DataFrame:
     """Load and preprocess the PR data."""
     try:
         df = pd.read_excel(file_path)
-        
         # Convert Created Date to datetime
         df['Created Date'] = pd.to_datetime(df['Created Date'])
-        
-        # Extract date components for analysis
+        # Extract datetime components for analysis
         df['Year'] = df['Created Date'].dt.year
         df['Month'] = df['Created Date'].dt.month
         df['Day'] = df['Created Date'].dt.day
         df['Weekday'] = df['Created Date'].dt.day_name()
         df['Hour'] = df['Created Date'].dt.hour
-        
         # Create year-month column for time series
         df['Year-Month'] = df['Created Date'].dt.to_period('M')
-        
         # Clean up reviewer data
         df['Reviewer Count'] = df['Assigned To'].apply(
             lambda x: len(eval(x)) if pd.notna(x) and x != '[]' else 0
         )
-        
         return df
     except Exception as e:
         st.error(f"Error loading data: {e}")
@@ -260,82 +255,56 @@ def create_repository_heatmap(df: pd.DataFrame):
 
 
 def create_interactive_filters(df: pd.DataFrame):
-    """Create interactive filters and filtered views."""
-    st.header("🔍 Interactive Analysis")
+    """Show filtered data summary and detailed view."""
+    st.header("🔍 Detailed Analysis")
     
-    # Sidebar filters
-    st.sidebar.header("Filters")
+    st.info("💡 Use the filters in the sidebar to refine the data shown across all tabs.")
     
-    # Date range filter
-    min_date = df['Created Date'].min().date()
-    max_date = df['Created Date'].max().date()
+    # Display filtered results summary
+    st.subheader(f"Current Dataset ({len(df)} PRs)")
     
-    date_range = st.sidebar.date_input(
-        "Select Date Range",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date
-    )
-    
-    # Repository filter
-    repositories = ['All'] + sorted(df['Repository'].unique().tolist())
-    selected_repos = st.sidebar.multiselect(
-        "Select Repositories",
-        repositories,
-        default=['All']
-    )
-    
-    # Contributor filter
-    contributors = ['All'] + sorted(df['Created By'].unique().tolist())
-    selected_contributors = st.sidebar.multiselect(
-        "Select Contributors",
-        contributors,
-        default=['All']
-    )
-    
-    # Apply filters
-    filtered_df = df.copy()
-    
-    if len(date_range) == 2:
-        start_date, end_date = date_range
-        filtered_df = filtered_df[
-            (filtered_df['Created Date'].dt.date >= start_date) &
-            (filtered_df['Created Date'].dt.date <= end_date)
-        ]
-    
-    if 'All' not in selected_repos and selected_repos:
-        filtered_df = filtered_df[filtered_df['Repository'].isin(selected_repos)]
-    
-    if 'All' not in selected_contributors and selected_contributors:
-        filtered_df = filtered_df[filtered_df['Created By'].isin(selected_contributors)]
-    
-    # Display filtered results
-    st.subheader(f"Filtered Results ({len(filtered_df)} PRs)")
-    
-    if len(filtered_df) > 0:
-        # Quick stats
+    if len(df) > 0:
+        # Quick stats for the filtered data
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Filtered PRs", len(filtered_df))
+            st.metric("Total PRs", len(df))
         
         with col2:
-            st.metric("Repositories", len(filtered_df['Repository'].unique()))
+            st.metric("Repositories", len(df['Repository'].unique()))
         
         with col3:
-            st.metric("Contributors", len(filtered_df['Created By'].unique()))
+            st.metric("Contributors", len(df['Created By'].unique()))
         
         with col4:
-            avg_reviewers = filtered_df['Reviewer Count'].mean()
+            avg_reviewers = df['Reviewer Count'].mean()
             st.metric("Avg Reviewers", f"{avg_reviewers:.1f}")
         
-        # Show filtered data table
-        st.dataframe(
-            filtered_df[['Repository', 'Title', 'Created By', 'Created Date', 'Reviewer Count']].head(100),
-            use_container_width=True
+        # Show detailed data table
+        st.subheader("📋 Detailed PR Data")
+        
+        # Select columns to display
+        available_columns = df.columns.tolist()
+        default_columns = ['Repository', 'Title', 'Created By', 'Created Date', 'Status', 'Reviewer Count']
+        display_columns = [col for col in default_columns if col in available_columns]
+        
+        selected_columns = st.multiselect(
+            "Select columns to display:",
+            available_columns,
+            default=display_columns,
+            key="column_selector"
         )
+        
+        if selected_columns:
+            st.dataframe(
+                df[selected_columns],
+                use_container_width=True,
+                height=400
+            )
+        else:
+            st.warning("Please select at least one column to display.")
     else:
-        st.warning("No data matches the selected filters.")
+        st.warning("No data matches the current filters. Try adjusting the filters in the sidebar.")
 
 
 def create_review_analytics(df: pd.DataFrame):
@@ -576,9 +545,46 @@ EXCLUDE_IAC=false
 EXCLUDE_PERSONAL_APPROVALS=false
             """)
             
-            # Show data summary
+            # Add global filters in sidebar
+            st.sidebar.subheader("📊 Filters")
+            
+            # Date range filter
+            if 'Created Date' in df.columns:
+                df['Created Date'] = pd.to_datetime(df['Created Date'])
+                min_date = df['Created Date'].min().date()
+                max_data_date = df['Created Date'].max().date()
+                today = datetime.today().date()
+                max_allowed = max(today, max_data_date)
+                date_range = st.sidebar.date_input(
+                    "Select Date Range",
+                    value=(min_date, max_allowed),
+                    min_value=min_date,
+                    max_value=max_allowed,
+                    key="main_date_filter"
+                )
+                
+                if len(date_range) == 2:
+                    start_date, end_date = date_range
+                    df = df[(df['Created Date'].dt.date >= start_date) & 
+                           (df['Created Date'].dt.date <= end_date)]
+            
+            # Repository filter
+            if 'Repository' in df.columns:
+                repos = ['All'] + sorted(df['Repository'].unique().tolist())
+                selected_repo = st.sidebar.selectbox("Select Repository", repos, key="main_repo_filter")
+                if selected_repo != 'All':
+                    df = df[df['Repository'] == selected_repo]
+            
+            # Contributor filter
+            if 'Created By' in df.columns:
+                contributors = ['All'] + sorted(df['Created By'].unique().tolist())
+                selected_contributor = st.sidebar.selectbox("Select Contributor", contributors, key="main_contributor_filter")
+                if selected_contributor != 'All':
+                    df = df[df['Created By'] == selected_contributor]
+            
+            # Show data summary (after filtering)
             total_prs = len(df)
-            st.sidebar.metric("📈 Total PRs Analyzed", total_prs)
+            st.sidebar.metric("📈 Filtered PRs", total_prs)
             
             if 'Approved By' in df.columns:
                 # Count PRs with approvals (excluding empty lists)

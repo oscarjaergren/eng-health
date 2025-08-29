@@ -79,7 +79,7 @@ class DataProcessor:
         return reviewers_info
     
     def _extract_review_details(self, pr: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract detailed review information including votes and approvals."""
+        """Extract detailed review information including votes and approvals, filtering out system/team reviewers."""
         reviewers = pr.get('reviewers', [])
         
         # Count reviewer votes
@@ -90,9 +90,11 @@ class DataProcessor:
         
         for reviewer in reviewers:
             reviewer_name = reviewer.get('uniqueName', 'Unknown')
+            # Filter out system/team reviewers
+            if reviewer_name.startswith('vstfs:///Classification/TeamProject/'):
+                continue
             vote = reviewer.get('vote', 0)
             is_required = reviewer.get('isRequired', True)
-            
             # Azure DevOps vote values: 10=approved, -10=rejected, -5=waiting for author, 5=approved with suggestions, 0=no vote
             if vote == 10:  # Approved
                 approved_by.append(reviewer_name)
@@ -112,7 +114,7 @@ class DataProcessor:
             'Rejected By': rejected_by,
             'Waiting Reviewers': waiting_reviewers,
             'Optional Reviewers': optional_reviewers,
-            'Total Reviewers': len(reviewers),
+            'Total Reviewers': len([r for r in reviewers if not r.get('uniqueName', '').startswith('vstfs:///Classification/TeamProject/')]),
             'Approval Count': len(approved_by),
             'Rejection Count': len(rejected_by)
         }
