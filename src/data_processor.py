@@ -12,6 +12,23 @@ class DataProcessor:
         self.logger = logger
         self.config = config
     
+    def _is_system_identity(self, identity_name: str) -> bool:
+        """Check if an identity is a system/team identity that should be filtered out."""
+        if not identity_name or identity_name == 'Unknown':
+            return True
+        
+        # Filter out any identity containing "vstfs" - this covers all system/service accounts
+        if 'vstfs' in identity_name.lower():
+            return True
+        
+        # Additional checks for common system identity patterns
+        if '\example-team' in identity_name:
+            return True
+        if '' in identity_name and not '@' in identity_name:
+            return True  # Likely a domain/group identity
+            
+        return False
+    
     def process_pull_requests(self, pr_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Process raw pull request data into the desired format with detailed review information."""
         filtered_pr_data = []
@@ -19,8 +36,8 @@ class DataProcessor:
         
         for pr in pr_data:
             try:
-                # Skip IAC-related PRs if filtering is enabled
-                if self.config and self.config.exclude_iac and self._is_iac_related(pr):
+                # Skip IAC-related PRs (core filtering)
+                if self._is_iac_related(pr):
                     excluded_count['iac'] += 1
                     continue
                 
@@ -45,11 +62,10 @@ class DataProcessor:
                 comment_info = self._extract_comment_details(pr)
                 processed_pr.update(comment_info)
                 
-                # Filter out personal approvals from review analytics if enabled
-                if self.config and self.config.exclude_personal_approvals:
-                    review_info = self._filter_personal_approvals(review_info, processed_pr['Created By'])
-                    processed_pr.update(review_info)
-                    excluded_count['personal_approval'] += review_info.get('personal_approvals_filtered', 0)
+                # Filter out personal approvals from review analytics (core filtering)
+                review_info = self._filter_personal_approvals(review_info, processed_pr['Created By'])
+                processed_pr.update(review_info)
+                excluded_count['personal_approval'] += review_info.get('personal_approvals_filtered', 0)
                 
                 filtered_pr_data.append(processed_pr)
                 

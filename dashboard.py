@@ -346,7 +346,6 @@ def create_review_analytics(df: pd.DataFrame):
         return
     
     # Enhanced analytics when detailed data is available
-    st.success("✅ **Enhanced Review Data Available** - Showing detailed analytics!")
     
     # Extract reviewer data
     approval_counts = {}
@@ -599,13 +598,6 @@ def main():
             - ❌ Personal approvals (self-approvals)
             
             *This focuses analysis on meaningful peer code reviews.*
-            """)
-            
-            st.sidebar.markdown("**💡 To include filtered items:**")
-            st.sidebar.code("""
-# In your .env file:
-EXCLUDE_IAC=false
-EXCLUDE_PERSONAL_APPROVALS=false
             """)
             
             # Add global filters in sidebar

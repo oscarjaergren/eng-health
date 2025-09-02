@@ -19,9 +19,9 @@ class Config:
         self.max_results_per_page = 1000
         self.pr_status = "completed"
         
-        # Filtering configuration
-        self.exclude_iac = os.getenv("EXCLUDE_IAC", "true").lower() in ("true", "1", "yes")
-        self.exclude_personal_approvals = os.getenv("EXCLUDE_PERSONAL_APPROVALS", "true").lower() in ("true", "1", "yes")
+        # Core filtering - always enabled for meaningful analytics
+        self.exclude_iac = True
+        self.exclude_personal_approvals = True
         
         # Performance configuration
         self.fetch_pr_details = os.getenv("FETCH_PR_DETAILS", "true").lower() in ("true", "1", "yes")

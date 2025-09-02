@@ -44,10 +44,6 @@ A Python script to extract Pull Request (PR) data from Azure DevOps and save it 
    AZURE_DEVOPS_PROJECT=your-project-name
    AZURE_DEVOPS_PAT=your-personal-access-token
    OUTPUT_FILENAME=pr_data.xlsx
-   
-   # Filtering Options (default: true)
-   EXCLUDE_IAC=true
-   EXCLUDE_PERSONAL_APPROVALS=true
    ```
 
 ## Usage
@@ -62,7 +58,7 @@ The script will:
 - Discover all repositories in the specified Azure DevOps project
 - Authenticate with Azure DevOps using your PAT
 - Fetch all completed pull requests from every repository
-- **Apply intelligent filtering** (exclude IAC PRs and personal approvals by default)
+- **Automatically filter** IAC PRs, personal approvals, and system accounts
 - **Collect detailed review information** (comments, approvals, discussions)
 - Process and format the data with repository information
 - Export results to an Excel file
@@ -100,23 +96,18 @@ MAX_PARALLEL_WORKERS=16        # Number of parallel API calls (adjust based on r
 
 ## Intelligent Filtering
 
-By default, the tool applies smart filtering to focus on meaningful code reviews:
+The tool applies smart filtering to focus on meaningful code reviews:
 
-### **Excluded by Default:**
+### **Always Excluded:**
 - **IAC-related PRs**: Infrastructure as Code changes (Terraform, Bicep, YAML, Docker, etc.)
 - **Personal Approvals**: Self-approvals where the PR creator approves their own work
-
-### **Customization:**
-To include these items, set the following in your `.env` file:
-```bash
-EXCLUDE_IAC=false              # Include infrastructure changes
-EXCLUDE_PERSONAL_APPROVALS=false  # Include self-approvals
-```
+- **System Accounts**: All service/system identities (vstfs-based accounts)
 
 ### **Why Filter?**
 - **Focus on Code Quality**: IAC changes often follow different review patterns
 - **Meaningful Metrics**: Self-approvals don't represent peer review effectiveness
 - **Cleaner Analytics**: Get insights into actual collaborative review processes
+- **Human-Centered Data**: System accounts don't provide meaningful review insights
 
 ## Features
 
