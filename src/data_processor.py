@@ -131,11 +131,13 @@ class DataProcessor:
                 'Active Threads': 0,
                 'Resolved Threads': 0,
                 'Total Threads': 0,
-                'Comment Count': 0
+                'Comment Count': 0,
+                'Comment Counts': {}
             }
         
         total_comments = 0
         commenters = []
+        comment_counts = {}  # Track comments per person
         active_threads = 0
         resolved_threads = 0
         
@@ -150,12 +152,20 @@ class DataProcessor:
             comments = thread.get('comments', [])
             total_comments += len(comments)
             
-            # Extract commenters
+            # Extract commenters and count their comments
             for comment in comments:
                 author = comment.get('author', {})
                 author_name = author.get('uniqueName', 'Unknown')
-                if author_name not in commenters and author_name != 'Unknown':
-                    commenters.append(author_name)
+                if author_name != 'Unknown':
+                    # Track unique commenters
+                    if author_name not in commenters:
+                        commenters.append(author_name)
+                    
+                    # Count comments per person
+                    if author_name in comment_counts:
+                        comment_counts[author_name] += 1
+                    else:
+                        comment_counts[author_name] = 1
         
         return {
             'Total Comments': total_comments,
@@ -163,7 +173,8 @@ class DataProcessor:
             'Active Threads': active_threads,
             'Resolved Threads': resolved_threads,
             'Total Threads': len(threads),
-            'Comment Count': len(commenters)
+            'Comment Count': len(commenters),
+            'Comment Counts': comment_counts
         }
     
     def _is_iac_related(self, pr: Dict[str, Any]) -> bool:

@@ -361,8 +361,15 @@ def create_review_analytics(df: pd.DataFrame):
                 clean_approver = approver.split(' (')[0]  # Remove "(with suggestions)" part
                 approval_counts[clean_approver] = approval_counts.get(clean_approver, 0) + 1
         
-        # Process commenters
-        if pd.notna(row.get('Commenters')):
+        # Process commenters - use the new Comment Counts data
+        if pd.notna(row.get('Comment Counts')):
+            # Comment Counts is a dict of {person: count} per PR
+            pr_comment_counts = eval(row['Comment Counts']) if isinstance(row['Comment Counts'], str) else row['Comment Counts']
+            if isinstance(pr_comment_counts, dict):
+                for commenter, count in pr_comment_counts.items():
+                    comment_counts[commenter] = comment_counts.get(commenter, 0) + count
+        elif pd.notna(row.get('Commenters')):
+            # Fallback to old method if Comment Counts not available
             commenters = eval(row['Commenters']) if isinstance(row['Commenters'], str) else row['Commenters']
             for commenter in commenters:
                 comment_counts[commenter] = comment_counts.get(commenter, 0) + 1
@@ -506,6 +513,62 @@ def create_review_analytics(df: pd.DataFrame):
                 st.metric(f"Lowest {metric_name}", min_activity)
     else:
         st.warning(f"No data available for {analysis_type.lower()}.")
+
+    # Special Comment Analytics Section
+    if analysis_type == "Commenters" and comment_counts:
+        st.markdown("---")
+        st.subheader("💬 Comment Activity Insights")
+        
+        # Quick stats
+        total_people_commenting = len(comment_counts)
+        total_comments_made = sum(comment_counts.values())
+        avg_comments_per_person = total_comments_made / total_people_commenting if total_people_commenting > 0 else 0
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total People Commenting", total_people_commenting)
+        with col2:
+            st.metric("Total Comments Made", total_comments_made)
+        with col3:
+            st.metric("Avg Comments per Person", f"{avg_comments_per_person:.1f}")
+        
+        # Most vs Least Active Commenters
+        st.markdown("### 🏆 Top vs 📉 Least Active Commenters")
+        
+        sorted_commenters = sorted(comment_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**🏆 Most Active (Top 5)**")
+            top_5 = sorted_commenters[:5]
+            for i, (person, count) in enumerate(top_5, 1):
+                clean_name = person.split('@')[0]
+                st.write(f"{i}. **{clean_name}**: {count} comments")
+        
+        with col2:
+            st.markdown("**📉 Least Active (Bottom 5)**")
+            bottom_5 = sorted_commenters[-5:]
+            bottom_5.reverse()  # Show lowest first
+            for i, (person, count) in enumerate(bottom_5, 1):
+                clean_name = person.split('@')[0]
+                st.write(f"{i}. **{clean_name}**: {count} comments")
+        
+        # Comment distribution insights
+        if len(sorted_commenters) >= 3:
+            high_activity = [count for _, count in sorted_commenters[:len(sorted_commenters)//3]]
+            low_activity = [count for _, count in sorted_commenters[-len(sorted_commenters)//3:]]
+            
+            st.markdown("### 📊 Activity Distribution")
+            dist_col1, dist_col2 = st.columns(2)
+            
+            with dist_col1:
+                high_avg = sum(high_activity) / len(high_activity) if high_activity else 0
+                st.metric("Top 1/3 Average", f"{high_avg:.1f} comments")
+            
+            with dist_col2:
+                low_avg = sum(low_activity) / len(low_activity) if low_activity else 0
+                st.metric("Bottom 1/3 Average", f"{low_avg:.1f} comments")
 
 
 def main():
