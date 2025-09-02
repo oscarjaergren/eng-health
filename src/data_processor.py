@@ -18,14 +18,29 @@ class DataProcessor:
             return True
         
         # Filter out any identity containing "vstfs" - this covers all system/service accounts
-        if 'vstfs' in identity_name.lower():
+        if 'vstfs:' in identity_name.lower():
             return True
         
         # Additional checks for common system identity patterns
-        if '\example-team' in identity_name:
+        system_patterns = [
+            'vstfs:///framework/identitydomain/',
+            'vstfs:///classification/teamproject/',
+            '\\example-team',
+            '\\devops',
+            '\\engineering',
+            '\\graph data science',
+            '\\salesforce owners',
+            '\\site reliability engineering'
+        ]
+        
+        identity_lower = identity_name.lower()
+        for pattern in system_patterns:
+            if pattern in identity_lower:
+                return True
+        
+        # Check for domain identities without @ symbol (likely groups/teams)
+        if '\\' in identity_name and '@' not in identity_name:
             return True
-        if '' in identity_name and not '@' in identity_name:
-            return True  # Likely a domain/group identity
             
         return False
     
@@ -106,9 +121,11 @@ class DataProcessor:
         
         for reviewer in reviewers:
             reviewer_name = reviewer.get('uniqueName', 'Unknown')
-            # Filter out system/team reviewers
-            if reviewer_name.startswith('vstfs:///Classification/TeamProject/'):
+            
+            # Filter out system/team reviewers using our centralized method
+            if self._is_system_identity(reviewer_name):
                 continue
+                
             vote = reviewer.get('vote', 0)
             is_required = reviewer.get('isRequired', True)
             # Azure DevOps vote values: 10=approved, -10=rejected, -5=waiting for author, 5=approved with suggestions, 0=no vote
@@ -125,12 +142,15 @@ class DataProcessor:
             elif not is_required:  # Optional reviewer
                 optional_reviewers.append(reviewer_name)
         
+        # Filter system identities from all reviewers for counting
+        filtered_reviewers = [r for r in reviewers if not self._is_system_identity(r.get('uniqueName', 'Unknown'))]
+        
         return {
             'Approved By': approved_by,
             'Rejected By': rejected_by,
             'Waiting Reviewers': waiting_reviewers,
             'Optional Reviewers': optional_reviewers,
-            'Total Reviewers': len([r for r in reviewers if not r.get('uniqueName', '').startswith('vstfs:///Classification/TeamProject/')]),
+            'Total Reviewers': len(filtered_reviewers),
             'Approval Count': len(approved_by),
             'Rejection Count': len(rejected_by)
         }
@@ -166,13 +186,20 @@ class DataProcessor:
             
             # Count comments in this thread
             comments = thread.get('comments', [])
-            total_comments += len(comments)
             
-            # Extract commenters and count their comments
+            # Extract commenters and count their comments, filtering out system identities
             for comment in comments:
                 author = comment.get('author', {})
                 author_name = author.get('uniqueName', 'Unknown')
+                
+                # Skip system/team identities
+                if self._is_system_identity(author_name):
+                    continue
+                
                 if author_name != 'Unknown':
+                    # Count total comments (excluding system identities)
+                    total_comments += 1
+                    
                     # Track unique commenters
                     if author_name not in commenters:
                         commenters.append(author_name)
