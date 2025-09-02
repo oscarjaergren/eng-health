@@ -20,7 +20,11 @@ def load_data(file_path: str) -> pd.DataFrame:
         df = pd.read_excel(file_path)
         # Convert Created Date to datetime
         df['Created Date'] = pd.to_datetime(df['Created Date'])
-        # Extract datetime components for analysis
+        if not df.empty:
+            # Add global filters in sidebar with hover tooltip
+            st.sidebar.subheader("📊 Filters", help="Default exclusions: IAC PRs and personal approvals are automatically filtered out to focus on meaningful peer code reviews.")
+            
+            # Date range filter Extract datetime components for analysis
         df['Year'] = df['Created Date'].dt.year
         df['Month'] = df['Created Date'].dt.month
         df['Day'] = df['Created Date'].dt.day
@@ -590,18 +594,6 @@ def main():
         df = load_data(data_file)
         
         if not df.empty:
-            # Show data filtering information in sidebar
-            st.sidebar.markdown("### 🔍 Data Filtering")
-            st.sidebar.info("""
-            **Default Exclusions Applied:**
-            - ❌ IAC-related PRs (Infrastructure as Code)
-            - ❌ Personal approvals (self-approvals)
-            
-            *This focuses analysis on meaningful peer code reviews.*
-            """)
-            
-            # Add global filters in sidebar
-            st.sidebar.subheader("📊 Filters")
             
             # Date range filter
             if 'Created Date' in df.columns:
@@ -609,19 +601,35 @@ def main():
                 min_date = df['Created Date'].min().date()
                 max_data_date = df['Created Date'].max().date()
                 today = datetime.today().date()
-                max_allowed = max(today, max_data_date)
-                date_range = st.sidebar.date_input(
-                    "Select Date Range",
-                    value=(min_date, max_allowed),
-                    min_value=min_date,
-                    max_value=max_allowed,
-                    key="main_date_filter"
-                )
+                # Allow selection up to today + 1 day to avoid edge cases
+                max_allowed = max(today + timedelta(days=1), max_data_date)
                 
-                if len(date_range) == 2:
-                    start_date, end_date = date_range
-                    df = df[(df['Created Date'].dt.date >= start_date) & 
-                           (df['Created Date'].dt.date <= end_date)]
+                try:
+                    date_range = st.sidebar.date_input(
+                        "Select Date Range",
+                        value=(min_date, today),  # Default to today instead of max_allowed
+                        min_value=min_date,
+                        max_value=max_allowed,
+                        key="main_date_filter"
+                    )
+                    
+                    # Handle both single date and date range selections
+                    if isinstance(date_range, tuple) and len(date_range) == 2:
+                        start_date, end_date = date_range
+                        df = df[(df['Created Date'].dt.date >= start_date) & 
+                               (df['Created Date'].dt.date <= end_date)]
+                    elif hasattr(date_range, '__len__') and len(date_range) == 1:
+                        # Single date selected, treat as same start and end date
+                        single_date = date_range[0] if isinstance(date_range, tuple) else date_range
+                        df = df[df['Created Date'].dt.date == single_date]
+                    elif not isinstance(date_range, (list, tuple)) and date_range is not None:
+                        # Single date object
+                        df = df[df['Created Date'].dt.date == date_range]
+                        
+                except Exception as e:
+                    st.sidebar.error(f"Date filter error: {str(e)}")
+                    # Continue with unfiltered data
+                    pass
             
             # Repository filter
             if 'Repository' in df.columns:
