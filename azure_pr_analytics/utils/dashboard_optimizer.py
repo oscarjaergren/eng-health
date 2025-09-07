@@ -416,8 +416,7 @@ class StreamlitOptimizer:
                 st.metric("Total Rows", f"{metrics['total_rows']:,}")
                 st.metric(
                     "Memory Usage",
-                    f"{
-                        metrics['memory_usage_mb']:.1f} MB",
+                    f"{metrics['memory_usage_mb']:.1f} MB",
                 )
 
             with col2:

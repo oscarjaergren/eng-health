@@ -1,12 +1,14 @@
 """Integration tests for API clients with mocking."""
 
+import unittest
+from unittest.mock import Mock, patch, MagicMock
 import json
 import sys
-import unittest
-from pathlib import Path
-from unittest.mock import Mock, patch
+import os
+import time
 
-import requests
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from azure_pr_analytics.clients.azure_devops_client import AzureDevOpsClient
 from azure_pr_analytics.clients.github_client import GitHubClient
@@ -195,7 +197,7 @@ class TestAzureDevOpsClientIntegration(unittest.TestCase):
         mock_get.side_effect = [rate_limit_response, success_response]
 
         with patch("time.sleep") as mock_sleep:
-            repositories = self.client.fetch_repositories()
+            repositories = self.client.fetch_all_repositories()
 
             # Verify sleep was called for rate limiting
             mock_sleep.assert_called_with(1)

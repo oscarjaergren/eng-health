@@ -141,10 +141,8 @@ class AzureDevOpsClient:
                     continue
                 else:
                     self.logger.warning(
-                        f"Request failed with status {
-                            response.status_code}, attempt {
-                            attempt + 1}/{
-                            max_retries + 1}"
+                        f"Request failed with status {response.status_code}, "
+                        f"attempt {attempt + 1}/{max_retries + 1}"
                     )
                     if attempt < max_retries:
                         time.sleep(2**attempt)  # Exponential backoff

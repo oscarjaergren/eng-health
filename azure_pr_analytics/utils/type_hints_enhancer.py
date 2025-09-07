@@ -352,10 +352,7 @@ class TypeHintsEnhancer:
         report = []
         report.append(f"Type Hints Coverage Report: {analysis['file_path']}")
         report.append("=" * 60)
-        report.append(
-            f"Overall Coverage: {
-                analysis['coverage_percentage']:.1f}%"
-        )
+        report.append(f"Overall Coverage: {analysis['coverage_percentage']:.1f}%")
         report.append(
             f"Functions: {
                 analysis['functions_with_hints']}/{
@@ -375,7 +372,8 @@ class TypeHintsEnhancer:
                 report.append(
                     f"• {
                         missing['function_name']} (line {
-                        missing['line_number']})"
+                        missing['line_number']}): {
+                        missing['issue']}"
                 )
                 if missing["missing_parameters"]:
                     report.append(
@@ -383,7 +381,6 @@ class TypeHintsEnhancer:
                             ', '.join(
                                 missing['missing_parameters'])}"
                     )
-                if missing["missing_return_hint"]:
                     report.append("  Missing return type hint")
                 report.append("")
 

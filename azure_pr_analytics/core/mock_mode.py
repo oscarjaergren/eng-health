@@ -237,7 +237,7 @@ def main():
     if not any([args.setup, args.generate, args.clear_cache]):
         # Show current mock mode status
         config = MockModeConfig()
-        print(f"🎭 Mock Mode Status:")
+        print("🎭 Mock Mode Status:")
         print(f"   Enabled: {config.enabled}")
         print(f"   Data file: {config.data_file}")
         print(f"   Excel file: {config.excel_file}")

@@ -102,9 +102,8 @@ class GitHubDataProcessor(BaseDataProcessor):
                 len(processed_data)} GitHub pull requests"
         )
         self.logger.info(
-            f"Excluded {
-                excluded_count['iac']} IAC-related PRs and filtered {
-                excluded_count['personal_approval']} personal approvals"
+            f"Excluded {excluded_count['iac']} IAC-related PRs and filtered "
+            f"{excluded_count['personal_approval']} personal approvals"
         )
         return processed_data
 

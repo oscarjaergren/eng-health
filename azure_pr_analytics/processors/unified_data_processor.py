@@ -91,9 +91,8 @@ class UnifiedDataProcessor(BaseDataProcessor):
                 len(filtered_pr_data)} pull requests from {platform}"
         )
         self.logger.info(
-            f"Excluded {
-                excluded_count['iac']} IAC-related PRs and filtered {
-                excluded_count['personal_approval']} personal approvals"
+            f"Excluded {excluded_count['iac']} IAC-related PRs and filtered "
+            f"{excluded_count['personal_approval']} personal approvals"
         )
         return filtered_pr_data
 

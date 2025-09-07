@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from .base_data_processor import BaseDataProcessor
 
 
-class DataProcessor(BaseDataProcessor):
+class AzureDevOpsDataProcessor(BaseDataProcessor):
     """Processes raw pull request data from Azure DevOps API."""
 
     def __init__(self, logger: logging.Logger, config=None):
@@ -99,9 +99,8 @@ class DataProcessor(BaseDataProcessor):
             f"Successfully processed {len(filtered_pr_data)} pull requests"
         )
         self.logger.info(
-            f"Excluded {
-                excluded_count['iac']} IAC-related PRs and filtered {
-                excluded_count['personal_approval']} personal approvals"
+            f"Excluded {excluded_count['iac']} IAC-related PRs and filtered "
+            f"{excluded_count['personal_approval']} personal approvals"
         )
         return filtered_pr_data
 
