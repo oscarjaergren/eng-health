@@ -261,7 +261,9 @@ class TestGitHubDataProcessor(unittest.TestCase):
         """Test extracting GitHub PR status for merged PR."""
         pr_data = {"state": "closed", "merged": True}
         result = self.processor._extract_github_status(pr_data)
-        self.assertEqual(result, "Closed")  # Changed from 'Merged' to match implementation
+        self.assertEqual(
+            result, "Closed"
+        )  # Changed from 'Merged' to match implementation
 
     def test_extract_github_status_closed(self):
         """Test extracting GitHub PR status for closed PR."""
@@ -286,18 +288,22 @@ class TestUnifiedDataProcessor(unittest.TestCase):
         ) as mock_github_processor:
             self.processor = UnifiedDataProcessor(self.mock_logger)
 
-    @patch('azure_pr_analytics.processors.unified_data_processor.AzureDevOpsDataProcessor')
-    @patch('azure_pr_analytics.processors.unified_data_processor.GitHubDataProcessor')
-    def test_process_mixed_data(self, mock_github_processor_cls, mock_azure_processor_cls):
+    @patch(
+        "azure_pr_analytics.processors.unified_data_processor.AzureDevOpsDataProcessor"
+    )
+    @patch("azure_pr_analytics.processors.unified_data_processor.GitHubDataProcessor")
+    def test_process_mixed_data(
+        self, mock_github_processor_cls, mock_azure_processor_cls
+    ):
         """Test processing mixed Azure DevOps and GitHub data."""
         # Setup mock processors
         mock_azure_processor = Mock()
         mock_github_processor = Mock()
-        
+
         # Configure the mock classes to return our mock instances
         mock_azure_processor_cls.return_value = mock_azure_processor
         mock_github_processor_cls.return_value = mock_github_processor
-        
+
         # Setup return values for the mock processors
         mock_azure_processor.process_pull_requests.return_value = [
             {"PR ID": 1, "Platform": "Azure DevOps"}
@@ -305,14 +311,14 @@ class TestUnifiedDataProcessor(unittest.TestCase):
         mock_github_processor.process_pull_requests.return_value = [
             {"PR ID": 2, "Platform": "GitHub"}
         ]
-        
+
         # Create test data
         azure_pr = {"pullRequestId": 1, "createdBy": {"displayName": "User"}}
         github_pr = {"number": 2, "user": {"login": "user"}, "state": "open"}
-        
+
         # Call the method under test
         result = self.processor.process_pull_requests([azure_pr, github_pr], "mixed")
-        
+
         # Assertions
         self.assertEqual(len(result), 2)
         mock_azure_processor.process_pull_requests.assert_called_once()
@@ -413,8 +419,12 @@ class TestDataProcessorIntegration(unittest.TestCase):
         self.assertEqual(processed_pr["Created By"], "John Developer")
         self.assertEqual(processed_pr["Repository"], "main-application")
         self.assertEqual(processed_pr["State"], "Completed")
-        self.assertIn("Jane Reviewer - jane.reviewer@company.com", processed_pr["Assigned To"])
-        self.assertIn("Bob Approver - bob.approver@company.com", processed_pr["Assigned To"])
+        self.assertIn(
+            "Jane Reviewer - jane.reviewer@company.com", processed_pr["Assigned To"]
+        )
+        self.assertIn(
+            "Bob Approver - bob.approver@company.com", processed_pr["Assigned To"]
+        )
 
     def test_end_to_end_github_processing(self):
         """Test end-to-end GitHub data processing."""

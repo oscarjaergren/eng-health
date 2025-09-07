@@ -145,7 +145,9 @@ class BaseDataProcessor:
 
         return "Unknown"
 
-    def filter_personal_approvals(self, reviewer_info: Dict[str, Any], created_by: str) -> Dict[str, Any]:
+    def filter_personal_approvals(
+        self, reviewer_info: Dict[str, Any], created_by: str
+    ) -> Dict[str, Any]:
         """
         Filter out personal approvals (self-approvals) from review analytics.
 
@@ -161,7 +163,9 @@ class BaseDataProcessor:
         filtered_info["personal_approvals_filtered"] = 0
         return filtered_info
 
-    def _safe_get_nested_value(self, data: Any, keys: List[str], default: Any = None) -> Any:
+    def _safe_get_nested_value(
+        self, data: Any, keys: List[str], default: Any = None
+    ) -> Any:
         """
         Safely get nested value from dictionary structure.
 
@@ -175,14 +179,14 @@ class BaseDataProcessor:
         """
         if not data or not isinstance(data, dict):
             return default
-        
+
         current = data
         for key in keys:
             if isinstance(current, dict) and key in current:
                 current = current[key]
             else:
                 return default
-        
+
         return current
 
     def _validate_pr_data(self, pr_data: Any) -> bool:
@@ -197,13 +201,13 @@ class BaseDataProcessor:
         """
         if not pr_data or not isinstance(pr_data, dict):
             return False
-        
+
         # Check for required fields (basic validation)
         required_fields = ["id", "title"]
         for field in required_fields:
             if field not in pr_data:
                 return False
-        
+
         return True
 
     def _sanitize_string(self, text: str, max_length: int = 500) -> str:
@@ -219,7 +223,7 @@ class BaseDataProcessor:
         """
         if not text:
             return ""
-        
+
         return self.validator.sanitize_string(text, max_length)
 
     def extract_date_string(self, date_data: Any) -> str:

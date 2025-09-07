@@ -13,7 +13,9 @@ class GitHubDataProcessor(BaseDataProcessor):
         """Initialize the GitHub data processor."""
         super().__init__(logger, config)
 
-    def process_pull_requests(self, pr_data: List[Dict[str, Any]], platform: str = "github") -> List[Dict[str, Any]]:
+    def process_pull_requests(
+        self, pr_data: List[Dict[str, Any]], platform: str = "github"
+    ) -> List[Dict[str, Any]]:
         """Process raw GitHub pull request data into the desired format."""
         processed_data = []
         excluded_count = {"iac": 0, "personal_approval": 0}
@@ -150,9 +152,7 @@ class GitHubDataProcessor(BaseDataProcessor):
 
             except Exception as e:
                 self.logger.warning(
-                    f"Failed to process GitHub PR {
-                        pr.get(
-                            'id', 'unknown')}: {e}"
+                    f"Failed to process GitHub PR {pr.get('id', 'unknown')}: {e}"
                 )
                 continue
 
@@ -202,13 +202,15 @@ class GitHubDataProcessor(BaseDataProcessor):
 
         # Remove creator from approved_by if they approved their own PR
         filtered_approvals = [
-            approver for approver in review_info["Approved By"] if approver != created_by
+            approver
+            for approver in review_info["Approved By"]
+            if approver != created_by
         ]
 
         # Update the review info with filtered approvals
         review_info["Approved By"] = filtered_approvals
         review_info["Approval Count"] = len(filtered_approvals)
-        
+
         # If creator was in waiting reviewers but approved their own PR, add them back
         if created_by not in review_info["Waiting Reviewers"]:
             review_info["Waiting Reviewers"].append(created_by)
