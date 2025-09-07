@@ -3,7 +3,9 @@
 import logging
 from typing import Any, Dict, List
 
+from .azure_devops_data_processor import AzureDevOpsDataProcessor
 from .base_data_processor import BaseDataProcessor
+from .github_data_processor import GitHubDataProcessor
 
 
 class UnifiedDataProcessor(BaseDataProcessor):
@@ -52,13 +54,65 @@ class UnifiedDataProcessor(BaseDataProcessor):
         else:
             return "unknown"
 
+    def save_to_excel(self, data: List[Dict[str, Any]], output_path: str) -> bool:
+        """Save processed PR data to an Excel file.
+        
+        Args:
+            data: List of processed PR dictionaries
+            output_path: Path to save the Excel file
+            
+        Returns:
+            bool: True if save was successful, False otherwise
+        """
+        try:
+            import pandas as pd
+            
+            if not data:
+                self.logger.warning("No data to save to Excel")
+                return False
+                
+            df = pd.DataFrame(data)
+            df.to_excel(output_path, index=False)
+            self.logger.info(f"Successfully saved {len(data)} PRs to {output_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error saving to Excel: {e}")
+            return False
+            
     def process_pull_requests(
         self, pr_data: List[Dict[str, Any]], platform: str
     ) -> List[Dict[str, Any]]:
         """Process raw pull request data into unified format with detailed review information."""
         filtered_pr_data = []
         excluded_count = {"iac": 0, "personal_approval": 0}
+        
+        # If platform is mixed, we need to process each PR based on its type
+        if platform == "mixed":
+            azure_prs = []
+            github_prs = []
+            
+            # Sort PRs by platform
+            for pr in pr_data:
+                pr_platform = self._identify_platform(pr)
+                if pr_platform == "azure_devops":
+                    azure_prs.append(pr)
+                elif pr_platform == "github":
+                    github_prs.append(pr)
+            
+            # Process Azure DevOps PRs
+            if azure_prs:
+                azure_processor = AzureDevOpsDataProcessor(self.logger, self.config)
+                filtered_pr_data.extend(azure_processor.process_pull_requests(azure_prs, "azure_devops"))
+            
+            # Process GitHub PRs
+            if github_prs:
+                github_processor = GitHubDataProcessor(self.logger, self.config)
+                filtered_pr_data.extend(github_processor.process_pull_requests(github_prs, "github"))
+                
+            return filtered_pr_data
 
+        # For single platform processing
         for pr in pr_data:
             try:
                 # Skip IAC-related PRs (core filtering)
