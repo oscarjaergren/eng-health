@@ -5,11 +5,11 @@ This utility generates realistic mock PR data for testing the dashboard and data
 without requiring actual Azure DevOps or GitHub API integrations.
 """
 
+import json
 import random
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
-import json
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 class MockDataGenerator:
@@ -540,7 +540,10 @@ def main():
 
     generator.save_to_file(data, output_file)
     print(
-        f"📊 Generated mock data with {len(data) if isinstance(data, list) else sum(len(v) for v in data.values())} PRs"
+        f"📊 Generated mock data with {
+            len(data) if isinstance(
+                data, list) else sum(
+                len(v) for v in data.values())} PRs"
     )
 
 

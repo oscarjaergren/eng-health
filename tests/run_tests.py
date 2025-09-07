@@ -1,9 +1,9 @@
 """Test runner for the Azure DevOps PR Analytics project."""
 
+import logging
 import sys
 import unittest
 from pathlib import Path
-import logging
 
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))

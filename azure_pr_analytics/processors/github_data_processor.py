@@ -1,9 +1,9 @@
 """Data processing utilities for GitHub pull request data."""
 
 import logging
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 from .base_data_processor import BaseDataProcessor
-from ..core.safe_data_parser import safe_parse_list, safe_parse_dict
 
 
 class GitHubDataProcessor(BaseDataProcessor):
@@ -91,15 +91,20 @@ class GitHubDataProcessor(BaseDataProcessor):
 
             except Exception as e:
                 self.logger.warning(
-                    f"Failed to process GitHub PR {pr.get('id', 'unknown')}: {e}"
+                    f"Failed to process GitHub PR {
+                        pr.get(
+                            'id', 'unknown')}: {e}"
                 )
                 continue
 
         self.logger.info(
-            f"Successfully processed {len(processed_data)} GitHub pull requests"
+            f"Successfully processed {
+                len(processed_data)} GitHub pull requests"
         )
         self.logger.info(
-            f"Excluded {excluded_count['iac']} IAC-related PRs and filtered {excluded_count['personal_approval']} personal approvals"
+            f"Excluded {
+                excluded_count['iac']} IAC-related PRs and filtered {
+                excluded_count['personal_approval']} personal approvals"
         )
         return processed_data
 
@@ -137,7 +142,7 @@ class GitHubDataProcessor(BaseDataProcessor):
             reviewer_login = reviewer.get("login", "Unknown")
 
             # Filter out system/bot reviewers
-            if self._is_system_identity(reviewer_login):
+            if self.is_system_identity(reviewer_login):
                 continue
 
             review_state = review.get("state", "COMMENTED")
@@ -197,7 +202,7 @@ class GitHubDataProcessor(BaseDataProcessor):
             author_login = author.get("login", "Unknown")
 
             # Skip system/bot commenters
-            if self._is_system_identity(author_login):
+            if self.is_system_identity(author_login):
                 continue
 
             all_comments.append(comment)
@@ -210,7 +215,7 @@ class GitHubDataProcessor(BaseDataProcessor):
             reviewer_login = reviewer.get("login", "Unknown")
 
             # Skip system/bot reviewers
-            if self._is_system_identity(reviewer_login):
+            if self.is_system_identity(reviewer_login):
                 continue
 
             # Only count reviews with actual comments (not just approvals)

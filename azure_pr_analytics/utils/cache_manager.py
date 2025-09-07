@@ -3,12 +3,10 @@
 import hashlib
 import json
 import logging
-import os
 import pickle
-import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
-from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
 
 
 class CacheManager:
@@ -106,7 +104,8 @@ class CacheManager:
                         if not self._is_cache_valid(cache_entry):
                             cache_file.unlink()
                             self.logger.debug(
-                                f"Removed expired cache file: {cache_file.name}"
+                                f"Removed expired cache file: {
+                                    cache_file.name}"
                             )
                     except Exception as e:
                         self.logger.warning(
@@ -151,7 +150,8 @@ class CacheManager:
                     cache_file.unlink()
                     total_size_mb -= size / (1024 * 1024)
                     self.logger.debug(
-                        f"Removed cache file for size management: {cache_file.name}"
+                        f"Removed cache file for size management: {
+                            cache_file.name}"
                     )
 
         except Exception as e:

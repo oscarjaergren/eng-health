@@ -1,7 +1,7 @@
 """Configuration management for multi-platform PR extraction tool."""
 
 import os
-from typing import Optional, List
+from typing import List
 
 
 class Config:

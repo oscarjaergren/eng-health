@@ -4,25 +4,24 @@ PR Data Visualizer Dashboard
 A Streamlit web application for visualizing Pull Request data from Azure DevOps and GitHub.
 """
 
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
-from collections import Counter
 import os
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+from azure_pr_analytics.core.mock_mode import get_mock_provider, is_mock_mode
+from azure_pr_analytics.core.safe_data_parser import (
+    safe_count_items,
+    safe_parse_dict,
+    safe_parse_list,
+)
 
 # Add azure_pr_analytics directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
-from azure_pr_analytics.core.safe_data_parser import (
-    safe_count_items,
-    safe_parse_list,
-    safe_parse_dict,
-)
-from azure_pr_analytics.core.mock_mode import is_mock_mode, get_mock_provider
 
 
 def load_data(file_path: str) -> pd.DataFrame:
@@ -385,17 +384,17 @@ def create_review_analytics(df: pd.DataFrame):
         st.warning(
             """
         ⚠️ **Enhanced Review Data Not Available**
-        
-        The current data doesn't include detailed review information (comments, approvals, etc.). 
+
+        The current data doesn't include detailed review information (comments, approvals, etc.).
         To get these insights, please re-run the main extraction script:
-        
+
         ```bash
         python src/main.py
         ```
-        
+
         **What you'll get with the enhanced data:**
         - Who approves the most PRs
-        - Who leaves the most comments  
+        - Who leaves the most comments
         - Review discussion patterns
         - Approval/rejection analytics
         - Comment thread analysis
@@ -530,7 +529,8 @@ def create_review_analytics(df: pd.DataFrame):
     # Sort and filter data based on perspective
     if not data_dict:
         st.warning(
-            f"No {analysis_type.lower()} data available. This might indicate an issue with data collection."
+            f"No {
+                analysis_type.lower()} data available. This might indicate an issue with data collection."
         )
         return
 
@@ -621,7 +621,11 @@ def create_review_analytics(df: pd.DataFrame):
         with col2:
             st.metric("Total Comments Made", total_comments_made)
         with col3:
-            st.metric("Avg Comments per Person", f"{avg_comments_per_person:.1f}")
+            st.metric(
+                "Avg Comments per Person",
+                f"{
+                    avg_comments_per_person:.1f}",
+            )
 
         # Most vs Least Active Commenters
         st.markdown("### 🏆 Top vs 📉 Least Active Commenters")
@@ -733,7 +737,8 @@ def main():
                             & (df["Created Date"].dt.date <= end_date)
                         ]
                     elif hasattr(date_range, "__len__") and len(date_range) == 1:
-                        # Single date selected, treat as same start and end date
+                        # Single date selected, treat as same start and end
+                        # date
                         single_date = (
                             date_range[0]
                             if isinstance(date_range, tuple)
@@ -750,7 +755,6 @@ def main():
                 except Exception as e:
                     st.sidebar.error(f"Date filter error: {str(e)}")
                     # Continue with unfiltered data
-                    pass
 
             # Repository filter
             if "Repository" in df.columns:
@@ -831,7 +835,7 @@ def main():
         1. Configure your `.env` file with Azure DevOps and/or GitHub credentials
         2. Run the extraction script: `python src/main.py`
         3. Refresh this dashboard to load the generated data
-        
+
         ### Supported Platforms:
         - **Azure DevOps**: Configure AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PROJECT, AZURE_DEVOPS_PAT
         - **GitHub**: Configure GITHUB_TOKEN, GITHUB_OWNER, GITHUB_TYPE

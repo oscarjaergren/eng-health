@@ -1,9 +1,9 @@
 """Data processing utilities for Azure DevOps pull request data."""
 
 import logging
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 from .base_data_processor import BaseDataProcessor
-from ..core.safe_data_parser import safe_parse_list, safe_parse_dict
 
 
 class DataProcessor(BaseDataProcessor):
@@ -74,7 +74,8 @@ class DataProcessor(BaseDataProcessor):
                 comment_info = self._extract_comment_details(pr)
                 processed_pr.update(comment_info)
 
-                # Filter out personal approvals from review analytics (core filtering)
+                # Filter out personal approvals from review analytics (core
+                # filtering)
                 review_info = self._filter_personal_approvals(
                     review_info, processed_pr["Created By"]
                 )
@@ -87,7 +88,10 @@ class DataProcessor(BaseDataProcessor):
 
             except Exception as e:
                 self.logger.warning(
-                    f"Failed to process PR {pr.get('pullRequestId', 'unknown')}: {e}"
+                    f"Failed to process PR {
+                        pr.get(
+                            'pullRequestId',
+                            'unknown')}: {e}"
                 )
                 continue
 
@@ -95,7 +99,9 @@ class DataProcessor(BaseDataProcessor):
             f"Successfully processed {len(filtered_pr_data)} pull requests"
         )
         self.logger.info(
-            f"Excluded {excluded_count['iac']} IAC-related PRs and filtered {excluded_count['personal_approval']} personal approvals"
+            f"Excluded {
+                excluded_count['iac']} IAC-related PRs and filtered {
+                excluded_count['personal_approval']} personal approvals"
         )
         return filtered_pr_data
 
@@ -130,12 +136,13 @@ class DataProcessor(BaseDataProcessor):
             reviewer_name = reviewer.get("uniqueName", "Unknown")
 
             # Filter out system/team reviewers using our centralized method
-            if self._is_system_identity(reviewer_name):
+            if self.is_system_identity(reviewer_name):
                 continue
 
             vote = reviewer.get("vote", 0)
             is_required = reviewer.get("isRequired", True)
-            # Azure DevOps vote values: 10=approved, -10=rejected, -5=waiting for author, 5=approved with suggestions, 0=no vote
+            # Azure DevOps vote values: 10=approved, -10=rejected, -5=waiting
+            # for author, 5=approved with suggestions, 0=no vote
             if vote == 10:  # Approved
                 approved_by.append(reviewer_name)
             elif vote == -10:  # Rejected
@@ -153,7 +160,7 @@ class DataProcessor(BaseDataProcessor):
         filtered_reviewers = [
             r
             for r in reviewers
-            if not self._is_system_identity(r.get("uniqueName", "Unknown"))
+            if not self.is_system_identity(r.get("uniqueName", "Unknown"))
         ]
 
         return {
@@ -198,13 +205,14 @@ class DataProcessor(BaseDataProcessor):
             # Count comments in this thread
             comments = thread.get("comments", [])
 
-            # Extract commenters and count their comments, filtering out system identities
+            # Extract commenters and count their comments, filtering out system
+            # identities
             for comment in comments:
                 author = comment.get("author", {})
                 author_name = author.get("uniqueName", "Unknown")
 
                 # Skip system/team identities
-                if self._is_system_identity(author_name):
+                if self.is_system_identity(author_name):
                     continue
 
                 if author_name != "Unknown":
@@ -287,7 +295,8 @@ class DataProcessor(BaseDataProcessor):
         # Filter out approvals from the PR creator
         filtered_approved_by = []
         for approver in approved_by:
-            # Extract the username (before any additional info like "(with suggestions)")
+            # Extract the username (before any additional info like "(with
+            # suggestions)")
             approver_username = (
                 approver.split(" (")[0] if " (" in approver else approver
             )

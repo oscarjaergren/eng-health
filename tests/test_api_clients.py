@@ -1,18 +1,19 @@
 """Integration tests for API clients with mocking."""
 
-import unittest
-from unittest.mock import Mock, patch, MagicMock
-import requests
 import json
 import sys
+import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
-# Add azure_pr_analytics directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import requests
 
 from azure_pr_analytics.clients.azure_devops_client import AzureDevOpsClient
 from azure_pr_analytics.clients.github_client import GitHubClient
 from azure_pr_analytics.core.config import Config
+
+# Add azure_pr_analytics directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class MockResponse:

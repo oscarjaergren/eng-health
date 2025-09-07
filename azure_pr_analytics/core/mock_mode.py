@@ -5,11 +5,13 @@ Enables running the dashboard and data processors in mock mode for testing
 without requiring actual Azure DevOps or GitHub API integrations.
 """
 
-import os
 import json
-from typing import Dict, List, Any, Optional
+import os
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
+
 from azure_pr_analytics.utils.mock_data_generator import MockDataGenerator
 
 
@@ -29,6 +31,33 @@ class MockModeConfig:
     def _is_mock_mode_enabled(self) -> bool:
         """Check if mock mode is enabled via environment variable."""
         return os.getenv("MOCK_MODE", "false").lower() in ("true", "1", "yes", "on")
+
+
+class MockConfig:
+    """Mock configuration object for testing."""
+
+    def __init__(self):
+        self.exclude_iac = True
+        self.exclude_personal_approvals = True
+        self.system_accounts = ["system", "bot", "automation"]
+        self.iac_keywords = [
+            "terraform",
+            "docker",
+            "kubernetes",
+            "ansible",
+            "ci/cd",
+            "pipeline",
+            "deployment",
+            "infrastructure",
+            "config",
+            "environment",
+        ]
+        self.azure_devops_organization = "mock-org"
+        self.azure_devops_project = "mock-project"
+        self.github_owner = "mock-owner"
+        self.github_type = "organization"
+        self.output_filename = "mock_output.xlsx"
+        self.max_parallel_workers = 4
 
 
 class MockDataProvider:
@@ -113,31 +142,6 @@ class MockDataProvider:
 
     def get_mock_config(self) -> "MockConfig":
         """Get a mock configuration object for testing."""
-
-        class MockConfig:
-            def __init__(self):
-                self.exclude_iac = True
-                self.exclude_personal_approvals = True
-                self.system_accounts = ["system", "bot", "automation"]
-                self.iac_keywords = [
-                    "terraform",
-                    "docker",
-                    "kubernetes",
-                    "ansible",
-                    "ci/cd",
-                    "pipeline",
-                    "deployment",
-                    "infrastructure",
-                    "config",
-                    "environment",
-                ]
-                self.azure_devops_organization = "mock-org"
-                self.azure_devops_project = "mock-project"
-                self.github_owner = "mock-owner"
-                self.github_type = "organization"
-                self.output_filename = "mock_output.xlsx"
-                self.max_parallel_workers = 4
-
         return MockConfig()
 
     def clear_cache(self):

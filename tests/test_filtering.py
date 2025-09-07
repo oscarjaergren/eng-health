@@ -11,13 +11,14 @@ For new filtering tests, use:
 - tests.test_pr_filtering for comprehensive filtering test suite
 """
 
-import sys
 import logging
+import sys
 import warnings
-from azure_pr_analytics.utils.mock_data_generator import MockDataGenerator
+
 from azure_pr_analytics.processors.azure_devops_data_processor import (
     AzureDevOpsDataProcessor,
 )
+from azure_pr_analytics.utils.mock_data_generator import MockDataGenerator
 
 
 def create_test_data():

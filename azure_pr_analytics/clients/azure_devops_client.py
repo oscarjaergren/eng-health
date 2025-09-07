@@ -5,12 +5,12 @@ import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
+from requests.exceptions import ConnectionError, RequestException, Timeout
 from urllib3.util.retry import Retry
-from requests.exceptions import RequestException, Timeout, ConnectionError
 
 from ..core.config import Config
 from ..utils.cache_manager import CacheManager
@@ -141,7 +141,10 @@ class AzureDevOpsClient:
                     continue
                 else:
                     self.logger.warning(
-                        f"Request failed with status {response.status_code}, attempt {attempt + 1}/{max_retries + 1}"
+                        f"Request failed with status {
+                            response.status_code}, attempt {
+                            attempt + 1}/{
+                            max_retries + 1}"
                     )
                     if attempt < max_retries:
                         time.sleep(2**attempt)  # Exponential backoff
@@ -189,7 +192,9 @@ class AzureDevOpsClient:
             repositories = repos_data.get("value", [])
 
             self.logger.info(
-                f"Found {len(repositories)} repositories in project '{self.config.project}'"
+                f"Found {
+                    len(repositories)} repositories in project '{
+                    self.config.project}'"
             )
             for repo in repositories:
                 self.logger.info(
@@ -226,11 +231,13 @@ class AzureDevOpsClient:
 
                 if not response or response.status_code != 200:
                     if response and response.status_code == 404:
-                        # Repo has no PRs or access denied - log as debug, not warning
+                        # Repo has no PRs or access denied - log as debug, not
+                        # warning
                         self.logger.debug(f"No PRs found for {repo_name} (404)")
                     elif response:
                         self.logger.warning(
-                            f"API request failed for {repo_name}: {response.status_code}"
+                            f"API request failed for {repo_name}: {
+                                response.status_code}"
                         )
                     else:
                         self.logger.error(
@@ -251,7 +258,8 @@ class AzureDevOpsClient:
 
                 if page_results:
                     self.logger.info(
-                        f"  Page {page_count}: {len(page_results)} PRs from {repo_name}"
+                        f"  Page {page_count}: {
+                            len(page_results)} PRs from {repo_name}"
                     )
 
                 # Check for continuation token
@@ -291,7 +299,10 @@ class AzureDevOpsClient:
         total_repos = len(repositories)
 
         self.logger.info(
-            f"Fetching PRs from {total_repos} repositories using {min(self.max_workers, total_repos)} parallel workers..."
+            f"Fetching PRs from {total_repos} repositories using {
+                min(
+                    self.max_workers,
+                    total_repos)} parallel workers..."
         )
         start_time = time.time()
 
@@ -330,8 +341,10 @@ class AzureDevOpsClient:
 
         elapsed_total = time.time() - start_time
         self.logger.info(
-            f"Total pull requests fetched across all repositories: {len(all_pr_data)} "
-            f"(completed in {elapsed_total:.1f}s)"
+            f"Total pull requests fetched across all repositories: {
+                len(all_pr_data)} "
+            f"(completed in {
+                elapsed_total:.1f}s)"
         )
         return all_pr_data
 
@@ -342,7 +355,8 @@ class AzureDevOpsClient:
         if not pr_data:
             return pr_data
 
-        # Use a smaller worker pool for detailed fetching to avoid overwhelming the API
+        # Use a smaller worker pool for detailed fetching to avoid overwhelming
+        # the API
         detail_workers = min(8, len(pr_data))
 
         with ThreadPoolExecutor(max_workers=detail_workers) as executor:
@@ -397,7 +411,8 @@ class AzureDevOpsClient:
         """Fetch all threads (comments and discussions) for a specific PR."""
         try:
             # Construct URL for PR threads - base_url already includes project
-            threads_url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/threads?api-version=7.1"
+            threads_url = f"{
+                self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/threads?api-version=7.1"
 
             response = self.session.get(threads_url, timeout=10)  # Reduced timeout
             if response.status_code == 200:
@@ -411,8 +426,10 @@ class AzureDevOpsClient:
     def _fetch_pr_iterations(self, repo_id: str, pr_id: int) -> List[Dict[str, Any]]:
         """Fetch all iterations for a specific PR."""
         try:
-            # Construct URL for PR iterations - base_url already includes project
-            iterations_url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/iterations?api-version=7.1"
+            # Construct URL for PR iterations - base_url already includes
+            # project
+            iterations_url = f"{
+                self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/iterations?api-version=7.1"
 
             response = self.session.get(iterations_url, timeout=10)  # Reduced timeout
             if response.status_code == 200:

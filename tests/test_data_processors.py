@@ -1,20 +1,19 @@
 """Unit tests for data processors."""
 
-import unittest
-from unittest.mock import Mock, patch, MagicMock
-import pandas as pd
 import sys
+import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
-# Add azure_pr_analytics directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from azure_pr_analytics.processors.base_data_processor import BaseDataProcessor
 from azure_pr_analytics.processors.azure_devops_data_processor import (
     AzureDevOpsDataProcessor,
 )
+from azure_pr_analytics.processors.base_data_processor import BaseDataProcessor
 from azure_pr_analytics.processors.github_data_processor import GitHubDataProcessor
 from azure_pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
+
+# Add azure_pr_analytics directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class TestBaseDataProcessor(unittest.TestCase):

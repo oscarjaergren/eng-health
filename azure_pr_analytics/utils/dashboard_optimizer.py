@@ -1,14 +1,15 @@
 """Dashboard optimization utilities for handling large datasets efficiently."""
 
+import hashlib
+import logging
+import pickle
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+
+import numpy as np
 import pandas as pd
 import streamlit as st
-import numpy as np
-from typing import Dict, List, Any, Optional, Tuple
-import logging
-from functools import lru_cache
-import hashlib
-import pickle
-from pathlib import Path
 
 
 class DataFrameOptimizer:
@@ -269,7 +270,8 @@ class StreamlitOptimizer:
             chart_title: Title for the chart
             **kwargs: Additional arguments for chart function
         """
-        # Only render chart if data is not too large or if user explicitly requests it
+        # Only render chart if data is not too large or if user explicitly
+        # requests it
         if len(df) > 10000:
             if st.button(
                 f"Load {chart_title} (Large Dataset)", key=f"load_{chart_title}"
@@ -412,7 +414,11 @@ class StreamlitOptimizer:
 
             with col1:
                 st.metric("Total Rows", f"{metrics['total_rows']:,}")
-                st.metric("Memory Usage", f"{metrics['memory_usage_mb']:.1f} MB")
+                st.metric(
+                    "Memory Usage",
+                    f"{
+                        metrics['memory_usage_mb']:.1f} MB",
+                )
 
             with col2:
                 st.metric("Total Columns", metrics["total_columns"])

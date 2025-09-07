@@ -1,11 +1,9 @@
 """Type hints enhancement utility for improving code quality and IDE support."""
 
 import ast
-import inspect
-import re
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, Callable, Type
 import logging
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 
 class TypeHintsEnhancer:
@@ -354,12 +352,19 @@ class TypeHintsEnhancer:
         report = []
         report.append(f"Type Hints Coverage Report: {analysis['file_path']}")
         report.append("=" * 60)
-        report.append(f"Overall Coverage: {analysis['coverage_percentage']:.1f}%")
         report.append(
-            f"Functions: {analysis['functions_with_hints']}/{analysis['total_functions']} with complete hints"
+            f"Overall Coverage: {
+                analysis['coverage_percentage']:.1f}%"
         )
         report.append(
-            f"Parameters: {analysis['parameters_with_hints']}/{analysis['total_parameters']} with hints"
+            f"Functions: {
+                analysis['functions_with_hints']}/{
+                analysis['total_functions']} with complete hints"
+        )
+        report.append(
+            f"Parameters: {
+                analysis['parameters_with_hints']}/{
+                analysis['total_parameters']} with hints"
         )
         report.append("")
 
@@ -368,14 +373,18 @@ class TypeHintsEnhancer:
             report.append("-" * 30)
             for missing in analysis["missing_hints"]:
                 report.append(
-                    f"• {missing['function_name']} (line {missing['line_number']})"
+                    f"• {
+                        missing['function_name']} (line {
+                        missing['line_number']})"
                 )
                 if missing["missing_parameters"]:
                     report.append(
-                        f"  Missing parameter hints: {', '.join(missing['missing_parameters'])}"
+                        f"  Missing parameter hints: {
+                            ', '.join(
+                                missing['missing_parameters'])}"
                     )
                 if missing["missing_return_hint"]:
-                    report.append(f"  Missing return type hint")
+                    report.append("  Missing return type hint")
                 report.append("")
 
         return "\n".join(report)
@@ -383,7 +392,10 @@ class TypeHintsEnhancer:
     def _generate_project_report(self, analysis: Dict[str, Any]) -> str:
         """Generate report for entire project."""
         report = []
-        report.append(f"Project Type Hints Coverage Report: {analysis['project_path']}")
+        report.append(
+            f"Project Type Hints Coverage Report: {
+                analysis['project_path']}"
+        )
         report.append("=" * 70)
         report.append(
             f"Overall Coverage: {analysis['overall_coverage_percentage']:.1f}%"
@@ -392,7 +404,9 @@ class TypeHintsEnhancer:
             f"Files Analyzed: {analysis['analyzed_files']}/{analysis['total_files']}"
         )
         report.append(
-            f"Functions: {analysis['functions_with_hints']}/{analysis['total_functions']} with complete hints"
+            f"Functions: {
+                analysis['functions_with_hints']}/{
+                analysis['total_functions']} with complete hints"
         )
         report.append("")
 

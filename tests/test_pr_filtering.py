@@ -8,14 +8,15 @@ Tests the filtering logic for PRs using mock data to verify:
 - Data processing accuracy
 """
 
-import pytest
 import logging
-from typing import List, Dict, Any
-from azure_pr_analytics.utils.mock_data_generator import MockDataGenerator
+
+import pytest
+
 from azure_pr_analytics.processors.azure_devops_data_processor import (
     AzureDevOpsDataProcessor,
 )
 from azure_pr_analytics.processors.github_data_processor import GitHubDataProcessor
+from azure_pr_analytics.utils.mock_data_generator import MockDataGenerator
 
 
 class MockConfig:
@@ -96,7 +97,8 @@ class TestPRFiltering:
         ), f"Expected 0 IAC PRs after filtering, found {remaining_iac}"
         assert (
             len(processed_data) == len(test_data) - iac_count
-        ), f"Expected {len(test_data) - iac_count} PRs after filtering, got {len(processed_data)}"
+        ), f"Expected {len(test_data) -
+                                        iac_count} PRs after filtering, got {len(processed_data)}"
 
     def test_azure_devops_personal_approval_filtering(
         self, mock_generator, mock_config, logger
@@ -126,7 +128,8 @@ class TestPRFiltering:
                 )
                 assert (
                     not creator_in_approvals
-                ), f"PR {pr['ID']} still contains self-approval from {creator_email}"
+                ), f"PR {
+                    pr['ID']} still contains self-approval from {creator_email}"
 
     def test_github_iac_filtering(self, mock_generator, mock_config, logger):
         """Test that IAC PRs are properly filtered out in GitHub data."""
@@ -164,7 +167,8 @@ class TestPRFiltering:
         ), f"Expected 0 IAC PRs after filtering, found {remaining_iac}"
         assert (
             len(processed_data) == len(test_data) - iac_count
-        ), f"Expected {len(test_data) - iac_count} PRs after filtering, got {len(processed_data)}"
+        ), f"Expected {len(test_data) -
+                                        iac_count} PRs after filtering, got {len(processed_data)}"
 
     def test_github_personal_approval_filtering(
         self, mock_generator, mock_config, logger
@@ -194,7 +198,8 @@ class TestPRFiltering:
                 )
                 assert (
                     not creator_in_approvals
-                ), f"PR {pr['ID']} still contains self-approval from {creator_login}"
+                ), f"PR {
+                    pr['ID']} still contains self-approval from {creator_login}"
 
     def test_filtering_disabled(self, mock_generator, logger):
         """Test that filtering can be disabled."""
@@ -213,7 +218,9 @@ class TestPRFiltering:
         # Should have same number of PRs (no filtering)
         assert len(processed_data) == len(
             test_data
-        ), f"Expected {len(test_data)} PRs with filtering disabled, got {len(processed_data)}"
+        ), f"Expected {
+            len(test_data)} PRs with filtering disabled, got {
+            len(processed_data)}"
 
     def test_data_structure_consistency(self, mock_generator, mock_config, logger):
         """Test that processed data maintains consistent structure."""
@@ -406,7 +413,10 @@ def run_filtering_tests():
     )
 
     print(f"   📊 Original PRs: {len(azure_data)}, IAC PRs: {iac_count}")
-    print(f"   ✅ After filtering: {len(processed)} PRs, IAC PRs: {remaining_iac}")
+    print(
+        f"   ✅ After filtering: {
+            len(processed)} PRs, IAC PRs: {remaining_iac}"
+    )
     assert remaining_iac == 0, "IAC filtering failed"
 
     # Test 2: GitHub Personal Approval Filtering

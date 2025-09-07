@@ -7,17 +7,14 @@ Description: Script to extract Pull Request (PR) data from Azure DevOps and/or G
 import logging
 import os
 import sys
-from pathlib import Path
 
 import pandas as pd
-import requests
-from dotenv import load_dotenv
-
-from config import Config
 from azure_devops_client import AzureDevOpsClient
+from config import Config
+from dotenv import load_dotenv
 from github_client import GitHubClient
-from unified_data_processor import UnifiedDataProcessor
 from input_validator import InputValidator
+from unified_data_processor import UnifiedDataProcessor
 
 
 def setup_logging() -> logging.Logger:
@@ -87,7 +84,8 @@ def main() -> None:
 
             if azure_pr_data:
                 logger.info(
-                    f"Processing {len(azure_pr_data)} Azure DevOps pull requests..."
+                    f"Processing {
+                        len(azure_pr_data)} Azure DevOps pull requests..."
                 )
                 azure_filtered_data = processor.process_pull_requests(
                     azure_pr_data, "azure_devops"
@@ -103,7 +101,10 @@ def main() -> None:
             github_pr_data = github_client.fetch_all_pull_requests()
 
             if github_pr_data:
-                logger.info(f"Processing {len(github_pr_data)} GitHub pull requests...")
+                logger.info(
+                    f"Processing {
+                        len(github_pr_data)} GitHub pull requests..."
+                )
                 github_filtered_data = processor.process_pull_requests(
                     github_pr_data, "github"
                 )
@@ -124,7 +125,9 @@ def main() -> None:
 
         # Export to Excel
         logger.info(
-            f"Exporting {len(all_filtered_data)} total pull requests to '{config.output_filename}'..."
+            f"Exporting {
+                len(all_filtered_data)} total pull requests to '{
+                config.output_filename}'..."
         )
         df = pd.DataFrame(all_filtered_data)
 
@@ -140,7 +143,10 @@ def main() -> None:
             logger.info(f"  {platform}: {count} pull requests")
 
         logger.info(
-            f"Successfully exported {len(all_filtered_data)} pull requests from {len(config.platforms)} platform(s)."
+            f"Successfully exported {
+                len(all_filtered_data)} pull requests from {
+                len(
+                    config.platforms)} platform(s)."
         )
         logger.info(f"File '{config.output_filename}' created successfully.")
 

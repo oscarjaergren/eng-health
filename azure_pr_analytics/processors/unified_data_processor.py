@@ -1,13 +1,9 @@
 """Unified data processor for handling both Azure DevOps and GitHub PR data."""
 
 import logging
-from typing import List, Dict, Any
-from ..clients.azure_devops_client import AzureDevOpsClient
-from ..clients.github_client import GitHubClient
-from .azure_devops_data_processor import DataProcessor as AzureDevOpsDataProcessor
-from .github_data_processor import GitHubDataProcessor
+from typing import Any, Dict, List
+
 from .base_data_processor import BaseDataProcessor
-from ..core.config import Config
 
 
 class UnifiedDataProcessor(BaseDataProcessor):
@@ -70,7 +66,8 @@ class UnifiedDataProcessor(BaseDataProcessor):
                     self.logger.warning(f"Unknown platform: {platform}")
                     continue
 
-                # Filter out personal approvals from review analytics (core filtering)
+                # Filter out personal approvals from review analytics (core
+                # filtering)
                 review_info = self._filter_personal_approvals(
                     processed_pr, processed_pr["Created By"]
                 )
@@ -90,10 +87,13 @@ class UnifiedDataProcessor(BaseDataProcessor):
                 continue
 
         self.logger.info(
-            f"Successfully processed {len(filtered_pr_data)} pull requests from {platform}"
+            f"Successfully processed {
+                len(filtered_pr_data)} pull requests from {platform}"
         )
         self.logger.info(
-            f"Excluded {excluded_count['iac']} IAC-related PRs and filtered {excluded_count['personal_approval']} personal approvals"
+            f"Excluded {
+                excluded_count['iac']} IAC-related PRs and filtered {
+                excluded_count['personal_approval']} personal approvals"
         )
         return filtered_pr_data
 
@@ -189,7 +189,7 @@ class UnifiedDataProcessor(BaseDataProcessor):
         for review in reviews:
             user = review.get("user", {})
             login = user.get("login", "Unknown")
-            if login != "Unknown" and not self._is_system_identity(login):
+            if login != "Unknown" and not self.is_system_identity(login):
                 reviewed_by.add(login)
 
         for reviewer in reviewed_by:
@@ -212,13 +212,14 @@ class UnifiedDataProcessor(BaseDataProcessor):
             reviewer_name = reviewer.get("uniqueName", "Unknown")
 
             # Filter out system/team reviewers
-            if self._is_system_identity(reviewer_name):
+            if self.is_system_identity(reviewer_name):
                 continue
 
             vote = reviewer.get("vote", 0)
             is_required = reviewer.get("isRequired", True)
 
-            # Azure DevOps vote values: 10=approved, -10=rejected, -5=waiting for author, 5=approved with suggestions, 0=no vote
+            # Azure DevOps vote values: 10=approved, -10=rejected, -5=waiting
+            # for author, 5=approved with suggestions, 0=no vote
             if vote == 10:  # Approved
                 approved_by.append(reviewer_name)
             elif vote == -10:  # Rejected
@@ -236,7 +237,7 @@ class UnifiedDataProcessor(BaseDataProcessor):
         filtered_reviewers = [
             r
             for r in reviewers
-            if not self._is_system_identity(r.get("uniqueName", "Unknown"))
+            if not self.is_system_identity(r.get("uniqueName", "Unknown"))
         ]
 
         return {
@@ -255,7 +256,6 @@ class UnifiedDataProcessor(BaseDataProcessor):
 
         # Count reviewer votes
         approved_by = []
-        rejected_by = []
         changes_requested_by = []
         commented_by = []
 
@@ -267,7 +267,7 @@ class UnifiedDataProcessor(BaseDataProcessor):
             reviewer_name = user.get("login", "Unknown")
 
             # Filter out system/team reviewers
-            if self._is_system_identity(reviewer_name):
+            if self.is_system_identity(reviewer_name):
                 continue
 
             state = review.get("state", "").upper()
@@ -296,7 +296,8 @@ class UnifiedDataProcessor(BaseDataProcessor):
 
         return {
             "Approved By": approved_by,
-            "Rejected By": changes_requested_by,  # GitHub "changes requested" maps to "rejected"
+            # GitHub "changes requested" maps to "rejected"
+            "Rejected By": changes_requested_by,
             "Waiting Reviewers": commented_by,  # Commenters are waiting for response
             "Optional Reviewers": [],  # GitHub doesn't have explicit optional reviewers
             "Total Reviewers": len(reviewer_states),
@@ -341,7 +342,7 @@ class UnifiedDataProcessor(BaseDataProcessor):
                 author_name = author.get("uniqueName", "Unknown")
 
                 # Skip system/team identities
-                if self._is_system_identity(author_name):
+                if self.is_system_identity(author_name):
                     continue
 
                 if author_name != "Unknown":
@@ -377,7 +378,7 @@ class UnifiedDataProcessor(BaseDataProcessor):
             author_name = user.get("login", "Unknown")
 
             # Skip system/team identities
-            if self._is_system_identity(author_name):
+            if self.is_system_identity(author_name):
                 continue
 
             if author_name != "Unknown":
@@ -394,7 +395,7 @@ class UnifiedDataProcessor(BaseDataProcessor):
             author_name = user.get("login", "Unknown")
 
             # Skip system/team identities
-            if self._is_system_identity(author_name):
+            if self.is_system_identity(author_name):
                 continue
 
             if author_name != "Unknown":
@@ -482,7 +483,8 @@ class UnifiedDataProcessor(BaseDataProcessor):
         # Filter out approvals from the PR creator
         filtered_approved_by = []
         for approver in approved_by:
-            # Extract the username (before any additional info like "(with suggestions)")
+            # Extract the username (before any additional info like "(with
+            # suggestions)")
             approver_username = (
                 approver.split(" (")[0] if " (" in approver else approver
             )

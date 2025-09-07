@@ -1,19 +1,17 @@
 """Enhanced parallel processing utilities for improved performance."""
 
-import asyncio
 import logging
+import multiprocessing as mp
 import threading
 import time
 from concurrent.futures import (
-    ThreadPoolExecutor,
     ProcessPoolExecutor,
+    ThreadPoolExecutor,
     as_completed,
-    Future,
 )
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
-from queue import Queue, Empty
-import multiprocessing as mp
+from queue import Empty, Queue
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 
 @dataclass
@@ -358,7 +356,7 @@ class AdaptiveParallelProcessor:
         total_time = time.time() - self.start_time if self.start_time > 0 else 0
 
         successful_results = [r for r in self.results if r.success]
-        failed_results = [r for r in self.results if not r.success]
+        [r for r in self.results if not r.success]
 
         stats = {
             "total_tasks": self.total_tasks,

@@ -2,8 +2,9 @@
 
 import logging
 import re
-from typing import Dict, List, Any, Optional, Set
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 from ..core.input_validator import InputValidator
 
 
@@ -214,7 +215,7 @@ class BaseDataProcessor:
                     approvers = eval(pr_data["approved_by"])
                     if isinstance(approvers, list):
                         metrics["approval_count"] = len(approvers)
-                except:
+                except BaseException:
                     pass
 
         # Count comments and reviewers
@@ -306,7 +307,7 @@ class BaseDataProcessor:
         if isinstance(approved_by, str):
             try:
                 approved_by = eval(approved_by)
-            except:
+            except BaseException:
                 return False
 
         if not isinstance(approved_by, list):
@@ -401,7 +402,7 @@ class BaseDataProcessor:
             filtered_prs: Number of PRs after filtering
             excluded_counts: Dictionary of exclusion reasons and counts
         """
-        self.logger.info(f"Processing complete:")
+        self.logger.info("Processing complete:")
         self.logger.info(f"  Total PRs processed: {total_prs}")
         self.logger.info(f"  PRs after filtering: {filtered_prs}")
 

@@ -2,8 +2,7 @@
 
 import ast
 import json
-import logging
-from typing import Any, List, Dict, Union
+from typing import Any, Dict, List, Union
 
 
 def safe_parse_list(data: Union[str, List, None]) -> List:
