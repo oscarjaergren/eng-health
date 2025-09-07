@@ -5,26 +5,54 @@ import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union, Tuple
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from requests.exceptions import RequestException, Timeout, ConnectionError
 
-from config import Config
+from ..core.config import Config
+from ..utils.cache_manager import CacheManager
 
 
 class AzureDevOpsClient:
-    """Client for interacting with Azure DevOps API."""
+    """
+    Client for interacting with Azure DevOps API.
     
-    def __init__(self, config: Config, logger: logging.Logger):
-        """Initialize the Azure DevOps client."""
+    This class provides methods to fetch repositories, pull requests, and related data
+    from Azure DevOps using the REST API. It includes caching, retry logic, and
+    parallel processing for optimal performance.
+    
+    Attributes:
+        config (Config): Configuration object containing API credentials and settings
+        logger (logging.Logger): Logger instance for structured logging
+        session (requests.Session): HTTP session with retry configuration
+        max_workers (int): Maximum number of parallel workers for API calls
+        cache_manager (Optional[CacheManager]): Cache manager for API responses
+    """
+    
+    def __init__(self, config: Config, logger: logging.Logger, enable_cache: bool = True) -> None:
+        """
+        Initialize the Azure DevOps client.
+        
+        Args:
+            config: Configuration object with Azure DevOps settings
+            logger: Logger instance for structured logging
+            enable_cache: Whether to enable API response caching
+            
+        Raises:
+            ValueError: If required configuration is missing
+        """
         self.config = config
         self.logger = logger
         self.session = self._create_session()
         
         # Performance settings
         self.max_workers = min(config.max_parallel_workers, (os.cpu_count() or 1) + 4)
+        
+        # Cache management
+        self.cache_manager = CacheManager(cache_dir=".cache/azure_devops") if enable_cache else None
     
     def _create_session(self) -> requests.Session:
         """Create a requests session with retry strategy and authentication."""
@@ -49,15 +77,85 @@ class AzureDevOpsClient:
         
         return session
     
+    def _make_request_with_retry(self, url: str, params: Dict = None, max_retries: int = 3, 
+                               cache_ttl: int = 3600) -> Optional[requests.Response]:
+        """
+        Make HTTP request with enhanced error handling, retry logic, and caching.
+        
+        Args:
+            url: URL to request
+            params: Query parameters
+            max_retries: Maximum number of retries
+            cache_ttl: Cache time-to-live in seconds
+            
+        Returns:
+            Response object or None if all retries failed
+        """
+        # Check cache first
+        if self.cache_manager:
+            cached_response = self.cache_manager.get(url, params)
+            if cached_response is not None:
+                # Create a mock response object from cached data
+                mock_response = requests.Response()
+                mock_response.status_code = 200
+                mock_response._content = cached_response.encode() if isinstance(cached_response, str) else str(cached_response).encode()
+                return mock_response
+        for attempt in range(max_retries + 1):
+            try:
+                response = self.session.get(url, params=params, timeout=30)
+                
+                if response.status_code == 200:
+                    # Cache successful response
+                    if self.cache_manager:
+                        self.cache_manager.set(url, response.text, params, ttl=cache_ttl)
+                    return response
+                elif response.status_code == 401:
+                    self.logger.error("Authentication failed - check your PAT token")
+                    return None
+                elif response.status_code == 403:
+                    self.logger.error("Access forbidden - insufficient permissions")
+                    return None
+                elif response.status_code == 404:
+                    # Not found is not a retry-able error
+                    return response
+                elif response.status_code == 429:
+                    # Rate limiting
+                    retry_after = int(response.headers.get('Retry-After', 60))
+                    self.logger.warning(f"Rate limited. Waiting {retry_after} seconds")
+                    time.sleep(retry_after)
+                    continue
+                else:
+                    self.logger.warning(f"Request failed with status {response.status_code}, attempt {attempt + 1}/{max_retries + 1}")
+                    if attempt < max_retries:
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                    
+            except Timeout as e:
+                self.logger.warning(f"Request timeout: {e}, attempt {attempt + 1}/{max_retries + 1}")
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)
+            except ConnectionError as e:
+                self.logger.warning(f"Connection error: {e}, attempt {attempt + 1}/{max_retries + 1}")
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)
+            except RequestException as e:
+                self.logger.warning(f"Request exception: {e}, attempt {attempt + 1}/{max_retries + 1}")
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)
+        
+        return None
+    
     def fetch_all_repositories(self) -> List[Dict[str, Any]]:
         """Fetch all repositories in the project."""
         try:
             self.logger.info("Fetching repositories from Azure DevOps...")
-            response = self.session.get(self.config.repositories_url, timeout=30)
+            response = self._make_request_with_retry(self.config.repositories_url)
             
-            if response.status_code != 200:
-                self.logger.error(f"Failed to fetch repositories: {response.status_code}")
-                self.logger.error(f"Response: {response.text}")
+            if not response or response.status_code != 200:
+                if response:
+                    self.logger.error(f"Failed to fetch repositories: {response.status_code}")
+                    self.logger.error(f"Response: {response.text}")
+                else:
+                    self.logger.error("Failed to fetch repositories: No response received")
                 return []
             
             repos_data = response.json()
@@ -91,14 +189,16 @@ class AzureDevOpsClient:
                 url += f"&continuationToken={continuation_token}"
             
             try:
-                response = self.session.get(url, timeout=15)  # Reduced timeout
+                response = self._make_request_with_retry(url)
                 
-                if response.status_code != 200:
-                    if response.status_code == 404:
-                        # Repo has no PRs or access denied - log as info, not warning
-                        pass
-                    else:
+                if not response or response.status_code != 200:
+                    if response and response.status_code == 404:
+                        # Repo has no PRs or access denied - log as debug, not warning
+                        self.logger.debug(f"No PRs found for {repo_name} (404)")
+                    elif response:
                         self.logger.warning(f"API request failed for {repo_name}: {response.status_code}")
+                    else:
+                        self.logger.error(f"Failed to fetch PRs for {repo_name}: No response received")
                     break
                 
                 # Parse JSON response
@@ -120,17 +220,8 @@ class AzureDevOpsClient:
                 if not continuation_token:
                     break
                 
-            except requests.exceptions.Timeout:
-                self.logger.error(f"Request timed out for repository: {repo_name}")
-                break
-            except requests.exceptions.ConnectionError:
-                self.logger.error(f"Connection error for repository: {repo_name}")
-                break
-            except requests.exceptions.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse JSON response for {repo_name}: {e}")
-                break
             except Exception as e:
-                self.logger.error(f"Unexpected error for repository {repo_name}: {e}")
+                self.logger.error(f"Error fetching PRs for repository {repo_name}: {e}")
                 break
         
         # Always fetch detailed information in parallel

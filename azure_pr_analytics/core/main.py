@@ -17,7 +17,7 @@ from config import Config
 from azure_devops_client import AzureDevOpsClient
 from github_client import GitHubClient
 from unified_data_processor import UnifiedDataProcessor
-
+from input_validator import InputValidator
 
 def setup_logging() -> logging.Logger:
     """Configure logging for the application."""
@@ -58,9 +58,23 @@ def main() -> None:
         # Cleanup existing output file
         cleanup_existing_file(config.output_filename, logger)
         
-        # Initialize unified data processor
+        # Initialize input validator and unified data processor
+        validator = InputValidator(logger)
         processor = UnifiedDataProcessor(logger, config)
         all_filtered_data = []
+        
+        # Validate configuration
+        validated_config = validator.validate_config_data({
+            'organization': getattr(config, 'organization', ''),
+            'project': getattr(config, 'project', ''),
+            'github_owner': getattr(config, 'github_owner', ''),
+            'token': getattr(config, 'token', ''),
+            'github_token': getattr(config, 'github_token', '')
+        })
+        
+        if not any(validated_config.values()):
+            logger.error("Configuration validation failed - no valid credentials found")
+            return
         
         # Process Azure DevOps if configured
         if 'azure_devops' in config.platforms:
@@ -90,6 +104,11 @@ def main() -> None:
         
         if not all_filtered_data:
             logger.warning("No pull request data available to export from any platform.")
+            return
+        
+        # Validate output file path
+        if not validator.validate_file_path(config.output_filename):
+            logger.error(f"Invalid output file path: {config.output_filename}")
             return
         
         # Export to Excel

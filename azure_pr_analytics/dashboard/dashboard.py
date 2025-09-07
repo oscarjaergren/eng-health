@@ -15,9 +15,9 @@ import os
 import sys
 from pathlib import Path
 
-# Add src directory to path for imports
-sys.path.append(str(Path(__file__).parent / 'src'))
-from safe_data_parser import safe_count_items, safe_parse_list, safe_parse_dict
+# Add azure_pr_analytics directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+from azure_pr_analytics.core.safe_data_parser import safe_count_items, safe_parse_list, safe_parse_dict
 
 
 def load_data(file_path: str) -> pd.DataFrame:

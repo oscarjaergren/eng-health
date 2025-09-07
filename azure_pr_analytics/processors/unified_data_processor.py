@@ -1,47 +1,46 @@
-"""Unified data processing utilities for pull request data from multiple platforms."""
+"""Unified data processor for handling both Azure DevOps and GitHub PR data."""
 
 import logging
-from typing import Dict, List, Any, Union
-from datetime import datetime
+from typing import List, Dict, Any
+from ..clients.azure_devops_client import AzureDevOpsClient
+from ..clients.github_client import GitHubClient
+from .azure_devops_data_processor import DataProcessor as AzureDevOpsDataProcessor
+from .github_data_processor import GitHubDataProcessor
+from .base_data_processor import BaseDataProcessor
+from ..core.config import Config
 
-
-class UnifiedDataProcessor:
+class UnifiedDataProcessor(BaseDataProcessor):
     """Processes raw pull request data from Azure DevOps and GitHub APIs."""
     
     def __init__(self, logger: logging.Logger, config=None):
         """Initialize the unified data processor."""
-        self.logger = logger
-        self.config = config
+        super().__init__(logger, config)
     
-    def _is_system_identity(self, identity_name: str) -> bool:
-        """Check if an identity is a system/team identity that should be filtered out."""
-        if not identity_name or identity_name == 'Unknown':
-            return True
+    def _is_platform_system_identity(self, identity_name: str) -> bool:
+        """Platform-specific system identity checks for both Azure DevOps and GitHub."""
+        identity_lower = identity_name.lower()
         
-        # Azure DevOps system patterns
-        if 'vstfs:' in identity_name.lower():
-            return True
-        
-        # Additional checks for common system identity patterns
-        system_patterns = [
+        # Azure DevOps specific patterns
+        azure_patterns = [
             'vstfs:///framework/identitydomain/',
             'vstfs:///classification/teamproject/',
             '\\example-team',
             '\\devops',
-            '\\engineering',
-            '\\graph data science',
-            '\\salesforce owners',
-            '\\site reliability engineering',
-            # GitHub system patterns
-            'github-actions[bot]',
-            'dependabot[bot]',
-            'renovate[bot]',
-            'codecov[bot]',
-            'sonarcloud[bot]'
+            '\\engineering'
         ]
         
-        identity_lower = identity_name.lower()
-        for pattern in system_patterns:
+        for pattern in azure_patterns:
+            if pattern in identity_lower:
+                return True
+        
+        # GitHub specific patterns
+        github_patterns = [
+            '[bot]',
+            'github-actions',
+            'dependabot'
+        ]
+        
+        for pattern in github_patterns:
             if pattern in identity_lower:
                 return True
         

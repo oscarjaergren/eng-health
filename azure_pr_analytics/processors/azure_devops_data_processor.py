@@ -1,28 +1,23 @@
-"""Data processing utilities for pull request data."""
+"""Data processing utilities for Azure DevOps pull request data."""
 
 import logging
 from typing import Dict, List, Any
+from .base_data_processor import BaseDataProcessor
+from ..core.safe_data_parser import safe_parse_list, safe_parse_dict
 
-
-class DataProcessor:
+class DataProcessor(BaseDataProcessor):
     """Processes raw pull request data from Azure DevOps API."""
     
     def __init__(self, logger: logging.Logger, config=None):
-        """Initialize the data processor."""
-        self.logger = logger
-        self.config = config
+        """Initialize the Azure DevOps data processor."""
+        super().__init__(logger, config)
     
-    def _is_system_identity(self, identity_name: str) -> bool:
-        """Check if an identity is a system/team identity that should be filtered out."""
-        if not identity_name or identity_name == 'Unknown':
-            return True
+    def _is_platform_system_identity(self, identity_name: str) -> bool:
+        """Azure DevOps specific system identity checks."""
+        identity_lower = identity_name.lower()
         
-        # Filter out any identity containing "vstfs" - this covers all system/service accounts
-        if 'vstfs:' in identity_name.lower():
-            return True
-        
-        # Additional checks for common system identity patterns
-        system_patterns = [
+        # Azure DevOps specific patterns
+        azure_patterns = [
             'vstfs:///framework/identitydomain/',
             'vstfs:///classification/teamproject/',
             '\\example-team',
@@ -33,8 +28,7 @@ class DataProcessor:
             '\\site reliability engineering'
         ]
         
-        identity_lower = identity_name.lower()
-        for pattern in system_patterns:
+        for pattern in azure_patterns:
             if pattern in identity_lower:
                 return True
         
