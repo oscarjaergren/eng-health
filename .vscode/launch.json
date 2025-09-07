@@ -8,7 +8,7 @@
             "module": "streamlit",
             "args": [
                 "run",
-                "dashboard.py",
+                "dashboard_main.py",
                 "--server.port=8501"
             ],
             "cwd": "${workspaceFolder}",
@@ -20,17 +20,7 @@
             "name": "📊 Extract PR Data",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/main.py",
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "envFile": "${workspaceFolder}/.env"
-        },
-        {
-            "name": "🔧 Test Filtering",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/test_filtering.py",
+            "program": "${workspaceFolder}/main.py",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "justMyCode": false,

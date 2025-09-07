@@ -31,7 +31,7 @@ fi
 # Check if data file exists
 if [ ! -f "pr_data.xlsx" ]; then
     echo -e "${YELLOW}⚠️  No data file found. Running data extraction first...${NC}"
-    python src/main.py
+    python main.py
     if [ $? -ne 0 ]; then
         echo -e "${YELLOW}❌ Data extraction failed. Please check your configuration.${NC}"
         exit 1
@@ -43,4 +43,4 @@ echo -e "${BLUE}📊 Dashboard will be available at: http://localhost:8501${NC}"
 echo -e "${YELLOW}💡 Press Ctrl+C to stop the dashboard${NC}"
 echo
 
-streamlit run dashboard.py
+streamlit run dashboard_main.py

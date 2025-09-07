@@ -1,8 +1,8 @@
 # Multi-Platform PR Analytics Tool
 
-A Python script to extract Pull Request (PR) data from Azure DevOps and/or GitHub and save it into an Excel file with comprehensive analytics dashboard.
+A comprehensive Python application to extract Pull Request (PR) data from Azure DevOps and/or GitHub with an interactive analytics dashboard.
 
-## Features
+## 🚀 Features
 
 ### Multi-Platform Support
 - **Azure DevOps**: Extract from all repositories in an Azure DevOps project
@@ -11,25 +11,27 @@ A Python script to extract Pull Request (PR) data from Azure DevOps and/or GitHu
 - **Flexible Configuration**: Use one or both platforms as needed
 
 ### Core Capabilities
-- Handles pagination for large datasets
+- Interactive Streamlit dashboard with advanced visualizations
+- Handles pagination for large datasets automatically
 - Exports data to Excel format with repository and platform information
 - Secure token handling with environment variables
 - Comprehensive error handling and logging
-- Processes multiple repositories automatically with parallel processing
+- Parallel processing for optimal performance
+- Smart filtering (excludes IAC PRs and personal approvals)
 
-## Prerequisites
+## 📋 Prerequisites
 
 - Python 3.8 or higher
 - **For Azure DevOps**: Personal Access Token (PAT) with appropriate permissions
 - **For GitHub**: Personal Access Token with repo access permissions
 - Access to your Azure DevOps organization/project and/or GitHub organization/account
 
-## Installation
+## 🛠️ Installation
 
 1. Clone this repository:
    ```bash
    git clone <repository-url>
-   cd azure-devops-pr-extractor
+   cd azure-devops-pr-analytics
    ```
 
 2. Create a virtual environment:
@@ -43,7 +45,7 @@ A Python script to extract Pull Request (PR) data from Azure DevOps and/or GitHu
    pip install -r requirements.txt
    ```
 
-## Configuration
+## ⚙️ Configuration
 
 1. Copy `.env.example` to `.env` and configure your platform(s):
 
@@ -69,12 +71,34 @@ A Python script to extract Pull Request (PR) data from Azure DevOps and/or GitHu
 
    **Note**: You can configure both platforms to extract from both sources, or just one platform.
 
-## Usage
+## 🎯 Usage
 
-### Data Collection
+### Quick Start
+Use our convenient launcher scripts:
+
+**Windows:**
+```bash
+scripts\start_dashboard.bat
+```
+
+**Linux/macOS:**
+```bash
+scripts/start_dashboard.sh
+```
+
+These scripts will:
+- Set up virtual environment if needed
+- Install dependencies
+- Check for configuration
+- Extract data if needed
+- Launch the dashboard
+
+### Manual Usage
+
+#### Data Collection
 Run the script to collect comprehensive PR data:
 ```bash
-python src/main.py
+python main.py
 ```
 
 The script will:
@@ -88,11 +112,16 @@ The script will:
 - Process and format the data with repository and platform information
 - Export results to a single Excel file with combined data
 
-### Dashboard Visualization
+#### Dashboard Visualization
 Launch the interactive Streamlit dashboard:
 ```bash
-streamlit run dashboard.py
+streamlit run dashboard_main.py
 ```
+
+#### VS Code Integration
+Use the provided launch configurations:
+- **🚀 Start Dashboard**: Launch Streamlit dashboard with debugging
+- **📊 Extract PR Data**: Run data extraction with debugging
 
 ## Performance Optimization
 
