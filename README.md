@@ -1,21 +1,28 @@
-# Azure DevOps PR Extraction Tool
+# Multi-Platform PR Analytics Tool
 
-A Python script to extract Pull Request (PR) data from Azure DevOps and save it into an Excel file.
+A Python script to extract Pull Request (PR) data from Azure DevOps and/or GitHub and save it into an Excel file with comprehensive analytics dashboard.
 
 ## Features
 
-- Extracts completed pull requests from **all repositories** in an Azure DevOps project
+### Multi-Platform Support
+- **Azure DevOps**: Extract from all repositories in an Azure DevOps project
+- **GitHub**: Extract from all repositories in a GitHub organization or user account
+- **Unified Analytics**: Combine data from both platforms in a single dashboard
+- **Flexible Configuration**: Use one or both platforms as needed
+
+### Core Capabilities
 - Handles pagination for large datasets
-- Exports data to Excel format with repository information
+- Exports data to Excel format with repository and platform information
 - Secure token handling with environment variables
 - Comprehensive error handling and logging
-- Processes multiple repositories automatically
+- Processes multiple repositories automatically with parallel processing
 
 ## Prerequisites
 
 - Python 3.8 or higher
-- Azure DevOps Personal Access Token (PAT) with appropriate permissions
-- Access to Azure DevOps organization and project
+- **For Azure DevOps**: Personal Access Token (PAT) with appropriate permissions
+- **For GitHub**: Personal Access Token with repo access permissions
+- Access to your Azure DevOps organization/project and/or GitHub organization/account
 
 ## Installation
 
@@ -38,13 +45,29 @@ A Python script to extract Pull Request (PR) data from Azure DevOps and save it 
 
 ## Configuration
 
-1. Edit the `.env` file with your Azure DevOps details:
+1. Copy `.env.example` to `.env` and configure your platform(s):
+
+   **For Azure DevOps:**
    ```
    AZURE_DEVOPS_ORGANIZATION=your-organization-name
    AZURE_DEVOPS_PROJECT=your-project-name
    AZURE_DEVOPS_PAT=your-personal-access-token
-   OUTPUT_FILENAME=pr_data.xlsx
    ```
+
+   **For GitHub:**
+   ```
+   GITHUB_TOKEN=your-github-personal-access-token
+   GITHUB_OWNER=your-github-organization-or-username
+   GITHUB_TYPE=org  # 'org' for organization, 'user' for personal account
+   ```
+
+   **Common Settings:**
+   ```
+   OUTPUT_FILENAME=pr_data.xlsx
+   MAX_PARALLEL_WORKERS=16
+   ```
+
+   **Note**: You can configure both platforms to extract from both sources, or just one platform.
 
 ## Usage
 
@@ -55,13 +78,15 @@ python src/main.py
 ```
 
 The script will:
-- Discover all repositories in the specified Azure DevOps project
-- Authenticate with Azure DevOps using your PAT
+- **Auto-detect configured platforms** (Azure DevOps and/or GitHub)
+- Discover all repositories in the specified organization(s)/project(s)
+- Authenticate using your Personal Access Token(s)
 - Fetch all completed pull requests from every repository
 - **Automatically filter** IAC PRs, personal approvals, and system accounts
 - **Collect detailed review information** (comments, approvals, discussions)
-- Process and format the data with repository information
-- Export results to an Excel file
+- **Unify data format** across platforms for consistent analytics
+- Process and format the data with repository and platform information
+- Export results to a single Excel file with combined data
 
 ### Dashboard Visualization
 Launch the interactive Streamlit dashboard:

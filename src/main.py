@@ -1,7 +1,7 @@
 """
-Azure DevOps PR Extraction Tool
+Multi-Platform PR Extraction Tool
 
-Description: Script to extract Pull Request (PR) data from Azure DevOps and save it into an Excel file.
+Description: Script to extract Pull Request (PR) data from Azure DevOps and/or GitHub and save it into an Excel file.
 """
 
 import logging
@@ -15,7 +15,8 @@ from dotenv import load_dotenv
 
 from config import Config
 from azure_devops_client import AzureDevOpsClient
-from data_processor import DataProcessor
+from github_client import GitHubClient
+from unified_data_processor import UnifiedDataProcessor
 
 
 def setup_logging() -> logging.Logger:
@@ -47,37 +48,66 @@ def main() -> None:
     
     # Setup logging
     logger = setup_logging()
-    logger.info("Starting Azure DevOps PR extraction tool")
+    logger.info("Starting multi-platform PR extraction tool")
     
     try:
         # Load configuration
         config = Config()
+        logger.info(f"Configured platforms: {', '.join(config.platforms)}")
         
         # Cleanup existing output file
         cleanup_existing_file(config.output_filename, logger)
         
-        # Initialize Azure DevOps client
-        client = AzureDevOpsClient(config, logger)
+        # Initialize unified data processor
+        processor = UnifiedDataProcessor(logger, config)
+        all_filtered_data = []
         
-        # Fetch pull requests
-        logger.info("Fetching all repositories and their pull requests from Azure DevOps...")
-        all_pr_data = client.fetch_all_pull_requests()
+        # Process Azure DevOps if configured
+        if 'azure_devops' in config.platforms:
+            logger.info("Fetching data from Azure DevOps...")
+            azure_client = AzureDevOpsClient(config, logger)
+            azure_pr_data = azure_client.fetch_all_pull_requests()
+            
+            if azure_pr_data:
+                logger.info(f"Processing {len(azure_pr_data)} Azure DevOps pull requests...")
+                azure_filtered_data = processor.process_pull_requests(azure_pr_data, 'azure_devops')
+                all_filtered_data.extend(azure_filtered_data)
+            else:
+                logger.warning("No Azure DevOps pull request data available.")
         
-        if not all_pr_data:
-            logger.warning("No pull request data available to export.")
+        # Process GitHub if configured
+        if 'github' in config.platforms:
+            logger.info("Fetching data from GitHub...")
+            github_client = GitHubClient(config, logger)
+            github_pr_data = github_client.fetch_all_pull_requests()
+            
+            if github_pr_data:
+                logger.info(f"Processing {len(github_pr_data)} GitHub pull requests...")
+                github_filtered_data = processor.process_pull_requests(github_pr_data, 'github')
+                all_filtered_data.extend(github_filtered_data)
+            else:
+                logger.warning("No GitHub pull request data available.")
+        
+        if not all_filtered_data:
+            logger.warning("No pull request data available to export from any platform.")
             return
         
-        # Process data
-        logger.info(f"Processing {len(all_pr_data)} pull requests...")
-        processor = DataProcessor(logger, config)
-        filtered_pr_data = processor.process_pull_requests(all_pr_data)
-        
         # Export to Excel
-        logger.info(f"Exporting data to '{config.output_filename}'...")
-        df = pd.DataFrame(filtered_pr_data)
+        logger.info(f"Exporting {len(all_filtered_data)} total pull requests to '{config.output_filename}'...")
+        df = pd.DataFrame(all_filtered_data)
+        
+        # Sort by platform and creation date for better organization
+        df['Created Date'] = pd.to_datetime(df['Created Date'])
+        df = df.sort_values(['Platform', 'Created Date'], ascending=[True, False])
+        
         df.to_excel(config.output_filename, index=False)
         
-        logger.info(f"Successfully exported {len(filtered_pr_data)} pull requests.")
+        # Log summary by platform
+        platform_counts = df['Platform'].value_counts()
+        for platform, count in platform_counts.items():
+            logger.info(f"  {platform}: {count} pull requests")
+        
+        logger.info(f"Successfully exported {len(all_filtered_data)} pull requests from {len(config.platforms)} platform(s).")
         logger.info(f"File '{config.output_filename}' created successfully.")
         
     except Exception as e:

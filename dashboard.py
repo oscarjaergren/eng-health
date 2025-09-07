@@ -1,7 +1,7 @@
 """
 PR Data Visualizer Dashboard
 
-A Streamlit web application for visualizing Azure DevOps Pull Request data.
+A Streamlit web application for visualizing Pull Request data from Azure DevOps and GitHub.
 """
 
 import streamlit as st
@@ -583,7 +583,7 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    st.title("📊 Azure DevOps PR Data Dashboard")
+    st.title("📊 Multi-Platform PR Data Dashboard")
     st.markdown("---")
     
     # File upload or use existing file
@@ -594,6 +594,13 @@ def main():
         df = load_data(data_file)
         
         if not df.empty:
+            
+            # Platform filter (if multiple platforms exist)
+            if 'Platform' in df.columns and len(df['Platform'].unique()) > 1:
+                platforms = ['All'] + sorted(df['Platform'].unique().tolist())
+                selected_platform = st.sidebar.selectbox("Select Platform", platforms, key="main_platform_filter")
+                if selected_platform != 'All':
+                    df = df[df['Platform'] == selected_platform]
             
             # Date range filter
             if 'Created Date' in df.columns:
@@ -649,6 +656,13 @@ def main():
             total_prs = len(df)
             st.sidebar.metric("📈 Filtered PRs", total_prs)
             
+            # Platform breakdown in sidebar
+            if 'Platform' in df.columns and len(df['Platform'].unique()) > 1:
+                st.sidebar.subheader("🔧 Platform Breakdown")
+                platform_counts = df['Platform'].value_counts()
+                for platform, count in platform_counts.items():
+                    st.sidebar.metric(f"{platform}", count)
+            
             if 'Approved By' in df.columns:
                 # Count PRs with approvals (excluding empty lists)
                 approved_prs = sum(1 for approvals in df['Approved By'] if approvals and len(eval(str(approvals)) if isinstance(approvals, str) else approvals) > 0)
@@ -661,7 +675,7 @@ def main():
                 "👥 Contributors", 
                 "🔥 Activity Heatmap",
                 "� Review Analytics",
-                "�🔍 Interactive Analysis"
+                "🔍 Interactive Analysis"
             ])
             
             with tabs[0]:
@@ -687,9 +701,14 @@ def main():
         
         st.markdown("""
         ### How to generate the data:
-        1. Configure your `.env` file with Azure DevOps credentials
+        1. Configure your `.env` file with Azure DevOps and/or GitHub credentials
         2. Run the extraction script: `python src/main.py`
         3. Refresh this dashboard to load the generated data
+        
+        ### Supported Platforms:
+        - **Azure DevOps**: Configure AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PROJECT, AZURE_DEVOPS_PAT
+        - **GitHub**: Configure GITHUB_TOKEN, GITHUB_OWNER, GITHUB_TYPE
+        - **Both**: Configure all variables to extract from both platforms
         """)
 
 

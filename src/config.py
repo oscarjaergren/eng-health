@@ -1,7 +1,7 @@
-"""Configuration management for Azure DevOps PR extraction tool."""
+"""Configuration management for multi-platform PR extraction tool."""
 
 import os
-from typing import Optional
+from typing import Optional, List
 
 
 class Config:
@@ -9,9 +9,21 @@ class Config:
     
     def __init__(self):
         """Initialize configuration with environment variables."""
-        self.organization = self._get_required_env("AZURE_DEVOPS_ORGANIZATION")
-        self.project = self._get_required_env("AZURE_DEVOPS_PROJECT")
-        self.token = self._get_required_env("AZURE_DEVOPS_PAT")
+        # Determine which platforms to use
+        self.platforms = self._get_enabled_platforms()
+        
+        # Azure DevOps configuration (optional if GitHub is enabled)
+        if 'azure_devops' in self.platforms:
+            self.organization = self._get_required_env("AZURE_DEVOPS_ORGANIZATION")
+            self.project = self._get_required_env("AZURE_DEVOPS_PROJECT")
+            self.token = self._get_required_env("AZURE_DEVOPS_PAT")
+        
+        # GitHub configuration (optional if Azure DevOps is enabled)
+        if 'github' in self.platforms:
+            self.github_token = self._get_required_env("GITHUB_TOKEN")
+            self.github_owner = self._get_required_env("GITHUB_OWNER")
+            self.github_type = os.getenv("GITHUB_TYPE", "org").lower()  # 'org' or 'user'
+        
         self.output_filename = os.getenv("OUTPUT_FILENAME", "pr_data.xlsx")
         
         # API configuration
@@ -24,6 +36,30 @@ class Config:
         self.exclude_personal_approvals = True
         
         self.max_parallel_workers = int(os.getenv("MAX_PARALLEL_WORKERS", "16"))
+    
+    def _get_enabled_platforms(self) -> List[str]:
+        """Determine which platforms are enabled based on environment variables."""
+        platforms = []
+        
+        # Check if Azure DevOps is configured
+        if (os.getenv("AZURE_DEVOPS_ORGANIZATION") and 
+            os.getenv("AZURE_DEVOPS_PROJECT") and 
+            os.getenv("AZURE_DEVOPS_PAT")):
+            platforms.append('azure_devops')
+        
+        # Check if GitHub is configured
+        if (os.getenv("GITHUB_TOKEN") and 
+            os.getenv("GITHUB_OWNER")):
+            platforms.append('github')
+        
+        if not platforms:
+            raise ValueError(
+                "No platforms configured. Please set up either Azure DevOps "
+                "(AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PROJECT, AZURE_DEVOPS_PAT) "
+                "or GitHub (GITHUB_TOKEN, GITHUB_OWNER) environment variables."
+            )
+        
+        return platforms
     
     def _get_required_env(self, key: str) -> str:
         """Get required environment variable or raise an error."""
