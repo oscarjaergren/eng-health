@@ -8,9 +8,4 @@ from .clients.azure_devops_client import AzureDevOpsClient
 from .clients.github_client import GitHubClient
 from .processors.unified_data_processor import UnifiedDataProcessor
 
-__all__ = [
-    "Config",
-    "AzureDevOpsClient", 
-    "GitHubClient",
-    "UnifiedDataProcessor"
-]
+__all__ = ["Config", "AzureDevOpsClient", "GitHubClient", "UnifiedDataProcessor"]
