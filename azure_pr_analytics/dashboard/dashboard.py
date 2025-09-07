@@ -18,12 +18,20 @@ from pathlib import Path
 # Add azure_pr_analytics directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 from azure_pr_analytics.core.safe_data_parser import safe_count_items, safe_parse_list, safe_parse_dict
+from azure_pr_analytics.core.mock_mode import is_mock_mode, get_mock_provider
 
 
 def load_data(file_path: str) -> pd.DataFrame:
     """Load and preprocess the PR data."""
     try:
-        df = pd.read_excel(file_path)
+        # Check if we're in mock mode
+        if is_mock_mode():
+            st.info("🎭 Running in Mock Mode - Using generated test data")
+            mock_provider = get_mock_provider()
+            df = mock_provider.get_mock_excel_data()
+        else:
+            df = pd.read_excel(file_path)
+        
         # Convert Created Date to datetime
         df['Created Date'] = pd.to_datetime(df['Created Date'])
         if not df.empty:
@@ -39,9 +47,14 @@ def load_data(file_path: str) -> pd.DataFrame:
         # Create year-month column for time series
         df['Year-Month'] = df['Created Date'].dt.to_period('M')
         # Clean up reviewer data
-        df['Reviewer Count'] = df['Assigned To'].apply(
-            lambda x: safe_count_items(x)
-        )
+        if 'Assigned To' in df.columns:
+            df['Reviewer Count'] = df['Assigned To'].apply(
+                lambda x: safe_count_items(x)
+            )
+        elif 'Total Reviewers' in df.columns:
+            df['Reviewer Count'] = df['Total Reviewers']
+        else:
+            df['Reviewer Count'] = 0
         return df
     except Exception as e:
         st.error(f"Error loading data: {e}")
@@ -595,7 +608,11 @@ def main():
     # File upload or use existing file
     data_file = "pr_data.xlsx"
     
-    if os.path.exists(data_file):
+    # Check if we're in mock mode or if the data file exists
+    if is_mock_mode():
+        st.success("🎭 Running in Mock Mode - No data file required")
+        df = load_data(data_file)  # Will use mock data
+    elif os.path.exists(data_file):
         st.success(f"✅ Found existing data file: {data_file}")
         df = load_data(data_file)
         

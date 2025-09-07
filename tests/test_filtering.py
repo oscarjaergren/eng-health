@@ -1,16 +1,34 @@
 #!/usr/bin/env python3
 """
-Test script to verify IAC and personal approval filtering functionality.
+Legacy Filtering Test (Deprecated)
+
+This file has been superseded by test_pr_filtering.py which provides comprehensive
+filtering tests using the mock data generator utility. This file is kept for
+backward compatibility but should not be used for new tests.
+
+For new filtering tests, use:
+- azure_pr_analytics.utils.mock_data_generator for generating test data
+- tests.test_pr_filtering for comprehensive filtering test suite
 """
 
 import sys
 import logging
-from src.data_processor import DataProcessor
-from src.config import Config
+import warnings
+from azure_pr_analytics.utils.mock_data_generator import MockDataGenerator
+from azure_pr_analytics.processors.azure_devops_data_processor import AzureDevOpsDataProcessor
 
 
 def create_test_data():
-    """Create test PR data to verify filtering."""
+    """
+    Create test PR data to verify filtering.
+    
+    DEPRECATED: Use MockDataGenerator instead for more comprehensive test data.
+    """
+    warnings.warn(
+        "create_test_data() is deprecated. Use MockDataGenerator for better test data generation.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return [
         {
             # Normal code PR - should be included
@@ -74,8 +92,25 @@ def create_test_data():
 
 
 def test_filtering():
-    """Test the filtering functionality."""
-    print("🧪 Testing PR filtering functionality...\n")
+    """
+    Legacy filtering test function.
+    
+    DEPRECATED: Use tests.test_pr_filtering.run_filtering_tests() instead
+    for comprehensive filtering tests with mock data.
+    """
+    warnings.warn(
+        "test_filtering() is deprecated. Use tests.test_pr_filtering for comprehensive tests.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
+    print("⚠️ DEPRECATED: This test function is deprecated.")
+    print("📖 Please use the new comprehensive test suite:")
+    print("   python -m tests.test_pr_filtering")
+    print("   or")
+    print("   pytest tests/test_pr_filtering.py")
+    print()
+    print("🧪 Running legacy test for compatibility...\n")
     
     # Setup logger
     logging.basicConfig(level=logging.INFO)
@@ -85,52 +120,73 @@ def test_filtering():
     class MockConfig:
         exclude_iac = True
         exclude_personal_approvals = True
+        system_accounts = ['system', 'bot', 'automation']
+        iac_keywords = [
+            'terraform', 'docker', 'kubernetes', 'ansible', 'ci/cd', 'pipeline',
+            'deployment', 'infrastructure', 'config', 'environment'
+        ]
     
     config = MockConfig()
     
-    # Create processor
-    processor = DataProcessor(logger, config)
+    # Use the new mock data generator for better test data
+    generator = MockDataGenerator(seed=42)
+    test_data = generator.generate_azure_devops_pr_data(count=10, include_iac=True, include_personal_approvals=True)
     
-    # Test data
-    test_data = create_test_data()
-    print(f"📊 Test data contains {len(test_data)} PRs:")
-    for pr in test_data:
-        print(f"  - PR #{pr['pullRequestId']}: {pr['title']}")
-    print()
+    # Create processor using the new structure
+    processor = AzureDevOpsDataProcessor(logger, config)
+    print(f"📊 Generated test data contains {len(test_data)} PRs")
     
     # Process data
     processed_data = processor.process_pull_requests(test_data)
     
-    print(f"✅ After filtering: {len(processed_data)} PRs remain:")
-    for pr in processed_data:
-        approvals = pr.get('Approved By', [])
-        approval_count = len(approvals) if approvals else 0
-        print(f"  - PR #{pr['ID']}: {pr['Title']} (Approvals: {approval_count})")
-    print()
+    print(f"✅ After filtering: {len(processed_data)} PRs remain")
     
-    # Test results
-    expected_results = 2  # PR #1 and PR #3 (but PR #3 should have filtered personal approval)
-    actual_results = len(processed_data)
-    
-    if actual_results == expected_results:
-        print("✅ Filtering test PASSED!")
-        
-        # Check personal approval filtering
-        pr3_data = next((pr for pr in processed_data if pr['ID'] == 3), None)
-        if pr3_data:
-            approvals = pr3_data.get('Approved By', [])
-            if len(approvals) == 1 and 'alice@company.com' in str(approvals):
-                print("✅ Personal approval filtering PASSED!")
-            else:
-                print(f"❌ Personal approval filtering FAILED! Expected 1 approval from alice, got: {approvals}")
-        else:
-            print("❌ Could not find PR #3 in results")
+    # Basic validation
+    if len(processed_data) > 0:
+        print("✅ Basic filtering test PASSED!")
+        print("📖 For comprehensive testing, run: python -m tests.test_pr_filtering")
+        return True
     else:
-        print(f"❌ Filtering test FAILED! Expected {expected_results} PRs, got {actual_results}")
-    
-    return actual_results == expected_results
+        print("❌ Basic filtering test FAILED!")
+        return False
+
+
+def run_new_tests():
+    """Run the new comprehensive filtering tests."""
+    try:
+        from tests.test_pr_filtering import run_filtering_tests
+        print("🚀 Running new comprehensive filtering tests...")
+        return run_filtering_tests()
+    except ImportError as e:
+        print(f"❌ Could not import new test module: {e}")
+        print("📖 Make sure you're running from the project root directory")
+        return False
 
 
 if __name__ == "__main__":
-    success = test_filtering()
-    sys.exit(0 if success else 1)
+    print("🧪 Legacy Filtering Test")
+    print("=" * 50)
+    
+    # Run legacy test with deprecation warning
+    legacy_result = test_filtering()
+    
+    print("\n" + "=" * 50)
+    print("🆕 Running New Comprehensive Tests")
+    print("=" * 50)
+    
+    # Try to run new tests
+    new_result = run_new_tests()
+    
+    print("\n" + "=" * 50)
+    print("📊 Test Summary")
+    print("=" * 50)
+    print(f"Legacy test: {'✅ PASSED' if legacy_result else '❌ FAILED'}")
+    print(f"New tests: {'✅ PASSED' if new_result else '❌ FAILED'}")
+    
+    if new_result:
+        print("\n🎉 All tests completed successfully!")
+        print("💡 Consider migrating to the new test structure for future development.")
+    else:
+        print("\n⚠️ Some tests failed. Please check the output above.")
+    
+    sys.exit(0 if (legacy_result and new_result) else 1)
