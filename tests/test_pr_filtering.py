@@ -97,8 +97,10 @@ class TestPRFiltering:
         ), f"Expected 0 IAC PRs after filtering, found {remaining_iac}"
         assert (
             len(processed_data) == len(test_data) - iac_count
-        ), f"Expected {len(test_data) -
-                                        iac_count} PRs after filtering, got {len(processed_data)}"
+        ), (
+            f"Expected {len(test_data) - iac_count} PRs after filtering, "
+            f"got {len(processed_data)}"
+        )
 
     def test_azure_devops_personal_approval_filtering(
         self, mock_generator, mock_config, logger
@@ -167,8 +169,10 @@ class TestPRFiltering:
         ), f"Expected 0 IAC PRs after filtering, found {remaining_iac}"
         assert (
             len(processed_data) == len(test_data) - iac_count
-        ), f"Expected {len(test_data) -
-                                        iac_count} PRs after filtering, got {len(processed_data)}"
+        ), (
+            f"Expected {len(test_data) - iac_count} PRs after filtering, "
+            f"got {len(processed_data)}"
+        )
 
     def test_github_personal_approval_filtering(
         self, mock_generator, mock_config, logger
@@ -242,10 +246,20 @@ class TestPRFiltering:
             "Description",
             "Created By",
             "Created Date",
-            "Status",
-            "Platform",
+            "State",  # Changed from Status to State to match processor output
+            "Assigned To",
             "Approved By",
+            "Rejected By",
+            "Waiting Reviewers",
             "Total Reviewers",
+            "Approval Count",
+            "Rejection Count",
+            "Total Comments",
+            "Commenters",
+            "Active Threads",
+            "Resolved Threads",
+            "Total Threads",
+            "Comment Count"
         }
 
         for pr in azure_processed:
