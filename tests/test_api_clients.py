@@ -6,6 +6,8 @@ import json
 import sys
 import os
 import time
+import requests
+from pathlib import Path
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -13,9 +15,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from azure_pr_analytics.clients.azure_devops_client import AzureDevOpsClient
 from azure_pr_analytics.clients.github_client import GitHubClient
 from azure_pr_analytics.core.config import Config
-
-# Add azure_pr_analytics directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class MockResponse:

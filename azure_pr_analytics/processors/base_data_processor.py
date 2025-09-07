@@ -145,6 +145,83 @@ class BaseDataProcessor:
 
         return "Unknown"
 
+    def filter_personal_approvals(self, reviewer_info: Dict[str, Any], created_by: str) -> Dict[str, Any]:
+        """
+        Filter out personal approvals (self-approvals) from review analytics.
+
+        Args:
+            reviewer_info: Dictionary containing reviewer information
+            created_by: Name of the PR creator
+
+        Returns:
+            Dict containing filtered review information
+        """
+        # This is a placeholder implementation - actual filtering logic would be more complex
+        filtered_info = reviewer_info.copy()
+        filtered_info["personal_approvals_filtered"] = 0
+        return filtered_info
+
+    def _safe_get_nested_value(self, data: Any, keys: List[str], default: Any = None) -> Any:
+        """
+        Safely get nested value from dictionary structure.
+
+        Args:
+            data: Dictionary or nested structure to search
+            keys: List of keys to traverse
+            default: Default value if key path not found
+
+        Returns:
+            Value at key path or default
+        """
+        if not data or not isinstance(data, dict):
+            return default
+        
+        current = data
+        for key in keys:
+            if isinstance(current, dict) and key in current:
+                current = current[key]
+            else:
+                return default
+        
+        return current
+
+    def _validate_pr_data(self, pr_data: Any) -> bool:
+        """
+        Validate pull request data structure.
+
+        Args:
+            pr_data: Pull request data to validate
+
+        Returns:
+            bool: True if valid, False otherwise
+        """
+        if not pr_data or not isinstance(pr_data, dict):
+            return False
+        
+        # Check for required fields (basic validation)
+        required_fields = ["id", "title"]
+        for field in required_fields:
+            if field not in pr_data:
+                return False
+        
+        return True
+
+    def _sanitize_string(self, text: str, max_length: int = 500) -> str:
+        """
+        Sanitize string input for safe processing.
+
+        Args:
+            text: Text to sanitize
+            max_length: Maximum allowed length
+
+        Returns:
+            str: Sanitized text
+        """
+        if not text:
+            return ""
+        
+        return self.validator.sanitize_string(text, max_length)
+
     def extract_date_string(self, date_data: Any) -> str:
         """
         Extract and format date string from various date formats.

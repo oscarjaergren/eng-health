@@ -13,6 +13,65 @@ class GitHubDataProcessor(BaseDataProcessor):
         """Initialize the GitHub data processor."""
         super().__init__(logger, config)
 
+    def process_pull_requests(self, pr_data: List[Dict[str, Any]], platform: str = "github") -> List[Dict[str, Any]]:
+        """Process raw GitHub pull request data into the desired format."""
+        processed_data = []
+        excluded_count = {"iac": 0, "personal_approval": 0}
+
+        for pr in pr_data:
+            try:
+                # Skip IAC-related PRs
+                if self.is_iac_related(pr.get("title", ""), pr.get("body", "")):
+                    excluded_count["iac"] += 1
+                    continue
+
+                # Basic PR information
+                processed_pr = {
+                    "ID": pr.get("number"),
+                    "Repository": pr.get("repository_name", "Unknown"),
+                    "Work Item Type": "Code Review Request",
+                    "Created Date": pr.get("created_at"),
+                    "Title": pr.get("title"),
+                    "Description": pr.get("body", ""),
+                    "Created By": self._extract_created_by(pr),
+                    "Assigned To": self._extract_github_reviewers(pr),
+                    "State": self._extract_github_status(pr),
+                }
+
+                # Extract reviewer information
+                reviewer_info = self._extract_github_reviewers(pr)
+                processed_pr.update(reviewer_info)
+
+                # Extract comment information
+                comment_info = self._extract_github_comments(pr)
+                processed_pr.update(comment_info)
+
+                # Filter out personal approvals from review analytics
+                review_info = self._filter_personal_approvals(
+                    processed_pr, processed_pr["Created By"]
+                )
+                processed_pr.update(review_info)
+                excluded_count["personal_approval"] += review_info.get(
+                    "personal_approvals_filtered", 0
+                )
+
+                processed_data.append(processed_pr)
+
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to process GitHub PR {pr.get('id', 'unknown')}: {e}"
+                )
+                continue
+
+        self.logger.info(
+            f"Successfully processed {len(processed_data)} GitHub pull requests"
+        )
+        self.logger.info(
+            f"Excluded {excluded_count['iac']} IAC-related PRs and filtered "
+            f"{excluded_count['personal_approval']} personal approvals"
+        )
+        return processed_data
+
     def _is_platform_system_identity(self, identity_name: str) -> bool:
         """GitHub specific system identity checks."""
         identity_lower = identity_name.lower()
@@ -80,7 +139,7 @@ class GitHubDataProcessor(BaseDataProcessor):
 
                 # Filter out personal approvals from review analytics
                 review_info = self._filter_personal_approvals(
-                    reviewer_info, processed_pr["Created By"]
+                    processed_pr, processed_pr["Created By"]
                 )
                 processed_pr.update(review_info)
                 excluded_count["personal_approval"] += review_info.get(

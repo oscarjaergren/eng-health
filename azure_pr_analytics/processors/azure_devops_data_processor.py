@@ -40,7 +40,7 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
         return False
 
     def process_pull_requests(
-        self, pr_data: List[Dict[str, Any]]
+        self, pr_data: List[Dict[str, Any]], platform: str = "azure_devops"
     ) -> List[Dict[str, Any]]:
         """Process raw pull request data into the desired format with detailed review information."""
         filtered_pr_data = []
@@ -74,13 +74,12 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
                 comment_info = self._extract_comment_details(pr)
                 processed_pr.update(comment_info)
 
-                # Filter out personal approvals from review analytics (core
-                # filtering)
-                review_info = self._filter_personal_approvals(
-                    review_info, processed_pr["Created By"]
+                # Filter out personal approvals
+                filtered_review_info = self._filter_personal_approvals(
+                    processed_pr, processed_pr["Created By"]
                 )
-                processed_pr.update(review_info)
-                excluded_count["personal_approval"] += review_info.get(
+                processed_pr.update(filtered_review_info)
+                excluded_count["personal_approval"] += filtered_review_info.get(
                     "personal_approvals_filtered", 0
                 )
 
@@ -105,9 +104,9 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
         return filtered_pr_data
 
     def _extract_created_by(self, pr: Dict[str, Any]) -> str:
-        """Extract the creator's unique name from pull request data."""
+        """Extract the creator's display name from pull request data."""
         created_by = pr.get("createdBy", {})
-        return created_by.get("uniqueName", "Unknown")
+        return created_by.get("displayName", "Unknown")
 
     def _extract_reviewers(self, pr: Dict[str, Any]) -> List[str]:
         """Extract and format assigned reviewers."""

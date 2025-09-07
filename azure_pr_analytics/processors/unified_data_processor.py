@@ -43,6 +43,15 @@ class UnifiedDataProcessor(BaseDataProcessor):
 
         return False
 
+    def _identify_platform(self, pr: Dict[str, Any]) -> str:
+        """Identify the platform of a PR based on its structure."""
+        if "pullRequestId" in pr or "createdBy" in pr:
+            return "azure_devops"
+        elif "number" in pr and "user" in pr:
+            return "github"
+        else:
+            return "unknown"
+
     def process_pull_requests(
         self, pr_data: List[Dict[str, Any]], platform: str
     ) -> List[Dict[str, Any]]:
