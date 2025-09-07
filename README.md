@@ -78,21 +78,18 @@ The tool includes several performance optimizations for faster data extraction:
 - PR details (comments/threads) are fetched in parallel
 - Configurable worker limits to balance speed vs. API rate limits
 
-### **Optional Detail Fetching**
-For maximum speed, you can skip detailed comment/thread data:
+### **Performance Settings**
+You can adjust parallel worker count for optimal performance:
 ```bash
-FETCH_PR_DETAILS=false         # Skip comment/thread fetching (much faster)
 MAX_PARALLEL_WORKERS=32        # Adjust parallel worker count
 ```
 
-### **Performance Settings**
-Configure these options in your `.env` file:
+Configure this option in your `.env` file:
 ```bash
-FETCH_PR_DETAILS=true          # Set to false for 5-10x faster execution
 MAX_PARALLEL_WORKERS=16        # Number of parallel API calls (adjust based on rate limits)
 ```
 
-⚡ **Speed vs. Data Trade-off**: Disabling `FETCH_PR_DETAILS` can reduce extraction time from ~25 minutes to ~3-5 minutes, but you'll lose comment and discussion thread analytics in the dashboard.
+⚡ **Comprehensive Analytics**: The tool always fetches detailed PR information including comments and discussion threads to provide complete analytics. Processing time is typically 15-25 minutes depending on repository size and API rate limits.
 
 ## Intelligent Filtering
 

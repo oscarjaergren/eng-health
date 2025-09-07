@@ -23,8 +23,6 @@ class Config:
         self.exclude_iac = True
         self.exclude_personal_approvals = True
         
-        # Performance configuration
-        self.fetch_pr_details = os.getenv("FETCH_PR_DETAILS", "true").lower() in ("true", "1", "yes")
         self.max_parallel_workers = int(os.getenv("MAX_PARALLEL_WORKERS", "16"))
     
     def _get_required_env(self, key: str) -> str:

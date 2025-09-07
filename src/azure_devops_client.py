@@ -25,7 +25,6 @@ class AzureDevOpsClient:
         
         # Performance settings
         self.max_workers = min(config.max_parallel_workers, (os.cpu_count() or 1) + 4)
-        self.fetch_details = config.fetch_pr_details
     
     def _create_session(self) -> requests.Session:
         """Create a requests session with retry strategy and authentication."""
@@ -134,8 +133,8 @@ class AzureDevOpsClient:
                 self.logger.error(f"Unexpected error for repository {repo_name}: {e}")
                 break
         
-        # Fetch detailed information in parallel if enabled
-        if all_pr_data and self.fetch_details:
+        # Always fetch detailed information in parallel
+        if all_pr_data:
             all_pr_data = self._fetch_pr_details_parallel(all_pr_data, repo_id, repo_name)
         
         if all_pr_data:
