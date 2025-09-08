@@ -86,10 +86,10 @@ class MockDataProvider:
                 self._cached_data = df
                 return df
             except Exception as e:
-                print(f"⚠️ Failed to load existing mock Excel file: {e}")
+                print(f"Warning: Failed to load existing mock Excel file: {e}")
 
         # Generate new mock data
-        print("🔄 Generating mock PR data for dashboard...")
+        print("Generating mock PR data for dashboard...")
         mock_data = self.generator.generate_excel_compatible_data(
             count=self.config.pr_count
         )
@@ -100,9 +100,9 @@ class MockDataProvider:
         # Save to Excel file for future use
         try:
             df.to_excel(excel_path, index=False)
-            print(f"💾 Mock data saved to {excel_path}")
+            print(f"[INFO] Mock data saved to {excel_path}")
         except Exception as e:
-            print(f"⚠️ Failed to save mock Excel file: {e}")
+            print(f"[WARNING] Failed to save mock Excel file: {e}")
 
         self._cached_data = df
         return df
@@ -121,10 +121,10 @@ class MockDataProvider:
                 with open(data_path, "r", encoding="utf-8") as f:
                     return json.load(f)
             except Exception as e:
-                print(f"⚠️ Failed to load existing mock data file: {e}")
+                print(f"Failed to load existing mock data file: {e}")
 
         # Generate new mock data
-        print("🔄 Generating mock raw PR data...")
+        print("[INFO] Generating mock raw PR data...")
         mock_data = self.generator.generate_mixed_data(
             azure_count=self.config.pr_count // 2,
             github_count=self.config.pr_count // 2,
@@ -134,9 +134,9 @@ class MockDataProvider:
         try:
             with open(data_path, "w", encoding="utf-8") as f:
                 json.dump(mock_data, f, indent=2, ensure_ascii=False)
-            print(f"💾 Mock raw data saved to {data_path}")
+            print(f"[INFO] Mock raw data saved to {data_path}")
         except Exception as e:
-            print(f"⚠️ Failed to save mock data file: {e}")
+            print(f"[WARNING] Failed to save mock data file: {e}")
 
         return mock_data
 
@@ -147,7 +147,7 @@ class MockDataProvider:
     def clear_cache(self):
         """Clear cached data to force regeneration."""
         self._cached_data = None
-        print("🗑️ Mock data cache cleared")
+        print("[INFO] Mock data cache cleared")
 
 
 def setup_mock_environment():
@@ -159,7 +159,7 @@ def setup_mock_environment():
     os.environ["MOCK_GENERATE_ON_STARTUP"] = "true"
     os.environ["MOCK_PR_COUNT"] = "50"
     os.environ["MOCK_SEED"] = "42"
-    print("🎭 Mock mode environment configured")
+    print("[INFO] Mock mode environment configured")
 
 
 def is_mock_mode() -> bool:
@@ -181,12 +181,12 @@ def create_mock_data_files():
 
     # Generate and save Excel data
     excel_df = provider.get_mock_excel_data()
-    print(f"📊 Generated Excel data with {len(excel_df)} PRs")
+    print("[INFO] Generated mock data for dashboard")
 
     # Generate and save raw data
     raw_data = provider.get_mock_raw_data()
     total_raw = sum(len(data) for data in raw_data.values())
-    print(f"📊 Generated raw data with {total_raw} PRs")
+    print(f"[INFO] Generated raw data with {total_raw} PRs")
 
     return excel_df, raw_data
 
@@ -218,7 +218,7 @@ def main():
         setup_mock_environment()
         os.environ["MOCK_PR_COUNT"] = str(args.count)
         os.environ["MOCK_SEED"] = str(args.seed)
-        print("✅ Mock mode environment set up")
+        print("[INFO] Mock mode environment set up")
 
     if args.generate:
         # Override config with CLI args
@@ -227,17 +227,17 @@ def main():
         os.environ["MOCK_GENERATE_ON_STARTUP"] = "true"
 
         excel_df, raw_data = create_mock_data_files()
-        print("✅ Mock data files generated")
+        print("[INFO] Mock data files generated")
 
     if args.clear_cache:
         provider = get_mock_provider()
         provider.clear_cache()
-        print("✅ Mock data cache cleared")
+        print("[INFO] Mock data cache cleared")
 
     if not any([args.setup, args.generate, args.clear_cache]):
         # Show current mock mode status
         config = MockModeConfig()
-        print("🎭 Mock Mode Status:")
+        print("Mock Mode Status:")
         print(f"   Enabled: {config.enabled}")
         print(f"   Data file: {config.data_file}")
         print(f"   Excel file: {config.excel_file}")

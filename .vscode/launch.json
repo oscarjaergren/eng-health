@@ -17,6 +17,22 @@
             "envFile": "${workspaceFolder}/.env"
         },
         {
+            "name": "🚀 Start Dashboard (Mock Data)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "streamlit",
+            "args": [
+                "run",
+                "dashboard_main.py",
+                "--server.port=8501",
+                "--",
+                "--mock"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "📊 Extract PR Data",
             "type": "debugpy",
             "request": "launch",
