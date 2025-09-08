@@ -1,17 +1,18 @@
 """Integration tests for API clients with mocking."""
 
-import unittest
-from unittest.mock import Mock, patch, MagicMock
 import json
-import sys
 import os
+import sys
 import time
+import unittest
+from unittest.mock import Mock, patch
+
 import requests
-from pathlib import Path
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# Local imports after path modification
 from azure_pr_analytics.clients.azure_devops_client import AzureDevOpsClient
 from azure_pr_analytics.clients.github_client import GitHubClient
 from azure_pr_analytics.core.config import Config
@@ -534,26 +535,4 @@ class TestAPIClientErrorHandling(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    # Import time for rate limit tests
-    import time
-
-    # Create test suite
-    test_suite = unittest.TestSuite()
-
-    # Add test cases
-    test_classes = [
-        TestAzureDevOpsClientIntegration,
-        TestGitHubClientIntegration,
-        TestAPIClientErrorHandling,
-    ]
-
-    for test_class in test_classes:
-        tests = unittest.TestLoader().loadTestsFromTestCase(test_class)
-        test_suite.addTests(tests)
-
-    # Run tests
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(test_suite)
-
-    # Exit with appropriate code
-    exit(0 if result.wasSuccessful() else 1)
+    unittest.main()

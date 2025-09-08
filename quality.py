@@ -3,39 +3,38 @@
 Comprehensive code quality management tool.
 Handles formatting, linting, type checking, and automated fixes.
 """
+import argparse
 import subprocess
 import sys
-import os
-import argparse
 from pathlib import Path
+
 
 class CodeQualityManager:
     """Manages all code quality operations in one place."""
-    
+
     def __init__(self, project_root: str = "."):
         self.project_root = Path(project_root)
         self.source_dirs = ["azure_pr_analytics/", "tests/"]
-        
+
     def run_command(self, cmd: str, description: str) -> bool:
         """Run a command and return success status."""
         print(f"\n{'='*50}")
         print(f"Running {description}")
         print(f"{'='*50}")
-        
+
         try:
             result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, 
-                cwd=self.project_root
+                cmd, shell=True, capture_output=True, text=True, cwd=self.project_root
             )
             print(f"Exit code: {result.returncode}")
-            
+
             if result.stdout:
                 print("STDOUT:")
                 print(result.stdout)
             if result.stderr:
                 print("STDERR:")
                 print(result.stderr)
-                
+
             return result.returncode == 0
         except Exception as e:
             print(f"Error running command: {e}")
@@ -45,16 +44,18 @@ class CodeQualityManager:
         """Check if all required tools are available."""
         tools = ["black", "isort", "autoflake", "flake8", "mypy", "autopep8"]
         missing = []
-        
+
         for tool in tools:
             try:
                 subprocess.run(
-                    f"python -m {tool} --version", 
-                    shell=True, capture_output=True, check=True
+                    f"python -m {tool} --version",
+                    shell=True,
+                    capture_output=True,
+                    check=True,
                 )
             except subprocess.CalledProcessError:
                 missing.append(tool)
-        
+
         if missing:
             print(f"Missing tools: {', '.join(missing)}")
             print("Install with: pip install --user " + " ".join(missing))
@@ -64,92 +65,88 @@ class CodeQualityManager:
     def auto_fix(self) -> bool:
         """Run all auto-formatters to fix code quality issues."""
         print("Running automated code quality fixes...")
-        
+
         source_paths = " ".join(self.source_dirs)
-        
+
         # 1. Remove unused imports and variables
         autoflake_success = self.run_command(
             f"python -m autoflake --remove-all-unused-imports --remove-unused-variables --in-place --recursive {source_paths}",
-            "AutoFlake (Remove unused imports/variables)"
+            "AutoFlake (Remove unused imports/variables)",
         )
-        
+
         # 2. Sort and organize imports
         isort_success = self.run_command(
-            f"python -m isort {source_paths} --profile black",
-            "isort (Sort imports)"
+            f"python -m isort {source_paths} --profile black", "isort (Sort imports)"
         )
-        
+
         # 3. Fix PEP 8 violations
         autopep8_success = self.run_command(
             f"python -m autopep8 --in-place --aggressive --aggressive --recursive {source_paths}",
-            "autopep8 (Fix PEP 8 violations)"
+            "autopep8 (Fix PEP 8 violations)",
         )
-        
+
         # 4. Apply Black formatting (final pass)
         black_success = self.run_command(
-            f"python -m black {source_paths}",
-            "Black (Final formatting)"
+            f"python -m black {source_paths}", "Black (Final formatting)"
         )
-        
+
         results = {
             "AutoFlake": autoflake_success,
-            "isort": isort_success, 
+            "isort": isort_success,
             "autopep8": autopep8_success,
-            "Black": black_success
+            "Black": black_success,
         }
-        
+
         self._print_results("AUTO-FIX SUMMARY", results)
         return all(results.values())
 
     def check(self, strict: bool = False) -> bool:
         """Run code quality checks."""
         print("Running code quality checks...")
-        
+
         source_paths = " ".join(self.source_dirs)
-        
-        # Flake8 linting  
+
+        # Flake8 linting
         ignore_codes = "E203,W503" if strict else "E203,W503,E501,F541"
         flake8_success = self.run_command(
             f"python -m flake8 {source_paths} --max-line-length=88 --extend-ignore={ignore_codes}",
-            "Flake8 (Linting)"
+            "Flake8 (Linting)",
         )
-        
+
         # MyPy type checking
         mypy_args = "--ignore-missing-imports --no-strict-optional"
-        
+
         mypy_success = self.run_command(
-            f"python -m mypy azure_pr_analytics/ {mypy_args}",
-            "MyPy (Type checking)"
+            f"python -m mypy azure_pr_analytics/ {mypy_args}", "MyPy (Type checking)"
         )
-        
+
         # Black formatting check
         black_success = self.run_command(
-            f"python -m black --check --diff {source_paths}",
-            "Black (Format check)"
+            f"python -m black --check --diff {source_paths}", "Black (Format check)"
         )
-        
+
         results = {
             "Flake8": flake8_success,
             "MyPy": mypy_success,
-            "Black": black_success
+            "Black": black_success,
         }
-        
+
         self._print_results("QUALITY CHECK SUMMARY", results)
         return all(results.values())
 
     def fix_and_check(self, strict: bool = False) -> bool:
         """Run auto-fixes followed by quality checks."""
         print("Running complete code quality workflow...")
-        
+
         fix_success = self.auto_fix()
         check_success = self.check(strict=strict)
-        
+
         print(f"\n{'='*50}")
         print("FINAL WORKFLOW SUMMARY")
         print(f"{'='*50}")
         print(f"Auto-fixes: {'PASS' if fix_success else 'FAIL'}")
         print(f"Quality checks: {'PASS' if check_success else 'FAIL'}")
-        
+
         if fix_success and check_success:
             print("\nAll code quality operations completed successfully!")
         elif fix_success:
@@ -157,13 +154,13 @@ class CodeQualityManager:
             print("Consider running with --strict for detailed type checking.")
         else:
             print("\nSome operations failed. Check the output above for details.")
-        
+
         return fix_success and check_success
 
     def install_pre_commit(self) -> bool:
         """Install and configure pre-commit hooks."""
         print("Setting up pre-commit hooks...")
-        
+
         # Create pre-commit config if it doesn't exist
         config_path = self.project_root / ".pre-commit-config.yaml"
         if not config_path.exists():
@@ -206,20 +203,18 @@ class CodeQualityManager:
             with open(config_path, "w") as f:
                 f.write(config_content)
             print(f"Created {config_path}")
-        
+
         # Install pre-commit
         install_success = self.run_command(
-            "python -m pip install --user pre-commit",
-            "Install pre-commit"
+            "python -m pip install --user pre-commit", "Install pre-commit"
         )
-        
+
         if install_success:
             setup_success = self.run_command(
-                "python -m pre_commit install",
-                "Setup pre-commit hooks"
+                "python -m pre_commit install", "Setup pre-commit hooks"
             )
             return setup_success
-        
+
         return False
 
     def _print_results(self, title: str, results: dict):
@@ -231,6 +226,7 @@ class CodeQualityManager:
             status = "PASS" if success else "FAIL"
             print(f"{tool}: {status}")
 
+
 def main():
     """Main CLI interface."""
     parser = argparse.ArgumentParser(
@@ -239,27 +235,27 @@ def main():
     parser.add_argument(
         "action",
         choices=["check", "fix", "auto", "pre-commit"],
-        help="Action to perform: check=run checks only, fix=run auto-fixes only, auto=fix then check, pre-commit=setup hooks"
+        help="Action to perform: check=run checks only, fix=run auto-fixes only, auto=fix then check, pre-commit=setup hooks",
     )
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Use strict quality checking (more type errors)"
+        help="Use strict quality checking (more type errors)",
     )
     parser.add_argument(
         "--project-root",
         default=".",
-        help="Project root directory (default: current directory)"
+        help="Project root directory (default: current directory)",
     )
-    
+
     args = parser.parse_args()
-    
+
     manager = CodeQualityManager(args.project_root)
-    
+
     # Check if tools are available
     if not manager.check_tools_installed():
         return 1
-    
+
     if args.action == "check":
         success = manager.check(strict=args.strict)
     elif args.action == "fix":
@@ -271,8 +267,9 @@ def main():
     else:
         parser.print_help()
         return 1
-    
+
     return 0 if success else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

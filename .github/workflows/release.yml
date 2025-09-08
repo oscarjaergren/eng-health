@@ -41,7 +41,7 @@ jobs:
       run: |
         # Get the latest tag
         LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-        
+
         if [ -z "$LATEST_TAG" ]; then
           echo "No previous tags found, generating full changelog"
           CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
@@ -49,7 +49,7 @@ jobs:
           echo "Generating changelog since $LATEST_TAG"
           CHANGELOG=$(git log ${LATEST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
         fi
-        
+
         echo "changelog<<EOF" >> $GITHUB_OUTPUT
         echo "$CHANGELOG" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
@@ -63,23 +63,23 @@ jobs:
         release_name: Release ${{ github.ref_name || github.event.inputs.version }}
         body: |
           ## What's Changed
-          
+
           ${{ steps.changelog.outputs.changelog }}
-          
+
           ## Installation
-          
+
           ```bash
           git clone https://github.com/${{ github.repository }}.git
           cd azure-devops-pr-analytics
           pip install -r requirements.txt
           ```
-          
+
           ## Quick Start
-          
+
           1. Copy `.env.example` to `.env` and configure your credentials
           2. Run: `python main.py` to extract data
           3. Run: `streamlit run dashboard_main.py` to view dashboard
-          
+
           Or use the launcher scripts:
           - Windows: `scripts\start_dashboard.bat`
           - Linux/macOS: `scripts/start_dashboard.sh`
@@ -109,13 +109,13 @@ jobs:
       run: |
         cat > setup.py << 'EOF'
         from setuptools import setup, find_packages
-        
+
         with open("README.md", "r", encoding="utf-8") as fh:
             long_description = fh.read()
-        
+
         with open("requirements.txt", "r", encoding="utf-8") as fh:
             requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
-        
+
         setup(
             name="azure-devops-pr-analytics",
             version="${{ github.ref_name || github.event.inputs.version }}".lstrip('v'),
@@ -177,33 +177,33 @@ jobs:
       run: |
         cat > Dockerfile << 'EOF'
         FROM python:3.10-slim
-        
+
         WORKDIR /app
-        
+
         # Install system dependencies
         RUN apt-get update && apt-get install -y \
             git \
             && rm -rf /var/lib/apt/lists/*
-        
+
         # Copy requirements and install Python dependencies
         COPY requirements.txt .
         RUN pip install --no-cache-dir -r requirements.txt
-        
+
         # Copy application code
         COPY . .
-        
+
         # Create non-root user
         RUN useradd --create-home --shell /bin/bash app \
             && chown -R app:app /app
         USER app
-        
+
         # Expose Streamlit port
         EXPOSE 8501
-        
+
         # Health check
         HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
             CMD curl -f http://localhost:8501/_stcore/health || exit 1
-        
+
         # Default command
         CMD ["streamlit", "run", "dashboard_main.py", "--server.address=0.0.0.0", "--server.port=8501"]
         EOF

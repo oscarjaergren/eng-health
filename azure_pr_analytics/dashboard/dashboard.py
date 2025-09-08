@@ -529,8 +529,7 @@ def create_review_analytics(df: pd.DataFrame):
     # Sort and filter data based on perspective
     if not data_dict:
         st.warning(
-            f"No {
-                analysis_type.lower()} data available. This might indicate an issue with data collection."
+            f"No {analysis_type.lower()} data available. This might indicate an issue with data collection."
         )
         return
 
@@ -623,8 +622,7 @@ def create_review_analytics(df: pd.DataFrame):
         with col3:
             st.metric(
                 "Avg Comments per Person",
-                f"{
-                    avg_comments_per_person:.1f}",
+                f"{avg_comments_per_person:.1f}",
             )
 
         # Most vs Least Active Commenters
@@ -698,7 +696,6 @@ def main():
         df = load_data(data_file)
 
         if not df.empty:
-
             # Platform filter (if multiple platforms exist)
             if "Platform" in df.columns and len(df["Platform"].unique()) > 1:
                 platforms = ["All"] + sorted(df["Platform"].unique().tolist())

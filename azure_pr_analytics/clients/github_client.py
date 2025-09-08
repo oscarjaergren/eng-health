@@ -84,8 +84,7 @@ class GitHubClient:
                     reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
                     sleep_time = max(reset_time - time.time(), 60)
                     self.logger.warning(
-                        f"GitHub rate limit exceeded. Sleeping for {
-                            sleep_time:.0f} seconds"
+                        f"GitHub rate limit exceeded. Sleeping for {sleep_time:.0f} seconds"
                     )
                     time.sleep(sleep_time)
                     return True
@@ -149,10 +148,8 @@ class GitHubClient:
                     return response
                 else:
                     self.logger.warning(
-                        f"Request failed with status {
-                            response.status_code}, attempt {
-                            attempt + 1}/{
-                            max_retries + 1}"
+                        f"Request failed with status {response.status_code}, "
+                        f"attempt {attempt + 1}/{max_retries + 1}"
                     )
                     if attempt < max_retries:
                         time.sleep(2**attempt)  # Exponential backoff
@@ -198,17 +195,14 @@ class GitHubClient:
         """Fetch all repositories for the organization or user."""
         try:
             self.logger.info(
-                f"Fetching repositories from GitHub for {
-                    self.config.github_owner}..."
+                f"Fetching repositories from GitHub for {self.config.github_owner}..."
             )
 
             # Determine if this is an organization or user
             if self.config.github_type == "org":
-                url = f"https://api.github.com/orgs/{
-                    self.config.github_owner}/repos"
+                url = f"https://api.github.com/orgs/{self.config.github_owner}/repos"
             else:
-                url = f"https://api.github.com/users/{
-                    self.config.github_owner}/repos"
+                url = f"https://api.github.com/users/{self.config.github_owner}/repos"
 
             all_repos = []
             next_url = url
@@ -222,8 +216,7 @@ class GitHubClient:
                 if not response or response.status_code != 200:
                     if response:
                         self.logger.error(
-                            f"Failed to fetch repositories: {
-                                response.status_code}"
+                            f"Failed to fetch repositories: {response.status_code}"
                         )
                         self.logger.error(f"Response: {response.text}")
                     else:
@@ -244,9 +237,7 @@ class GitHubClient:
                 next_url = links.get("next")
 
                 self.logger.info(
-                    f"Fetched {
-                        len(repos)} repositories, total: {
-                        len(all_repos)}"
+                    f"Fetched {len(repos)} repositories, total: {len(all_repos)}"
                 )
 
                 # Rate limiting info
@@ -254,21 +245,15 @@ class GitHubClient:
                 self.logger.debug(f"Rate limit remaining: {remaining}")
 
             self.logger.info(
-                f"Found {
-                    len(all_repos)} repositories for {
-                    self.config.github_owner}"
+                f"Found {len(all_repos)} repositories for {self.config.github_owner}"
             )
             for repo in all_repos[:10]:  # Log first 10 repos
-                self.logger.info(
-                    f"  - {repo.get('name', 'Unknown')} (ID: {repo.get('id', 'Unknown')})"
-                )
+                repo_name = repo.get("name", "Unknown")
+                repo_id = repo.get("id", "Unknown")
+                self.logger.info(f"  - {repo_name} (ID: {repo_id})")  # noqa: E221
 
             if len(all_repos) > 10:
-                self.logger.info(
-                    f"  ... and {
-                        len(all_repos) -
-                        10} more repositories"
-                )
+                self.logger.info(f"  ... and {len(all_repos) - 10} more repositories")
 
             return all_repos
 
@@ -308,8 +293,7 @@ class GitHubClient:
                         self.logger.debug(f"No PRs found for {repo_name} (404)")
                     elif response:
                         self.logger.warning(
-                            f"API request failed for {repo_name}: {
-                                response.status_code}"
+                            f"API request failed for {repo_name}: {response.status_code}"
                         )
                     else:
                         self.logger.error(
@@ -337,9 +321,7 @@ class GitHubClient:
                 next_url = links.get("next")
 
                 self.logger.debug(
-                    f"Fetched {
-                        len(page_results)} PRs for {repo_name}, total: {
-                        len(all_pr_data)}"
+                    f"Fetched {len(page_results)} PRs for {repo_name}, total: {len(all_pr_data)}"
                 )
 
                 # Rate limiting info
@@ -367,10 +349,7 @@ class GitHubClient:
         total_repos = len(repositories)
 
         self.logger.info(
-            f"Fetching PRs from {total_repos} repositories using {
-                min(
-                    self.max_workers,
-                    total_repos)} parallel workers..."
+            f"Fetching PRs from {total_repos} repositories using {min(self.max_workers, total_repos)} parallel workers..."
         )
         start_time = time.time()
 
@@ -409,10 +388,7 @@ class GitHubClient:
 
         elapsed_total = time.time() - start_time
         self.logger.info(
-            f"Total pull requests fetched across all repositories: {
-                len(all_pr_data)} "
-            f"(completed in {
-                elapsed_total:.1f}s)"
+            f"Total pull requests fetched across all repositories: {len(all_pr_data)} (completed in {elapsed_total:.1f}s)"
         )
         return all_pr_data
 

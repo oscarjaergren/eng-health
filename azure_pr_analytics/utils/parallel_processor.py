@@ -4,11 +4,7 @@ import logging
 import multiprocessing as mp
 import threading
 import time
-from concurrent.futures import (
-    ProcessPoolExecutor,
-    ThreadPoolExecutor,
-    as_completed,
-)
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from queue import Empty, Queue
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union

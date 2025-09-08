@@ -7,6 +7,5 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Import and run the dashboard
-from azure_pr_analytics.dashboard.dashboard import *
 
 # This file serves as the entry point for running: streamlit run dashboard_main.py

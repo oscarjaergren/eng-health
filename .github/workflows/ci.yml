@@ -178,12 +178,12 @@ jobs:
         import os
         import pkgutil
         import azure_pr_analytics
-        
+
         def generate_module_docs(package, path=''):
             for importer, modname, ispkg in pkgutil.iter_modules(package.__path__, package.__name__ + '.'):
                 if not ispkg:
                     print(f'Found module: {modname}')
-        
+
         generate_module_docs(azure_pr_analytics)
         "
 

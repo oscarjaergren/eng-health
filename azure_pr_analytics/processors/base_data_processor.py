@@ -145,11 +145,11 @@ class BaseDataProcessor:
 
         return "Unknown"
 
-    def filter_personal_approvals(
+    def _filter_personal_approvals_internal(
         self, reviewer_info: Dict[str, Any], created_by: str
     ) -> Dict[str, Any]:
         """
-        Filter out personal approvals (self-approvals) from review analytics.
+        Internal method to filter out personal approvals (self-approvals) from review analytics.
 
         Args:
             reviewer_info: Dictionary containing reviewer information

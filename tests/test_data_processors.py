@@ -275,17 +275,15 @@ class TestGitHubDataProcessor(unittest.TestCase):
 class TestUnifiedDataProcessor(unittest.TestCase):
     """Test cases for UnifiedDataProcessor."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures."""
         self.mock_logger = Mock()
-        self.mock_azure_processor = Mock()
-        self.mock_github_processor = Mock()
-
+        # Initialize mocks for the processor instances
         with patch(
             "azure_pr_analytics.processors.azure_devops_data_processor.AzureDevOpsDataProcessor"
-        ) as mock_azure_processor, patch(
+        ), patch(
             "azure_pr_analytics.processors.github_data_processor.GitHubDataProcessor"
-        ) as mock_github_processor:
+        ):
             self.processor = UnifiedDataProcessor(self.mock_logger)
 
     @patch(
@@ -420,10 +418,12 @@ class TestDataProcessorIntegration(unittest.TestCase):
         self.assertEqual(processed_pr["Repository"], "main-application")
         self.assertEqual(processed_pr["State"], "Completed")
         self.assertIn(
-            "Jane Reviewer - jane.reviewer@company.com", processed_pr["Assigned To"]
+            "Jane Reviewer - jane.reviewer@company.com",
+            processed_pr["Assigned To"],
         )
         self.assertIn(
-            "Bob Approver - bob.approver@company.com", processed_pr["Assigned To"]
+            "Bob Approver - bob.approver@company.com",
+            processed_pr["Assigned To"],
         )
 
     def test_end_to_end_github_processing(self):

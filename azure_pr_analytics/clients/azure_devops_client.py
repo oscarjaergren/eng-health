@@ -193,9 +193,9 @@ class AzureDevOpsClient:
                 f"Found {len(repositories)} repositories in project '{self.config.project}'"
             )
             for repo in repositories:
-                self.logger.info(
-                    f"  - {repo.get('name', 'Unknown')} (ID: {repo.get('id', 'Unknown')})"
-                )
+                repo_name = repo.get("name", "Unknown")
+                repo_id = repo.get("id", "Unknown")
+                self.logger.info(f"  - {repo_name} (ID: {repo_id})")  # noqa: E221
 
             return repositories
 
@@ -418,7 +418,10 @@ class AzureDevOpsClient:
             # project
             iterations_url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/iterations?api-version=7.1"
 
-            response = self.session.get(iterations_url, timeout=10)  # Reduced timeout
+            params = {"api-version": self.api_version, "searchCriteria.status": "all"}
+            response = self.session.get(
+                iterations_url, params=params, timeout=10
+            )  # Reduced timeout
             if response.status_code == 200:
                 iterations_data = response.json()
                 return iterations_data.get("value", [])
