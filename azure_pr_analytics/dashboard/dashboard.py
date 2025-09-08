@@ -102,7 +102,7 @@ def create_repository_overview(df: pd.DataFrame):
         df.groupby("Repository")
         .agg(
             {
-                "PR ID": "count",
+                "ID": "count",
                 "Approval Count": "mean",
                 "Total Comments": "mean",
                 "Total Reviewers": "mean",

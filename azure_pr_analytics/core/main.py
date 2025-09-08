@@ -8,13 +8,14 @@ import logging
 import os
 import sys
 
+
 import pandas as pd
-from azure_devops_client import AzureDevOpsClient
-from config import Config
+from azure_pr_analytics.clients.azure_devops_client import AzureDevOpsClient
+from azure_pr_analytics.core.config import Config
 from dotenv import load_dotenv
-from github_client import GitHubClient
-from input_validator import InputValidator
-from unified_data_processor import UnifiedDataProcessor
+from azure_pr_analytics.clients.github_client import GitHubClient
+from azure_pr_analytics.core.input_validator import InputValidator
+from azure_pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
 
 
 def setup_logging() -> logging.Logger:
@@ -76,6 +77,7 @@ def main() -> None:
             logger.error("Configuration validation failed - no valid credentials found")
             return
 
+
         # Process Azure DevOps if configured
         if "azure_devops" in config.platforms:
             logger.info("Fetching data from Azure DevOps...")
@@ -83,10 +85,7 @@ def main() -> None:
             azure_pr_data = azure_client.fetch_all_pull_requests()
 
             if azure_pr_data:
-                logger.info(
-                    f"Processing {
-                        len(azure_pr_data)} Azure DevOps pull requests..."
-                )
+                logger.info(f"Processing {len(azure_pr_data)} Azure DevOps pull requests...")
                 azure_filtered_data = processor.process_pull_requests(
                     azure_pr_data, "azure_devops"
                 )
@@ -94,23 +93,28 @@ def main() -> None:
             else:
                 logger.warning("No Azure DevOps pull request data available.")
 
-        # Process GitHub if configured
-        if "github" in config.platforms:
+        # Process GitHub if configured and credentials are valid
+        github_owner = validated_config.get("github_owner", "")
+        github_token = validated_config.get("github_token", "")
+        if (
+            "github" in config.platforms
+            and github_owner
+            and github_token
+        ):
             logger.info("Fetching data from GitHub...")
             github_client = GitHubClient(config, logger)
             github_pr_data = github_client.fetch_all_pull_requests()
 
             if github_pr_data:
-                logger.info(
-                    f"Processing {
-                        len(github_pr_data)} GitHub pull requests..."
-                )
+                logger.info(f"Processing {len(github_pr_data)} GitHub pull requests...")
                 github_filtered_data = processor.process_pull_requests(
                     github_pr_data, "github"
                 )
                 all_filtered_data.extend(github_filtered_data)
             else:
                 logger.warning("No GitHub pull request data available.")
+        elif "github" in config.platforms:
+            logger.info("GitHub extraction skipped: missing or invalid github_owner or github_token.")
 
         if not all_filtered_data:
             logger.warning(
@@ -123,17 +127,31 @@ def main() -> None:
             logger.error(f"Invalid output file path: {config.output_filename}")
             return
 
+
         # Export to Excel
         logger.info(
-            f"Exporting {
-                len(all_filtered_data)} total pull requests to '{
-                config.output_filename}'..."
+            f"Exporting {len(all_filtered_data)} total pull requests to '{config.output_filename}'..."
         )
         df = pd.DataFrame(all_filtered_data)
 
         # Sort by platform and creation date for better organization
-        df["Created Date"] = pd.to_datetime(df["Created Date"])
-        df = df.sort_values(["Platform", "Created Date"], ascending=[True, False])
+        if "Created Date" in df.columns:
+            df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
+            # Remove timezone info if present
+            if df["Created Date"].dt.tz is not None:
+                df["Created Date"] = df["Created Date"].dt.tz_localize(None)
+        df = df.sort_values([col for col in ["Platform", "Created Date"] if col in df.columns], ascending=[True, False])
+
+        # Remove timezone info from all datetime columns before export
+        for col in df.columns:
+            if df[col].dtype.name.startswith('datetime64[ns,') or 'datetime' in str(df[col].dtype):
+                try:
+                    # Convert to datetime and remove timezone if present
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+                    if hasattr(df[col].dtype, 'tz') and df[col].dtype.tz is not None:
+                        df[col] = df[col].dt.tz_localize(None)
+                except Exception as e:
+                    logger.warning(f"Could not process datetime column {col}: {e}")
 
         df.to_excel(config.output_filename, index=False)
 
