@@ -66,7 +66,6 @@ def main() -> None:
         validated_config = validator.validate_config_data(
             {
                 "organization": getattr(config, "organization", ""),
-                "project": getattr(config, "project", ""),
                 "github_owner": getattr(config, "github_owner", ""),
                 "token": getattr(config, "token", ""),
                 "github_token": getattr(config, "github_token", ""),

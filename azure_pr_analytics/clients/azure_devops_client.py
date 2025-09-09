@@ -169,9 +169,10 @@ class AzureDevOpsClient:
         return None
 
     def fetch_all_repositories(self) -> List[Dict[str, Any]]:
-        """Fetch all repositories in the project."""
+        """Fetch all repositories from all projects in the Azure DevOps organization."""
         try:
-            self.logger.info("Fetching repositories from Azure DevOps...")
+            self.logger.info("Fetching repositories from all Azure DevOps projects in organization...")
+            
             response = self._make_request_with_retry(self.config.repositories_url)
 
             if not response or response.status_code != 200:
@@ -190,12 +191,14 @@ class AzureDevOpsClient:
             repositories = repos_data.get("value", [])
 
             self.logger.info(
-                f"Found {len(repositories)} repositories in project '{self.config.project}'"
+                f"Found {len(repositories)} repositories across all projects in organization"
             )
+            
             for repo in repositories:
                 repo_name = repo.get("name", "Unknown")
                 repo_id = repo.get("id", "Unknown")
-                self.logger.info(f"  - {repo_name} (ID: {repo_id})")  # noqa: E221
+                project_name = repo.get("project", {}).get("name", "Unknown")
+                self.logger.info(f"  - {repo_name} in {project_name} (ID: {repo_id})")
 
             return repositories
 
@@ -399,7 +402,7 @@ class AzureDevOpsClient:
     def _fetch_pr_threads(self, repo_id: str, pr_id: int) -> List[Dict[str, Any]]:
         """Fetch all threads (comments and discussions) for a specific PR."""
         try:
-            # Construct URL for PR threads - base_url already includes project
+            # Construct URL for PR threads using organization-level API
             threads_url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/threads?api-version=7.1"
 
             response = self.session.get(threads_url, timeout=10)  # Reduced timeout
@@ -414,11 +417,10 @@ class AzureDevOpsClient:
     def _fetch_pr_iterations(self, repo_id: str, pr_id: int) -> List[Dict[str, Any]]:
         """Fetch all iterations for a specific PR."""
         try:
-            # Construct URL for PR iterations - base_url already includes
-            # project
-            iterations_url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/iterations?api-version=7.1"
+            # Construct URL for PR iterations using organization-level API
+            iterations_url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/iterations"
 
-            params = {"api-version": self.api_version, "searchCriteria.status": "all"}
+            params = {"api-version": "7.1", "searchCriteria.status": "all"}
             response = self.session.get(
                 iterations_url, params=params, timeout=10
             )  # Reduced timeout

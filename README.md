@@ -5,7 +5,7 @@ A comprehensive Python application to extract Pull Request (PR) data from Azure 
 ## 🚀 Features
 
 ### Multi-Platform Support
-- **Azure DevOps**: Extract from all repositories in an Azure DevOps project
+- **Azure DevOps**: Extract from ALL projects in an Azure DevOps organization
 - **GitHub**: Extract from all repositories in a GitHub organization or user account
 - **Unified Analytics**: Combine data from both platforms in a single dashboard
 - **Flexible Configuration**: Use one or both platforms as needed
@@ -52,7 +52,6 @@ A comprehensive Python application to extract Pull Request (PR) data from Azure 
    **For Azure DevOps:**
    ```
    AZURE_DEVOPS_ORGANIZATION=your-organization-name
-   AZURE_DEVOPS_PROJECT=your-project-name
    AZURE_DEVOPS_PAT=your-personal-access-token
    ```
 
@@ -103,7 +102,7 @@ python main.py
 
 The script will:
 - **Auto-detect configured platforms** (Azure DevOps and/or GitHub)
-- Discover all repositories in the specified organization(s)/project(s)
+- Discover all repositories across ALL projects in the Azure DevOps organization
 - Authenticate using your Personal Access Token(s)
 - Fetch all completed pull requests from every repository
 - **Automatically filter** IAC PRs, personal approvals, and system accounts

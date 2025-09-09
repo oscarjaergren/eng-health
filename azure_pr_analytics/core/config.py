@@ -15,7 +15,6 @@ class Config:
         # Azure DevOps configuration (optional if GitHub is enabled)
         if "azure_devops" in self.platforms:
             self.organization = self._get_required_env("AZURE_DEVOPS_ORGANIZATION")
-            self.project = self._get_required_env("AZURE_DEVOPS_PROJECT")
             self.token = self._get_required_env("AZURE_DEVOPS_PAT")
 
         # GitHub configuration (optional if Azure DevOps is enabled)
@@ -43,10 +42,9 @@ class Config:
         """Determine which platforms are enabled based on environment variables."""
         platforms = []
 
-        # Check if Azure DevOps is configured
+        # Check if Azure DevOps is configured (project is now optional)
         if (
             os.getenv("AZURE_DEVOPS_ORGANIZATION")
-            and os.getenv("AZURE_DEVOPS_PROJECT")
             and os.getenv("AZURE_DEVOPS_PAT")
         ):
             platforms.append("azure_devops")
@@ -58,7 +56,7 @@ class Config:
         if not platforms:
             raise ValueError(
                 "No platforms configured. Please set up either Azure DevOps "
-                "(AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PROJECT, AZURE_DEVOPS_PAT) "
+                "(AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PAT) "
                 "or GitHub (GITHUB_TOKEN, GITHUB_OWNER) environment variables."
             )
 
@@ -76,12 +74,12 @@ class Config:
 
     @property
     def base_url(self) -> str:
-        """Get the base API URL for Azure DevOps."""
-        return f"https://dev.azure.com/{self.organization}/{self.project}/_apis"
+        """Get the base API URL for Azure DevOps (organization level)."""
+        return f"https://dev.azure.com/{self.organization}/_apis"
 
     @property
     def repositories_url(self) -> str:
-        """Get the repositories API URL."""
+        """Get the repositories API URL for all projects in the organization."""
         return f"{self.base_url}/git/repositories?api-version={self.api_version}"
 
     def get_pull_requests_url(self, repository_id: str) -> str:
