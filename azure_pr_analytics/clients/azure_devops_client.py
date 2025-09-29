@@ -1,39 +1,40 @@
-"""Azure DevOps API client for fetching pull request data."""
+"""
+Refactored Azure DevOps API client with base client integration.
+
+This module provides a client for interacting with the Azure DevOps API,
+built on top of the BaseAPIClient class for common functionality.
+"""
 
 import base64
 import logging
-import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import requests
-from requests.adapters import HTTPAdapter
-from requests.exceptions import ConnectionError, RequestException, Timeout
-from urllib3.util.retry import Retry
+from requests.exceptions import RequestException
 
-from ..core.config import Config
-from ..utils.cache_manager import CacheManager
+from .base_client import BaseAPIClient
 
 
-class AzureDevOpsClient:
+class AzureDevOpsClient(BaseAPIClient):
     """
     Client for interacting with Azure DevOps API.
 
-    This class provides methods to fetch repositories, pull requests, and related data
-    from Azure DevOps using the REST API. It includes caching, retry logic, and
-    parallel processing for optimal performance.
-
-    Attributes:
-        config (Config): Configuration object containing API credentials and settings
-        logger (logging.Logger): Logger instance for structured logging
-        session (requests.Session): HTTP session with retry configuration
-        max_workers (int): Maximum number of parallel workers for API calls
-        cache_manager (Optional[CacheManager]): Cache manager for API responses
+    This client provides methods to fetch repositories, pull requests, and related data
+    from Azure DevOps using the REST API. It inherits common functionality from
+    BaseAPIClient and implements Azure DevOps specific behavior.
     """
 
+    API_VERSION = "7.1"
+    BASE_URL = "https://dev.azure.com"
+
     def __init__(
-        self, config: Config, logger: logging.Logger, enable_cache: bool = True
+        self,
+        config: Any,
+        logger: logging.Logger,
+        enable_cache: bool = True,
+        max_retries: int = 3,
+        timeout: int = 30,
     ) -> None:
         """
         Initialize the Azure DevOps client.
@@ -41,94 +42,163 @@ class AzureDevOpsClient:
         Args:
             config: Configuration object with Azure DevOps settings
             logger: Logger instance for structured logging
-            enable_cache: Whether to enable API response caching
+            enable_cache: Whether to enable response caching
+            max_retries: Maximum number of retry attempts for failed requests
+            timeout: Request timeout in seconds
 
         Raises:
             ValueError: If required configuration is missing
         """
-        self.config = config
-        self.logger = logger
-        self.session = self._create_session()
-
-        # Performance settings
-        self.max_workers = min(config.max_parallel_workers, (os.cpu_count() or 1) + 4)
-
-        # Cache management
-        self.cache_manager = (
-            CacheManager(cache_dir=".cache/azure_devops") if enable_cache else None
+        super().__init__(
+            config=config,
+            logger=logger,
+            cache_dir=".cache/azure_devops",
+            enable_cache=enable_cache,
+            max_retries=max_retries,
+            timeout=timeout,
         )
 
-    def _create_session(self) -> requests.Session:
-        """Create a requests session with retry strategy and authentication."""
-        session = requests.Session()
+        # Setup authentication
+        self._setup_auth()
 
-        # Setup retry strategy with more aggressive retries for performance
-        retry_strategy = Retry(
-            total=2,  # Reduced retries for faster failure
-            backoff_factor=0.5,  # Faster backoff
-            status_forcelist=[429, 500, 502, 503, 504],
-        )
-        adapter = HTTPAdapter(
-            max_retries=retry_strategy, pool_connections=100, pool_maxsize=100
-        )
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
+        # Rate limiting
+        self.rate_limit_remaining = 10000  # Azure DevOps has a high default limit
+        self.rate_limit_reset = time.time() + 3600  # Default to 1 hour
+        self.rate_limit_lock = None  # Not needed for Azure DevOps basic auth
 
-        # Setup authentication using PAT
+    def _get_default_headers(self) -> Dict[str, str]:
+        """Get the default headers for Azure DevOps API requests."""
+        return {
+            "Content-Type": "application/json",
+            "Accept": f"application/json; api-version={self.API_VERSION}",
+        }
+
+    def _setup_auth(self) -> None:
+        """Set up authentication for Azure DevOps API."""
+        if not hasattr(self.config, "token") or not self.config.token:
+            raise ValueError("Azure DevOps personal access token is required")
+
+        # Encode PAT for basic auth
         pat_encoded = base64.b64encode(f":{self.config.token}".encode()).decode()
-        session.headers.update(
-            {
-                "Content-Type": "application/json",
-                "Authorization": f"Basic {pat_encoded}",
-            }
-        )
+        self.session.headers["Authorization"] = f"Basic {pat_encoded}"
 
-        return session
-
-    def _make_request_with_retry(
-        self, url: str, params: Dict = None, max_retries: int = 3, cache_ttl: int = 3600
-    ) -> Optional[requests.Response]:
+    def _build_url(self, organization: str, path: str) -> str:
         """
-        Make HTTP request with enhanced error handling, retry logic, and caching.
+        Build a full Azure DevOps API URL.
 
         Args:
+            organization: Azure DevOps organization name
+            path: API path (without leading slash)
+
+        Returns:
+            Full API URL
+        """
+        # The path already includes _apis/ so we don't need to add it again
+        return f"{self.BASE_URL}/{organization}/{path}"
+
+    def _check_rate_limit(self) -> None:
+        """Check rate limits and sleep if necessary."""
+        current_time = time.time()
+
+        # If we've hit the rate limit, wait until the reset time
+        if self.rate_limit_remaining <= 0 and current_time < self.rate_limit_reset:
+            sleep_time = self.rate_limit_reset - current_time + 1  # Add 1s buffer
+            self.logger.warning(
+                f"Rate limit reached. Sleeping for {sleep_time:.1f} seconds"
+            )
+            time.sleep(sleep_time)
+
+    def _update_rate_limit_headers(self, response: requests.Response) -> None:
+        """
+        Update rate limit information from response headers.
+
+        Args:
+            response: Response object from API request
+        """
+        if "X-RateLimit-Remaining" in response.headers:
+            self.rate_limit_remaining = int(
+                response.headers.get("X-RateLimit-Remaining", 10000)
+            )
+
+        if "X-RateLimit-Reset" in response.headers:
+            self.rate_limit_reset = int(
+                response.headers.get("X-RateLimit-Reset", time.time() + 3600)
+            )
+
+    def _make_request(
+        self, method: str, url: str, **kwargs
+    ) -> Optional[requests.Response]:
+        """Make an HTTP request with retry logic.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
             url: URL to request
-            params: Query parameters
-            max_retries: Maximum number of retries
-            cache_ttl: Cache time-to-live in seconds
+            **kwargs: Additional arguments to pass to requests.request()
 
         Returns:
             Response object or None if all retries failed
         """
-        # Check cache first
-        if self.cache_manager:
-            cached_response = self.cache_manager.get(url, params)
-            if cached_response is not None:
-                # Create a mock response object from cached data
-                mock_response = requests.Response()
-                mock_response.status_code = 200
-                mock_response._content = (
-                    cached_response.encode()
-                    if isinstance(cached_response, str)
-                    else str(cached_response).encode()
-                )
-                return mock_response
-        for attempt in range(max_retries + 1):
-            try:
-                response = self.session.get(url, params=params, timeout=30)
+        # Add default headers if not provided
+        headers = kwargs.pop("headers", {})
+        headers.update(self._get_default_headers())
 
-                if response.status_code == 200:
-                    # Cache successful response
-                    if self.cache_manager:
-                        self.cache_manager.set(
-                            url, response.text, params, ttl=cache_ttl
+        # Add API version if not provided
+        params = kwargs.pop("params", {})
+        if "api-version" not in params:
+            params["api-version"] = self.API_VERSION
+
+        # Add timeout if not provided
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = self.timeout
+
+        # Make the request with retries
+        for attempt in range(self.max_retries + 1):
+            try:
+                self.logger.debug(
+                    "Making %s request to %s with params: %s", method, url, params
+                )
+                response = self.session.request(
+                    method=method, url=url, headers=headers, params=params, **kwargs
+                )
+
+                # Update rate limit information
+                self._update_rate_limit_headers(response)
+
+                # Check for rate limiting
+                if response.status_code == 429:
+                    self._handle_rate_limit(response)
+                    if attempt < self.max_retries:
+                        continue
+
+                # Check for authentication errors
+                if response.status_code in (401, 403):
+                    self.logger.error("Authentication failed: %s", response.text)
+                    response.raise_for_status()
+
+                # For successful responses, ensure we can parse the JSON
+                if 200 <= response.status_code < 300:
+                    try:
+                        response.json()  # Try to parse JSON to catch any JSON decode errors
+                    except json.JSONDecodeError as e:
+                        self.logger.error("Failed to parse JSON response: %s", str(e))
+                        if attempt < self.max_retries:
+                            continue
+
+                return response
+
+            except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+                self.logger.error(
+                    "Request error (attempt %d/%d): %s",
+                    attempt + 1,
+                    self.max_retries + 1,
+                    str(e),
+                )
+                if attempt == self.max_retries:
+                    if isinstance(e, requests.exceptions.ConnectionError):
+                        self.logger.error(
+                            "Connection error after %d attempts", attempt + 1
                         )
-                    return response
-                elif response.status_code == 401:
-                    self.logger.error("Authentication failed - check your PAT token")
-                    return None
-                elif response.status_code == 403:
-                    self.logger.error("Access forbidden - insufficient permissions")
+                        raise
                     return None
                 elif response.status_code == 404:
                     # Not found is not a retry-able error
@@ -171,8 +241,10 @@ class AzureDevOpsClient:
     def fetch_all_repositories(self) -> List[Dict[str, Any]]:
         """Fetch all repositories from all projects in the Azure DevOps organization."""
         try:
-            self.logger.info("Fetching repositories from all Azure DevOps projects in organization...")
-            
+            self.logger.info(
+                "Fetching repositories from all Azure DevOps projects in organization..."
+            )
+
             response = self._make_request_with_retry(self.config.repositories_url)
 
             if not response or response.status_code != 200:
@@ -193,7 +265,7 @@ class AzureDevOpsClient:
             self.logger.info(
                 f"Found {len(repositories)} repositories across all projects in organization"
             )
-            
+
             for repo in repositories:
                 repo_name = repo.get("name", "Unknown")
                 repo_id = repo.get("id", "Unknown")
@@ -209,139 +281,100 @@ class AzureDevOpsClient:
     def fetch_pull_requests_for_repository(
         self, repository: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Fetch all pull requests for a specific repository with detailed information."""
-        repo_name = repository.get("name", "Unknown")
-        repo_id = repository.get("id", "")
+        """
+        Fetch pull requests for a repository with pagination support.
 
-        all_pr_data = []
-        continuation_token = None
-        page_count = 0
+        Args:
+            organization: Azure DevOps organization name
+            project: Project name
+            repository: Repository name or ID
+            status: PR status filter ('all', 'active', 'completed', 'abandoned')
+            top: Number of PRs to fetch per page (page size)
+            skip: Number of PRs to skip (for pagination)
+
+        Returns:
+            List of pull request objects from all pages
+        """
+        all_pull_requests = []
+        current_skip = skip
 
         while True:
-            page_count += 1
-
-            # Build URL with continuation token if available
-            url = self.config.get_pull_requests_url(repo_id)
-            if continuation_token:
-                url += f"&continuationToken={continuation_token}"
-
-            try:
-                response = self._make_request_with_retry(url)
-
-                if not response or response.status_code != 200:
-                    if response and response.status_code == 404:
-                        # Repo has no PRs or access denied - log as debug, not
-                        # warning
-                        self.logger.debug(f"No PRs found for {repo_name} (404)")
-                    elif response:
-                        self.logger.warning(
-                            f"API request failed for {repo_name}: {response.status_code}"
-                        )
-                    else:
-                        self.logger.error(
-                            f"Failed to fetch PRs for {repo_name}: No response received"
-                        )
-                    break
-
-                # Parse JSON response
-                pr_data = response.json()
-                page_results = pr_data.get("value", [])
-
-                # Enhance each PR with repository information
-                for pr in page_results:
-                    pr["repository_name"] = repo_name
-                    pr["repository_id"] = repo_id
-
-                all_pr_data.extend(page_results)
-
-                if page_results:
-                    self.logger.info(
-                        f"  Page {page_count}: {len(page_results)} PRs from {repo_name}"
-                    )
-
-                # Check for continuation token
-                continuation_token = response.headers.get("x-ms-continuationtoken")
-                if not continuation_token:
-                    break
-
-            except Exception as e:
-                self.logger.error(f"Error fetching PRs for repository {repo_name}: {e}")
-                break
-
-        # Always fetch detailed information in parallel
-        if all_pr_data:
-            all_pr_data = self._fetch_pr_details_parallel(
-                all_pr_data, repo_id, repo_name
-            )
-
-        if all_pr_data:
-            self.logger.info(
-                f"Repository {repo_name}: {len(all_pr_data)} total PRs fetched"
-            )
-
-        return all_pr_data
-
-    def fetch_all_pull_requests(self) -> List[Dict[str, Any]]:
-        """Fetch all pull requests from all repositories in the project using parallel processing."""
-        # First, fetch all repositories
-        repositories = self.fetch_all_repositories()
-
-        if not repositories:
-            self.logger.warning("No repositories found in the project")
-            return []
-
-        # Fetch PRs from repositories in parallel
-        all_pr_data = []
-        completed_repos = 0
-        total_repos = len(repositories)
-
-        self.logger.info(
-            f"Fetching PRs from {total_repos} repositories using {min(self.max_workers, total_repos)} parallel workers..."
-        )
-        start_time = time.time()
-
-        # Use thread pool for parallel API calls
-        with ThreadPoolExecutor(
-            max_workers=min(self.max_workers, total_repos)
-        ) as executor:
-            # Submit all repository PR fetch tasks
-            future_to_repo = {
-                executor.submit(self.fetch_pull_requests_for_repository, repo): repo
-                for repo in repositories
+            # Make API request for the current page
+            path = f"{project}/_apis/git/repositories/{repository}/pullrequests"
+            params = {
+                "searchCriteria.status": status,
+                "$top": top,  # Page size
+                "$skip": current_skip,
+                "api-version": self.API_VERSION,
             }
 
-            # Collect results as they complete
-            for future in as_completed(future_to_repo):
-                repo = future_to_repo[future]
-                repo_name = repo.get("name", "Unknown")
-                completed_repos += 1
+            url = self._build_url(organization, path)
+            response = self._make_request("GET", url, params=params)
 
-                try:
-                    repo_prs = future.result()
-                    all_pr_data.extend(repo_prs)
+            # Handle response
+            if not response or response.status_code != 200:
+                break
 
-                    # Progress reporting
-                    elapsed = time.time() - start_time
-                    progress = (completed_repos / total_repos) * 100
-                    self.logger.info(
-                        f"Progress: {completed_repos}/{total_repos} repositories ({progress:.1f}%) - "
-                        f"Elapsed: {elapsed:.1f}s - Current: {repo_name}"
-                    )
+            data = response.json()
+            pull_requests = data.get("value", [])
 
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to fetch PRs for repository {repo_name}: {e}"
-                    )
+            # If no more PRs, we're done
+            if not pull_requests:
+                break
 
-        elapsed_total = time.time() - start_time
-        self.logger.info(
-            f"Total pull requests fetched across all repositories: {len(all_pr_data)} "
-            f"(completed in {elapsed_total:.1f}s)"
-        )
-        return all_pr_data
+            # Add PRs from this page to our results
+            all_pull_requests.extend(pull_requests)
 
-    def _fetch_pr_details_parallel(
-        self, pr_data: List[Dict[str, Any]], repo_id: str, repo_name: str
+            # If we got fewer PRs than the page size, we've reached the end
+            if len(pull_requests) < top:
+                break
+
+            # Update skip for the next page
+            current_skip += len(pull_requests)
+
+            # Continue to next page to get more results
+            continue
+
+        return all_pull_requests
+
+    def get_pull_request_details(
+        self,
+        organization: str,
+        project: str,
+        repository: str,
+        pull_request_id: Union[str, int],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get detailed information about a specific pull request.
+
+        Args:
+            organization: Azure DevOps organization name
+            project: Project name
+            repository: Repository name or ID
+            pull_request_id: ID of the pull request
+
+        Returns:
+            Pull request details or None if not found
+        """
+        path = f"{project}/_apis/git/repositories/{repository}/pullrequests/{pull_request_id}"
+        params = {
+            "api-version": self.API_VERSION,
+        }
+
+        url = self._build_url(organization, path)
+        response = self._make_request("GET", url, params=params)
+
+        if response and response.status_code == 200:
+            return response.json()
+
+        return None
+
+    def get_pull_request_commits(
+        self,
+        organization: str,
+        project: str,
+        repository: str,
+        pull_request_id: Union[str, int],
     ) -> List[Dict[str, Any]]:
         """Fetch detailed information (threads and iterations) for PRs in parallel."""
         if not pr_data:

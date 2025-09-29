@@ -1,7 +1,7 @@
 """Data processing utilities for GitHub pull request data."""
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .base_data_processor import BaseDataProcessor
 
@@ -14,12 +14,24 @@ class GitHubDataProcessor(BaseDataProcessor):
         super().__init__(logger, config)
 
     def process_pull_requests(
-        self, pr_data: List[Dict[str, Any]], platform: str = "github"
+        self, pr_data: Optional[List[Dict[str, Any]]], platform: str = "github"
     ) -> List[Dict[str, Any]]:
-        """Process raw GitHub pull request data into the desired format."""
+        """Process raw GitHub pull request data into the desired format.
+
+        Args:
+            pr_data: List of pull request dictionaries, or None
+            platform: The platform the PRs came from (default: "github")
+
+        Returns:
+            List of processed PR dictionaries
+        """
+        if pr_data is None:
+            return []
+
         processed_data = []
         excluded_count = {"iac": 0, "personal_approval": 0}
 
+        # Always exclude IAC PRs and personal approvals
         for pr in pr_data:
             try:
                 # Skip IAC-related PRs
@@ -157,8 +169,7 @@ class GitHubDataProcessor(BaseDataProcessor):
                 continue
 
         self.logger.info(
-            f"Successfully processed {
-                len(processed_data)} GitHub pull requests"
+            f"Successfully processed {len(processed_data)} GitHub pull requests"
         )
         self.logger.info(
             f"Excluded {excluded_count['iac']} IAC-related PRs and filtered "
@@ -189,33 +200,45 @@ class GitHubDataProcessor(BaseDataProcessor):
         self, review_info: Dict[str, Any], created_by: str
     ) -> Dict[str, Any]:
         """Filter out personal approvals where the creator approved their own PR.
+        Always removes self-approvals as they should never be counted.
 
         Args:
             review_info: Dictionary containing review information
-            created_by: Login of the PR creator
+            created_by: Email of the PR creator
 
         Returns:
-            Dict with filtered review information
+            Updated review information with personal approvals removed
         """
-        if not created_by or not review_info.get("Approved By"):
+        if not created_by:
             return review_info
 
-        # Remove creator from approved_by if they approved their own PR
-        filtered_approvals = [
-            approver
-            for approver in review_info["Approved By"]
-            if approver != created_by
-        ]
+        approved_by = review_info.get("Approved By", [])
+        filtered_approved_by = []
+        personal_approvals_filtered = 0
+
+        for approver in approved_by:
+            # Extract just the email part if it's in format 'Name (email@example.com)'
+            if "(" in approver and ")" in approver:
+                # Handle 'Name (email@example.com)' format
+                email_start = approver.rfind("(") + 1
+                email_end = approver.rfind(")")
+                approver_email = approver[email_start:email_end].strip()
+            else:
+                # Handle plain email format
+                approver_email = approver.strip()
+
+            if approver_email.lower() != created_by.lower():
+                filtered_approved_by.append(approver)
+            else:
+                personal_approvals_filtered += 1
 
         # Update the review info with filtered approvals
-        review_info["Approved By"] = filtered_approvals
-        review_info["Approval Count"] = len(filtered_approvals)
+        updated_review_info = review_info.copy()
+        updated_review_info["Approved By"] = filtered_approved_by
+        updated_review_info["Approval Count"] = len(filtered_approved_by)
+        updated_review_info["personal_approvals_filtered"] = personal_approvals_filtered
 
-        # If creator was in waiting reviewers but approved their own PR, add them back
-        if created_by not in review_info["Waiting Reviewers"]:
-            review_info["Waiting Reviewers"].append(created_by)
-
-        return review_info
+        return updated_review_info
 
     def _extract_github_reviewers(self, pr: Dict[str, Any]) -> Dict[str, Any]:
         """Extract reviewer information from GitHub PR reviews."""
@@ -327,10 +350,31 @@ class GitHubDataProcessor(BaseDataProcessor):
             "Total Threads": 0,
         }
 
-    def _is_iac_related(self, pr: Dict[str, Any]) -> bool:
-        """Check if a GitHub PR is related to Infrastructure as Code."""
-        title = pr.get("title", "").lower()
-        body = pr.get("body", "").lower()
+    def _is_iac_related(self, pr_or_title: Dict[str, Any], body: str = "") -> bool:
+        """Check if a GitHub PR is related to Infrastructure as Code.
+
+        Args:
+            pr_or_title: Either the pull request data dictionary or the PR title
+            body: The PR body (only used if pr_or_title is a string)
+
+        Returns:
+            bool: True if the PR is IAC-related, False otherwise
+        """
+        # Get config value, defaulting to True if not set (backward compatibility)
+        exclude_iac = getattr(self.config, "exclude_iac", True)
+
+        # If IAC filtering is disabled, always return False
+        if not exclude_iac:
+            return False
+
+        # Handle both PR dictionary and direct title/body parameters
+        if isinstance(pr_or_title, dict):
+            pr = pr_or_title
+            title = pr.get("title", "").lower()
+            body = pr.get("body", "").lower()
+        else:
+            title = str(pr_or_title).lower()
+            body = str(body).lower()
 
         # Check for IAC-related keywords
         iac_keywords = [
@@ -361,9 +405,9 @@ class GitHubDataProcessor(BaseDataProcessor):
             if keyword in title or keyword in body:
                 return True
 
-        # Check file changes if available
-        if "files" in pr:
-            for file_info in pr["files"]:
+        # Check file changes if available (only when pr_or_title is a dict)
+        if isinstance(pr_or_title, dict) and "files" in pr_or_title:
+            for file_info in pr_or_title["files"]:
                 filename = file_info.get("filename", "").lower()
                 if any(
                     ext in filename

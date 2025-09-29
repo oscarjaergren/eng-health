@@ -2,10 +2,11 @@
 max-line-length = 100
 per-file-ignores =
     # Ignore E501 (line too long), E402 (module level import not at top of file),
-    # E231 (missing whitespace after ':'), and E225 (missing whitespace around operator)
+    # E231 (missing whitespace after ':'), E225 (missing whitespace around operator),
+    # E702 (semicolons in strings), and E221 (multiple spaces before operator)
     # for all files
-    __init__.py: E501, E402, E231, E225
-    *.py: E501, E402, E203, E231, E225
+    __init__.py: E501, E402, E231, E225, E702, E221
+    *.py: E501, E402, E203, E231, E225, E702, E221
 
 exclude =
     .git,

@@ -1,556 +1,392 @@
-"""GitHub API client for fetching pull request data."""
+"""
+Refactored GitHub API client with base client integration.
+
+This module provides a client for interacting with the GitHub API,
+built on top of the BaseAPIClient class for common functionality.
+"""
 
 import logging
-import os
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-from ..core.config import Config
-from ..utils.cache_manager import CacheManager
+from .base_client import BaseAPIClient
 
 
-class GitHubClient:
-    """Client for interacting with GitHub API."""
+class GitHubClient(BaseAPIClient):
+    """
+    Client for interacting with GitHub API.
+
+    This client provides methods to fetch repositories, pull requests, and related data
+    from GitHub using the REST API. It inherits common functionality from BaseAPIClient
+    and implements GitHub-specific behavior.
+    """
+
+    BASE_URL = "https://api.github.com"
+    PER_PAGE = 100  # Maximum allowed by GitHub API
 
     def __init__(
-        self, config: Config, logger: logging.Logger, enable_cache: bool = True
-    ):
-        """Initialize the GitHub client."""
-        self.config = config
-        self.logger = logger
-        self.session = self._create_session()
+        self,
+        config: Any,
+        logger: logging.Logger,
+        enable_cache: bool = True,
+        max_retries: int = 3,
+        timeout: int = 30,
+    ) -> None:
+        """
+        Initialize the GitHub client.
 
-        # Performance settings
-        self.max_workers = min(config.max_parallel_workers, (os.cpu_count() or 1) + 4)
+        Args:
+            config: Configuration object with GitHub settings
+            logger: Logger instance for structured logging
+            enable_cache: Whether to enable response caching
+            max_retries: Maximum number of retry attempts for failed requests
+            timeout: Request timeout in seconds
+
+        Raises:
+            ValueError: If required configuration is missing
+        """
+        super().__init__(
+            config=config,
+            logger=logger,
+            cache_dir=".cache/github",
+            enable_cache=enable_cache,
+            max_retries=max_retries,
+            timeout=timeout,
+        )
+
+        # Setup authentication
+        self._setup_auth()
 
         # Rate limiting
-        self.rate_limit_remaining = 5000
-        self.rate_limit_reset = time.time()
-        self.rate_limit_lock = threading.Lock()
+        self.rate_limit_remaining = 5000  # Default for authenticated users
+        self.rate_limit_reset = time.time() + 3600  # Default to 1 hour
+        self.rate_limit_lock = None  # Not needed for GitHub token auth
 
-        # Cache management
-        self.cache_manager = (
-            CacheManager(cache_dir=".cache/github") if enable_cache else None
-        )
+    def _get_default_headers(self) -> Dict[str, str]:
+        """Get the default headers for GitHub API requests."""
+        return {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
 
-    def _create_session(self) -> requests.Session:
-        """Create a requests session with retry strategy and authentication."""
-        session = requests.Session()
+    def _setup_auth(self) -> None:
+        """Set up authentication for GitHub API."""
+        if not hasattr(self.config, "github_token") or not self.config.github_token:
+            raise ValueError("GitHub personal access token is required")
 
-        # Setup retry strategy with more aggressive retries for performance
-        retry_strategy = Retry(
-            total=2,  # Reduced retries for faster failure
-            backoff_factor=0.5,  # Faster backoff
-            status_forcelist=[429, 500, 502, 503, 504],
-        )
-        adapter = HTTPAdapter(
-            max_retries=retry_strategy, pool_connections=100, pool_maxsize=100
-        )
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
+        self.session.headers["Authorization"] = f"Bearer {self.config.github_token}"
 
-        # Setup authentication using GitHub token
-        session.headers.update(
-            {
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {self.config.github_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-        )
-
-        return session
-
-    def _handle_rate_limit(self, response: requests.Response) -> bool:
+    def _build_url(self, path: str) -> str:
         """
-        Handle GitHub rate limiting with exponential backoff.
+        Build a full GitHub API URL.
 
         Args:
-            response: HTTP response object
+            path: API path (without leading slash)
 
         Returns:
-            bool: True if rate limited and handled, False otherwise
+            Full API URL
         """
-        if response.status_code == 429 or response.status_code == 403:
-            # Check if this is a rate limit response
-            if "X-RateLimit-Remaining" in response.headers:
-                remaining = int(response.headers.get("X-RateLimit-Remaining", 0))
-                if remaining == 0:
-                    reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
-                    sleep_time = max(reset_time - time.time(), 60)
-                    self.logger.warning(
-                        f"GitHub rate limit exceeded. Sleeping for {sleep_time:.0f} seconds"
-                    )
-                    time.sleep(sleep_time)
-                    return True
+        return f"{self.BASE_URL}/{path}"
 
-            # Secondary rate limit (abuse detection)
-            if "Retry-After" in response.headers:
-                retry_after = int(response.headers.get("Retry-After", 60))
-                self.logger.warning(
-                    f"GitHub secondary rate limit hit. Sleeping for {retry_after} seconds"
-                )
-                time.sleep(retry_after)
-                return True
+    def _check_rate_limit(self) -> None:
+        """Check rate limits and sleep if necessary."""
+        current_time = time.time()
 
-        return False
+        # If we've hit the rate limit, wait until the reset time
+        if self.rate_limit_remaining <= 0 and current_time < self.rate_limit_reset:
+            sleep_time = self.rate_limit_reset - current_time + 1  # Add 1s buffer
+            self.logger.warning(
+                f"GitHub rate limit reached. Sleeping for {sleep_time:.1f} seconds"
+            )
+            time.sleep(sleep_time)
 
-    def _make_request_with_retry(
-        self, url: str, params: Dict = None, max_retries: int = 3, cache_ttl: int = 3600
-    ) -> Optional[requests.Response]:
+    def _update_rate_limit_headers(self, response: requests.Response) -> None:
         """
-        Make HTTP request with rate limiting, retry logic, and caching.
+        Update rate limit information from response headers.
 
         Args:
-            url: URL to request
+            response: Response object from API request
+        """
+        if "X-RateLimit-Remaining" in response.headers:
+            self.rate_limit_remaining = int(
+                response.headers.get("X-RateLimit-Remaining", 5000)
+            )
+
+        if "X-RateLimit-Reset" in response.headers:
+            reset_timestamp = int(response.headers.get("X-RateLimit-Reset", 0))
+            self.rate_limit_reset = reset_timestamp + 1  # Add 1s buffer
+
+    def _handle_pagination(
+        self, url: str, params: Optional[Dict] = None, max_pages: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Handle GitHub API pagination.
+
+        Args:
+            url: Initial URL to fetch
             params: Query parameters
-            max_retries: Maximum number of retries
-            cache_ttl: Cache time-to-live in seconds
+            max_pages: Maximum number of pages to fetch (None for all)
 
         Returns:
-            Response object or None if all retries failed
+            List of items from all pages
+
+        Raises:
+            ValueError: If authentication fails or the request is invalid
         """
-        # Check cache first
-        if self.cache_manager:
-            cached_response = self.cache_manager.get(url, params)
-            if cached_response is not None:
-                # Create a mock response object from cached data
-                mock_response = requests.Response()
-                mock_response.status_code = 200
-                mock_response._content = (
-                    cached_response.encode()
-                    if isinstance(cached_response, str)
-                    else str(cached_response).encode()
-                )
-                return mock_response
-        for attempt in range(max_retries + 1):
+        items = []
+        page = 1
+
+        if params is None:
+            params = {}
+
+        params["per_page"] = self.PER_PAGE
+
+        while True:
+            params["page"] = page
+
             try:
-                response = self.session.get(url, params=params, timeout=30)
+                # Make request with retry logic from base class
+                response = self._make_request("GET", url, params=params, cache_ttl=3600)
 
-                # Handle rate limiting
-                if self._handle_rate_limit(response):
-                    continue  # Retry after rate limit handling
+                # If response is None, there was an error that couldn't be recovered from
+                if response is None:
+                    self.logger.error(f"Failed to fetch data from {url}")
+                    break
 
-                if response.status_code == 200:
-                    # Cache successful response
-                    if self.cache_manager:
-                        self.cache_manager.set(
-                            url, response.text, params, ttl=cache_ttl
-                        )
-                    return response
-                elif response.status_code == 404:
-                    # Not found is not a retry-able error
-                    return response
-                else:
+                # Check for authentication errors
+                if response.status_code == 401:
+                    error_msg = "Authentication failed: Invalid or missing credentials"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_msg = (
+                                f"Authentication failed: {error_data['message']}"
+                            )
+                    except ValueError:
+                        pass
+                    raise ValueError(error_msg)
+
+                # Check for other errors
+                if response.status_code != 200:
                     self.logger.warning(
-                        f"Request failed with status {response.status_code}, "
-                        f"attempt {attempt + 1}/{max_retries + 1}"
+                        f"Received status code {response.status_code} from {url}"
                     )
-                    if attempt < max_retries:
-                        time.sleep(2**attempt)  # Exponential backoff
+                    break
 
-            except requests.exceptions.RequestException as e:
-                self.logger.warning(
-                    f"Request exception: {e}, attempt {attempt + 1}/{max_retries + 1}"
-                )
-                if attempt < max_retries:
-                    time.sleep(2**attempt)
+                # Add items from this page
+                try:
+                    page_items = response.json()
+                    if not isinstance(page_items, list):
+                        page_items = [page_items]
+
+                    items.extend(page_items)
+
+                    # Check if we've reached the end
+                    if len(page_items) < self.PER_PAGE:
+                        break
+
+                except ValueError as e:
+                    self.logger.error(f"Failed to parse response from {url}: {e}")
+                    break
+
+                # Check if we've reached the maximum number of pages
+                if max_pages and page >= max_pages:
+                    break
+
+                page += 1
+
+            except ValueError as e:
+                # Re-raise authentication errors
+                if "authentication failed" in str(e).lower():
+                    raise
+                self.logger.error(f"Error fetching data from {url}: {e}")
+                break
+            except Exception as e:
+                self.logger.error(f"Unexpected error fetching data from {url}: {e}")
+                break
+
+        return items
+
+    def get_repositories(
+        self,
+        org_or_user: str,
+        type_: str = "all",
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch all repositories for an organization or user.
+
+        Args:
+            org_or_user: Organization or username
+            type_: Type of repositories to fetch (all, public, private, forks, etc.)
+
+        Returns:
+            List of repository objects
+
+        Raises:
+            ValueError: If authentication fails or the request is invalid
+        """
+        if not org_or_user:
+            raise ValueError("Organization or username is required")
+
+        try:
+            path = (
+                f"orgs/{org_or_user}/repos"
+                if "/" in org_or_user
+                else f"users/{org_or_user}/repos"
+            )
+            params = {
+                "type": type_,
+                "sort": "updated",
+                "direction": "desc",
+            }
+
+            url = self._build_url(path)
+            return self._handle_pagination(url, params=params)
+
+        except ValueError as e:
+            # Re-raise authentication errors
+            if "authentication failed" in str(e).lower():
+                raise
+            self.logger.error(f"Error fetching repositories for {org_or_user}: {e}")
+            raise ValueError(f"Failed to fetch repositories: {e}") from e
+        except Exception as e:
+            self.logger.error(
+                f"Unexpected error fetching repositories for {org_or_user}: {e}"
+            )
+            raise ValueError(f"Failed to fetch repositories: {e}") from e
+
+    def get_pull_requests(
+        self,
+        owner: str,
+        repo: str,
+        state: str = "all",
+        base: Optional[str] = None,
+        head: Optional[str] = None,
+        sort: str = "updated",
+        direction: str = "desc",
+        max_pages: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch pull requests for a repository.
+
+        Args:
+            owner: Repository owner (username or organization)
+            repo: Repository name
+            state: PR state (open, closed, all)
+            base: Filter by base branch name
+            head: Filter by head user or head organization and branch
+            sort: What to sort results by (created, updated, popularity, long-running)
+            direction: Sort order (asc or desc)
+            max_pages: Maximum number of pages to fetch (None for all)
+
+        Returns:
+            List of pull request objects
+        """
+        path = f"repos/{owner}/{repo}/pulls"
+        params = {
+            "state": state,
+            "sort": sort,
+            "direction": direction,
+        }
+
+        if base:
+            params["base"] = base
+        if head:
+            params["head"] = head
+
+        url = self._build_url(path)
+        return self._handle_pagination(url, params=params, max_pages=max_pages)
+
+    def get_pull_request_details(
+        self,
+        owner: str,
+        repo: str,
+        pull_number: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get detailed information about a specific pull request.
+
+        Args:
+            owner: Repository owner (username or organization)
+            repo: Repository name
+            pull_number: PR number
+
+        Returns:
+            Pull request details or None if not found
+        """
+        path = f"repos/{owner}/{repo}/pulls/{pull_number}"
+        url = self._build_url(path)
+
+        response = self._make_request("GET", url)
+        if response and response.status_code == 200:
+            return response.json()
 
         return None
 
-    def _parse_link_header(self, link_header: str) -> Dict[str, str]:
+    def get_pull_request_comments(
+        self,
+        owner: str,
+        repo: str,
+        pull_number: int,
+    ) -> List[Dict[str, Any]]:
         """
-        Parse GitHub's Link header for pagination.
+        Get review comments for a pull request.
 
         Args:
-            link_header: Link header value
+            owner: Repository owner (username or organization)
+            repo: Repository name
+            pull_number: PR number
 
         Returns:
-            Dict mapping rel types to URLs
+            List of review comments
         """
-        links = {}
-        if not link_header:
-            return links
+        path = f"repos/{owner}/{repo}/pulls/{pull_number}/comments"
+        url = self._build_url(path)
 
-        for link in link_header.split(","):
-            parts = link.strip().split(";")
-            if len(parts) != 2:
-                continue
+        return self._handle_pagination(url)
 
-            url = parts[0].strip("<>")
-            rel = parts[1].strip()
-
-            if "rel=" in rel:
-                rel_type = rel.split("rel=")[1].strip("\"'")
-                links[rel_type] = url
-
-        return links
-
-    def fetch_all_repositories(self) -> List[Dict[str, Any]]:
-        """Fetch all repositories for the organization or user."""
-        try:
-            self.logger.info(
-                f"Fetching repositories from GitHub for {self.config.github_owner}..."
-            )
-
-            # Determine if this is an organization or user
-            if self.config.github_type == "org":
-                url = f"https://api.github.com/orgs/{self.config.github_owner}/repos"
-            else:
-                url = f"https://api.github.com/users/{self.config.github_owner}/repos"
-
-            all_repos = []
-            next_url = url
-
-            # Use GitHub's Link header pagination
-            while next_url:
-                params = {"per_page": 100, "sort": "updated", "direction": "desc"}
-
-                response = self._make_request_with_retry(next_url, params)
-
-                if not response or response.status_code != 200:
-                    if response:
-                        self.logger.error(
-                            f"Failed to fetch repositories: {response.status_code}"
-                        )
-                        self.logger.error(f"Response: {response.text}")
-                    else:
-                        self.logger.error(
-                            "Failed to fetch repositories: No response received"
-                        )
-                    break
-
-                repos = response.json()
-                if not repos:
-                    break
-
-                all_repos.extend(repos)
-
-                # Parse Link header for next page
-                link_header = response.headers.get("Link", "")
-                links = self._parse_link_header(link_header)
-                next_url = links.get("next")
-
-                self.logger.info(
-                    f"Fetched {len(repos)} repositories, total: {len(all_repos)}"
-                )
-
-                # Rate limiting info
-                remaining = response.headers.get("X-RateLimit-Remaining", "unknown")
-                self.logger.debug(f"Rate limit remaining: {remaining}")
-
-            self.logger.info(
-                f"Found {len(all_repos)} repositories for {self.config.github_owner}"
-            )
-            for repo in all_repos[:10]:  # Log first 10 repos
-                repo_name = repo.get("name", "Unknown")
-                repo_id = repo.get("id", "Unknown")
-                self.logger.info(f"  - {repo_name} (ID: {repo_id})")  # noqa: E221
-
-            if len(all_repos) > 10:
-                self.logger.info(f"  ... and {len(all_repos) - 10} more repositories")
-
-            return all_repos
-
-        except Exception as e:
-            self.logger.error(f"Error fetching repositories: {e}")
-            return []
-
-    def fetch_pull_requests_for_repository(
-        self, repository: Dict[str, Any]
+    def get_pull_request_reviews(
+        self,
+        owner: str,
+        repo: str,
+        pull_number: int,
     ) -> List[Dict[str, Any]]:
-        """Fetch all pull requests for a specific repository with detailed information."""
-        repo_name = repository.get("name", "Unknown")
-        repo_full_name = repository.get("full_name", "")
+        """
+        Get reviews for a pull request.
 
-        try:
-            self.logger.info(f"Fetching pull requests for repository: {repo_name}")
+        Args:
+            owner: Repository owner (username or organization)
+            repo: Repository name
+            pull_number: PR number
 
-            url = f"https://api.github.com/repos/{repo_full_name}/pulls"
-            all_pr_data = []
-            next_url = url
+        Returns:
+            List of reviews
+        """
+        path = f"repos/{owner}/{repo}/pulls/{pull_number}/reviews"
+        url = self._build_url(path)
 
-            # Use GitHub's Link header pagination
-            while next_url:
-                params = {
-                    "state": "all",  # Get both open and closed PRs
-                    "per_page": 100,
-                    "sort": "updated",
-                    "direction": "desc",
-                }
+        return self._handle_pagination(url)
 
-                response = self._make_request_with_retry(next_url, params)
-
-                if not response or response.status_code != 200:
-                    if response and response.status_code == 404:
-                        # Repo has no PRs or access denied - log as info, not
-                        # warning
-                        self.logger.debug(f"No PRs found for {repo_name} (404)")
-                    elif response:
-                        self.logger.warning(
-                            f"API request failed for {repo_name}: {response.status_code}"
-                        )
-                    else:
-                        self.logger.error(
-                            f"Failed to fetch PRs for {repo_name}: No response received"
-                        )
-                    break
-
-                # Parse JSON response
-                page_results = response.json()
-
-                if not page_results:
-                    break
-
-                # Enhance each PR with repository information
-                for pr in page_results:
-                    pr["repository_name"] = repo_name
-                    pr["repository_full_name"] = repo_full_name
-                    pr["repository_id"] = repository.get("id")
-
-                all_pr_data.extend(page_results)
-
-                # Parse Link header for next page
-                link_header = response.headers.get("Link", "")
-                links = self._parse_link_header(link_header)
-                next_url = links.get("next")
-
-                self.logger.debug(
-                    f"Fetched {len(page_results)} PRs for {repo_name}, total: {len(all_pr_data)}"
-                )
-
-                # Rate limiting info
-                remaining = response.headers.get("X-RateLimit-Remaining", "unknown")
-                self.logger.debug(f"Rate limit remaining: {remaining}")
-
-            return all_pr_data
-
-        except Exception as e:
-            self.logger.error(f"Error fetching PRs for repository {repo_name}: {e}")
-            return []
-
-    def fetch_all_pull_requests(self) -> List[Dict[str, Any]]:
-        """Fetch all pull requests from all repositories using parallel processing."""
-        # First, fetch all repositories
-        repositories = self.fetch_all_repositories()
-
-        if not repositories:
-            self.logger.warning("No repositories found")
-            return []
-
-        # Fetch PRs from repositories in parallel
-        all_pr_data = []
-        completed_repos = 0
-        total_repos = len(repositories)
-
-        self.logger.info(
-            f"Fetching PRs from {total_repos} repositories using {min(self.max_workers, total_repos)} parallel workers..."
-        )
-        start_time = time.time()
-
-        # Use thread pool for parallel API calls
-        with ThreadPoolExecutor(
-            max_workers=min(self.max_workers, total_repos)
-        ) as executor:
-            # Submit all repository PR fetch tasks
-            future_to_repo = {
-                executor.submit(self.fetch_pull_requests_for_repository, repo): repo
-                for repo in repositories
-            }
-
-            # Collect results as they complete
-            for future in as_completed(future_to_repo):
-                repo = future_to_repo[future]
-                repo_name = repo.get("name", "Unknown")
-                completed_repos += 1
-
-                try:
-                    repo_prs = future.result()
-                    all_pr_data.extend(repo_prs)
-
-                    # Progress reporting
-                    elapsed = time.time() - start_time
-                    progress = (completed_repos / total_repos) * 100
-                    self.logger.info(
-                        f"Progress: {completed_repos}/{total_repos} repositories ({progress:.1f}%) - "
-                        f"Elapsed: {elapsed:.1f}s - Current: {repo_name}"
-                    )
-
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to fetch PRs for repository {repo_name}: {e}"
-                    )
-
-        elapsed_total = time.time() - start_time
-        self.logger.info(
-            f"Total pull requests fetched across all repositories: {len(all_pr_data)} (completed in {elapsed_total:.1f}s)"
-        )
-        return all_pr_data
-
-    def _fetch_pr_details_parallel(
-        self, pr_data: List[Dict[str, Any]], repo_full_name: str, repo_name: str
+    def get_pull_request_commits(
+        self,
+        owner: str,
+        repo: str,
+        pull_number: int,
     ) -> List[Dict[str, Any]]:
-        """Fetch detailed information (reviews and comments) for PRs in parallel."""
-        if not pr_data:
-            return pr_data
+        """
+        Get commits for a pull request.
 
-        # Use a smaller worker pool for detailed fetching to avoid overwhelming
-        # the API
-        detail_workers = min(8, len(pr_data))
+        Args:
+            owner: Repository owner (username or organization)
+            repo: Repository name
+            pull_number: PR number
 
-        with ThreadPoolExecutor(max_workers=detail_workers) as executor:
-            # Submit tasks for fetching PR details
-            future_to_pr = {
-                executor.submit(self._fetch_single_pr_details, pr, repo_full_name): pr
-                for pr in pr_data
-            }
+        Returns:
+            List of commits
+        """
+        path = f"repos/{owner}/{repo}/pulls/{pull_number}/commits"
+        url = self._build_url(path)
 
-            # Collect results
-            for future in as_completed(future_to_pr):
-                pr = future_to_pr[future]
-                try:
-                    updated_pr = future.result()
-                    # Update the original PR data with fetched details
-                    pr.update(updated_pr)
-                except Exception as e:
-                    pr_number = pr.get("number", "unknown")
-                    self.logger.warning(
-                        f"Failed to fetch details for PR {pr_number} in {repo_name}: {e}"
-                    )
-                    # Set empty defaults so processing doesn't fail
-                    pr["reviews"] = []
-                    pr["review_comments"] = []
-                    pr["issue_comments"] = []
-
-        return pr_data
-
-    def _fetch_single_pr_details(
-        self, pr: Dict[str, Any], repo_full_name: str
-    ) -> Dict[str, Any]:
-        """Fetch detailed information for a single PR."""
-        pr_number = pr.get("number")
-        details = {}
-
-        if pr_number:
-            # Fetch reviews, review comments, and issue comments concurrently
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                reviews_future = executor.submit(
-                    self._fetch_pr_reviews, repo_full_name, pr_number
-                )
-                review_comments_future = executor.submit(
-                    self._fetch_pr_review_comments, repo_full_name, pr_number
-                )
-                issue_comments_future = executor.submit(
-                    self._fetch_pr_issue_comments, repo_full_name, pr_number
-                )
-
-                details["reviews"] = reviews_future.result()
-                details["review_comments"] = review_comments_future.result()
-                details["issue_comments"] = issue_comments_future.result()
-        else:
-            details["reviews"] = []
-            details["review_comments"] = []
-            details["issue_comments"] = []
-
-        return details
-
-    def _fetch_pr_reviews(
-        self, repo_full_name: str, pr_number: int
-    ) -> List[Dict[str, Any]]:
-        """Fetch all reviews for a specific PR with pagination."""
-        try:
-            url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}/reviews"
-            all_reviews = []
-            next_url = url
-
-            # Use GitHub's Link header pagination
-            while next_url:
-                params = {"per_page": 100}
-                response = self._make_request_with_retry(next_url, params)
-
-                if not response or response.status_code != 200:
-                    break
-
-                reviews = response.json()
-                if not reviews:
-                    break
-
-                all_reviews.extend(reviews)
-
-                # Parse Link header for next page
-                link_header = response.headers.get("Link", "")
-                links = self._parse_link_header(link_header)
-                next_url = links.get("next")
-
-            return all_reviews
-        except Exception:
-            return []
-
-    def _fetch_pr_review_comments(
-        self, repo_full_name: str, pr_number: int
-    ) -> List[Dict[str, Any]]:
-        """Fetch all review comments (code comments) for a specific PR with pagination."""
-        try:
-            url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}/comments"
-            all_comments = []
-            next_url = url
-
-            # Use GitHub's Link header pagination
-            while next_url:
-                params = {"per_page": 100}
-                response = self._make_request_with_retry(next_url, params)
-
-                if not response or response.status_code != 200:
-                    break
-
-                comments = response.json()
-                if not comments:
-                    break
-
-                all_comments.extend(comments)
-
-                # Parse Link header for next page
-                link_header = response.headers.get("Link", "")
-                links = self._parse_link_header(link_header)
-                next_url = links.get("next")
-
-            return all_comments
-        except Exception:
-            return []
-
-    def _fetch_pr_issue_comments(
-        self, repo_full_name: str, pr_number: int
-    ) -> List[Dict[str, Any]]:
-        """Fetch all issue comments (general PR comments) for a specific PR with pagination."""
-        try:
-            url = f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/comments"
-            all_comments = []
-            next_url = url
-
-            # Use GitHub's Link header pagination
-            while next_url:
-                params = {"per_page": 100}
-                response = self._make_request_with_retry(next_url, params)
-
-                if not response or response.status_code != 200:
-                    break
-
-                comments = response.json()
-                if not comments:
-                    break
-
-                all_comments.extend(comments)
-
-                # Parse Link header for next page
-                link_header = response.headers.get("Link", "")
-                links = self._parse_link_header(link_header)
-                next_url = links.get("next")
-
-            return all_comments
-        except Exception:
-            return []
+        return self._handle_pagination(url)

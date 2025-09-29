@@ -144,12 +144,15 @@ class MockDataGenerator:
             repository = random.choice(self.repositories)
 
             # Determine if this should be an IAC PR
-            is_iac = include_iac and random.random() < 0.15  # 15% chance
+            is_iac = (
+                include_iac and random.random() < 0.3
+            )  # 30% chance when include_iac is True
 
             if is_iac:
                 title = random.choice(self.iac_titles)
                 description = (
-                    "Infrastructure changes for improved deployment and scaling."
+                    "Infrastructure changes for improved deployment and scaling. "
+                    "This is an IAC (Infrastructure as Code) related change."
                 )
             else:
                 title = random.choice(self.pr_titles)
@@ -539,12 +542,10 @@ def main():
         output_file = args.output
 
     generator.save_to_file(data, output_file)
-    print(
-        f"📊 Generated mock data with {
-            len(data) if isinstance(
-                data, list) else sum(
-                len(v) for v in data.values())} PRs"
+    pr_count = (
+        len(data) if isinstance(data, list) else sum(len(v) for v in data.values())
     )
+    print(f"📊 Generated mock data with {pr_count} PRs")
 
 
 if __name__ == "__main__":

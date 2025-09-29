@@ -1,7 +1,7 @@
 """Data processing utilities for Azure DevOps pull request data."""
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .base_data_processor import BaseDataProcessor
 
@@ -40,16 +40,31 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
         return False
 
     def process_pull_requests(
-        self, pr_data: List[Dict[str, Any]], platform: str = "azure_devops"
+        self, pr_data: Optional[List[Dict[str, Any]]], platform: str = "azure_devops"
     ) -> List[Dict[str, Any]]:
-        """Process raw pull request data into the desired format with detailed review information."""
+        """Process raw pull request data into the desired format with detailed review information.
+
+        Args:
+            pr_data: List of pull request dictionaries, or None
+            platform: The platform the PRs came from (default: "azure_devops")
+
+        Returns:
+            List of processed PR dictionaries
+        """
+        if pr_data is None:
+            return []
+
         filtered_pr_data = []
         excluded_count = {"iac": 0, "personal_approval": 0}
 
+        # Get config values, defaulting to True if not set (backward compatibility)
+        exclude_iac = getattr(self.config, "exclude_iac", True)
+        getattr(self.config, "exclude_personal_approvals", True)
+
         for pr in pr_data:
             try:
-                # Skip IAC-related PRs (core filtering)
-                if self._is_iac_related(pr):
+                # Skip IAC-related PRs if configured to do so
+                if exclude_iac and self._is_iac_related(pr):
                     excluded_count["iac"] += 1
                     continue
 
@@ -87,10 +102,7 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
 
             except Exception as e:
                 self.logger.warning(
-                    f"Failed to process PR {
-                        pr.get(
-                            'pullRequestId',
-                            'unknown')}: {e}"
+                    f"Failed to process PR {pr.get('pullRequestId', 'unknown')}: {e}"
                 )
                 continue
 
@@ -123,6 +135,7 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
     def _extract_review_details(self, pr: Dict[str, Any]) -> Dict[str, Any]:
         """Extract detailed review information including votes and approvals, filtering out system/team reviewers."""
         reviewers = pr.get("reviewers", [])
+        created_by = pr.get("createdBy", {}).get("uniqueName", "")
 
         # Count reviewer votes
         approved_by = []
@@ -138,20 +151,15 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
                 continue
 
             vote = reviewer.get("vote", 0)
-            is_required = reviewer.get("isRequired", True)
-            # Azure DevOps vote values: 10=approved, -10=rejected, -5=waiting
-            # for author, 5=approved with suggestions, 0=no vote
-            if vote == 10:  # Approved
+            is_required = reviewer.get("isRequired", False)
+
+            if vote > 0:
                 approved_by.append(reviewer_name)
-            elif vote == -10:  # Rejected
+            elif vote < 0:
                 rejected_by.append(reviewer_name)
-            elif vote == 5:  # Approved with suggestions
-                approved_by.append(f"{reviewer_name} (with suggestions)")
-            elif vote == -5:  # Waiting for author
+            elif is_required:
                 waiting_reviewers.append(reviewer_name)
-            elif vote == 0 and is_required:  # No vote but required
-                waiting_reviewers.append(reviewer_name)
-            elif not is_required:  # Optional reviewer
+            else:
                 optional_reviewers.append(reviewer_name)
 
         # Filter system identities from all reviewers for counting
@@ -161,7 +169,7 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
             if not self.is_system_identity(r.get("uniqueName", "Unknown"))
         ]
 
-        return {
+        review_info = {
             "Approved By": approved_by,
             "Rejected By": rejected_by,
             "Waiting Reviewers": waiting_reviewers,
@@ -170,6 +178,12 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
             "Approval Count": len(approved_by),
             "Rejection Count": len(rejected_by),
         }
+
+        # Always filter out personal approvals
+        if created_by:
+            review_info = self._filter_personal_approvals(review_info, created_by)
+
+        return review_info
 
     def _extract_comment_details(self, pr: Dict[str, Any]) -> Dict[str, Any]:
         """Extract comment and discussion thread information."""
@@ -286,18 +300,35 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
     def _filter_personal_approvals(
         self, review_info: Dict[str, Any], created_by: str
     ) -> Dict[str, Any]:
-        """Filter out personal approvals where the creator approved their own PR."""
+        """Filter out personal approvals where the creator approved their own PR.
+
+        Args:
+            review_info: Dictionary containing review information
+            created_by: Username of the PR creator
+
+        Returns:
+            Updated review info with personal approvals filtered out if enabled
+        """
+        # Get config value, defaulting to True if not set (backward compatibility)
+        exclude_personal_approvals = getattr(
+            self.config, "exclude_personal_approvals", True
+        )
+
+        # If personal approval filtering is disabled, return the original data
+        if not exclude_personal_approvals:
+            return review_info
+
         approved_by = review_info.get("Approved By", [])
         personal_approvals_count = 0
 
         # Filter out approvals from the PR creator
         filtered_approved_by = []
         for approver in approved_by:
-            # Extract the username (before any additional info like "(with
-            # suggestions)")
+            # Extract the username (before any additional info like "(with suggestions)")
             approver_username = (
                 approver.split(" (")[0] if " (" in approver else approver
             )
+
             if approver_username != created_by:
                 filtered_approved_by.append(approver)
             else:
