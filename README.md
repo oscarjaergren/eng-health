@@ -21,12 +21,42 @@ A comprehensive Python application to extract Pull Request (PR) data from Azure 
 
 ## 📋 Prerequisites
 
+### For Docker Installation (Recommended)
+- Docker and Docker Compose installed
+- **For Azure DevOps**: Personal Access Token (PAT) with appropriate permissions
+- **For GitHub**: Personal Access Token with repo access permissions
+- Access to your Azure DevOps organization/project and/or GitHub organization/account
+
+### For Local Python Installation
 - Python 3.8 or higher
 - **For Azure DevOps**: Personal Access Token (PAT) with appropriate permissions
 - **For GitHub**: Personal Access Token with repo access permissions
 - Access to your Azure DevOps organization/project and/or GitHub organization/account
 
 ## 🛠️ Installation
+
+### Option 1: Docker (Recommended for Self-Hosting)
+
+1. Clone this repository:
+   ```bash
+   git clone <repository-url>
+   cd azure-devops-pr-analytics
+   ```
+
+2. Copy `.env.example` to `.env` and configure your credentials (see Configuration section)
+
+3. Build and start the dashboard:
+   ```bash
+   docker-compose up -d dashboard
+   ```
+
+4. Access the dashboard at `http://localhost:8501`
+
+5. To collect data, run the CLI:
+   ```bash
+   docker-compose run --rm cli
+   ```
+### Option 2: Local Python Installation
 
 1. Clone this repository:
    ```bash
@@ -121,6 +151,100 @@ streamlit run dashboard_main.py
 Use the provided launch configurations:
 - **🚀 Start Dashboard**: Launch Streamlit dashboard with debugging
 - **📊 Extract PR Data**: Run data extraction with debugging
+
+## 🐳 Docker Deployment
+
+### Architecture
+
+The Docker setup provides two services from a single image:
+
+1. **Dashboard Service**: Runs the Streamlit web interface (always on)
+2. **CLI Service**: Runs data collection manually or on schedule
+
+### Basic Commands
+
+**Start the dashboard:**
+```bash
+docker-compose up -d dashboard
+```
+
+**Collect data:**
+```bash
+docker-compose run --rm cli
+```
+
+**View logs:**
+```bash
+docker-compose logs -f dashboard
+```
+
+**Stop services:**
+```bash
+docker-compose down
+```
+
+**Rebuild after code changes:**
+```bash
+docker-compose build
+docker-compose up -d dashboard
+```
+
+### Data Persistence
+
+Data is stored in Docker volumes mounted to your local directories:
+- `./data/` - Excel files with PR data
+- `./cache/` - API response cache for faster subsequent runs
+
+### Scheduled Data Collection
+
+To automate data collection, you can use:
+
+**Linux/macOS (cron):**
+```bash
+# Add to crontab (crontab -e)
+# Run every day at 2 AM
+0 2 * * * cd /path/to/azure-devops-pr-analytics && docker-compose run --rm cli
+```
+
+**Windows (Task Scheduler):**
+Create a scheduled task that runs:
+```powershell
+cd C:\path\to\azure-devops-pr-analytics
+docker-compose run --rm cli
+```
+
+### Environment Variables
+
+Required in your `.env` file:
+- Azure DevOps: `AZURE_DEVOPS_ORGANIZATION`, `AZURE_DEVOPS_PAT`
+- GitHub: `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_TYPE`
+- Common: `OUTPUT_FILENAME`, `MAX_PARALLEL_WORKERS`
+
+### Health Checks
+
+The dashboard includes health checks. View status:
+```bash
+docker-compose ps
+```
+
+### Troubleshooting
+
+**Port already in use:**
+```bash
+# Change port in docker-compose.yml
+ports:
+  - "8502:8501"  # Use 8502 instead
+```
+
+**Permission issues (Linux/macOS):**
+```bash
+sudo chown -R $USER:$USER data/ cache/
+```
+
+**View detailed logs:**
+```bash
+docker-compose logs --tail=100 dashboard
+```
 
 ## Performance Optimization
 
