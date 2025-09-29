@@ -1,6 +1,6 @@
-# Multi-Platform PR Analytics Tool
+# Multi-Platform PR Analytics
 
-A comprehensive Python application to extract Pull Request (PR) data from Azure DevOps and/or GitHub with an interactive analytics dashboard.
+A comprehensive tool for extracting, analyzing, and visualizing Pull Request data from Azure DevOps and GitHub with **real-time API access** and intelligent caching.
 
 ## 🚀 Features
 
@@ -11,6 +11,8 @@ A comprehensive Python application to extract Pull Request (PR) data from Azure 
 - **Flexible Configuration**: Use one or both platforms as needed
 
 ### Core Capabilities
+- **Real-time API Mode**: Direct API access with intelligent caching (NEW!)
+- **Hybrid Approach**: API mode with on-demand Excel export
 - Interactive Streamlit dashboard with advanced visualizations
 - Handles pagination for large datasets automatically
 - Exports data to Excel format with repository and platform information
@@ -102,8 +104,29 @@ A comprehensive Python application to extract Pull Request (PR) data from Azure 
 
 ## 🎯 Usage
 
-### Quick Start
-Use our convenient launcher scripts:
+### 🆕 API Mode (Recommended - Real-time Data)
+
+```bash
+# Terminal 1: Start API
+python api_main.py
+
+# Terminal 2: Start Dashboard
+streamlit run dashboard_main.py
+```
+
+The dashboard automatically connects to the API for real-time data!
+
+**Benefits:**
+- Real-time data (no batch processing)
+- Intelligent caching (5-minute default TTL)
+- Force refresh on demand
+- Export to Excel when needed
+
+**API Documentation:** See [API.md](API.md) for endpoint reference.
+
+### Excel Mode (Traditional - Static Snapshots)
+
+Use the launcher scripts:
 
 **Windows:**
 ```bash

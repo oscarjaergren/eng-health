@@ -19,13 +19,31 @@ from azure_pr_analytics.core.safe_data_parser import (
     safe_parse_dict,
     safe_parse_list,
 )
+from azure_pr_analytics.dashboard.api_client import APIClient
 
 # Add azure_pr_analytics directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
 
-def load_data(file_path: str) -> pd.DataFrame:
-    """Load and preprocess the PR data."""
+def load_data_from_api(
+    api_client: APIClient, force_refresh: bool = False
+) -> pd.DataFrame:
+    """Load and preprocess PR data from API."""
+    try:
+        # Fetch data from API
+        df = api_client.get_pull_requests(force_refresh=force_refresh)
+
+        if df.empty:
+            return df
+
+        return preprocess_dataframe(df)
+    except Exception as e:
+        st.error(f"Error loading data from API: {e}")
+        return pd.DataFrame()
+
+
+def load_data_from_excel(file_path: str) -> pd.DataFrame:
+    """Load and preprocess PR data from Excel file."""
     try:
         # Check if we're in mock mode
         if is_mock_mode():
@@ -35,36 +53,39 @@ def load_data(file_path: str) -> pd.DataFrame:
         else:
             df = pd.read_excel(file_path)
 
-        # Convert Created Date to datetime
-        df["Created Date"] = pd.to_datetime(df["Created Date"])
-        if not df.empty:
-            # Add global filters in sidebar with hover tooltip
-            st.sidebar.subheader(
-                "📊 Filters",
-                help="Default exclusions: IAC PRs and personal approvals are automatically filtered out to focus on meaningful peer code reviews.",
-            )
-
-            # Date range filter Extract datetime components for analysis
-        df["Year"] = df["Created Date"].dt.year
-        df["Month"] = df["Created Date"].dt.month
-        df["Day"] = df["Created Date"].dt.day
-        df["Weekday"] = df["Created Date"].dt.day_name()
-        df["Hour"] = df["Created Date"].dt.hour
-        # Create year-month column for time series
-        df["Year-Month"] = df["Created Date"].dt.to_period("M")
-        # Clean up reviewer data
-        if "Assigned To" in df.columns:
-            df["Reviewer Count"] = df["Assigned To"].apply(
-                lambda x: safe_count_items(x)
-            )
-        elif "Total Reviewers" in df.columns:
-            df["Reviewer Count"] = df["Total Reviewers"]
-        else:
-            df["Reviewer Count"] = 0
-        return df
+        return preprocess_dataframe(df)
     except Exception as e:
-        st.error(f"Error loading data: {e}")
+        st.error(f"Error loading data from Excel: {e}")
         return pd.DataFrame()
+
+
+def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Preprocess dataframe with common transformations."""
+    if df.empty:
+        return df
+
+    # Convert Created Date to datetime
+    df["Created Date"] = pd.to_datetime(df["Created Date"])
+
+    # Extract datetime components for analysis
+    df["Year"] = df["Created Date"].dt.year
+    df["Month"] = df["Created Date"].dt.month
+    df["Day"] = df["Created Date"].dt.day
+    df["Weekday"] = df["Created Date"].dt.day_name()
+    df["Hour"] = df["Created Date"].dt.hour
+
+    # Create year-month column for time series
+    df["Year-Month"] = df["Created Date"].dt.to_period("M")
+
+    # Clean up reviewer data
+    if "Assigned To" in df.columns:
+        df["Reviewer Count"] = df["Assigned To"].apply(lambda x: safe_count_items(x))
+    elif "Total Reviewers" in df.columns:
+        df["Reviewer Count"] = df["Total Reviewers"]
+    else:
+        df["Reviewer Count"] = 0
+
+    return df
 
 
 def create_repository_overview(df: pd.DataFrame):
@@ -684,142 +705,220 @@ def main():
     st.title("📊 Multi-Platform PR Data Dashboard")
     st.markdown("---")
 
-    # File upload or use existing file
-    data_file = "pr_data.xlsx"
+    # Data source selection
+    data_mode = os.getenv("DATA_MODE", "api").lower()  # 'api' or 'excel'
 
-    # Check if we're in mock mode or if the data file exists
-    if is_mock_mode():
-        st.success("🎭 Running in Mock Mode - No data file required")
-        df = load_data(data_file)  # Will use mock data
-    elif os.path.exists(data_file):
-        st.success(f"✅ Found existing data file: {data_file}")
-        df = load_data(data_file)
+    # Initialize API client
+    api_client = APIClient()
 
-        if not df.empty:
-            # Platform filter (if multiple platforms exist)
-            if "Platform" in df.columns and len(df["Platform"].unique()) > 1:
-                platforms = ["All"] + sorted(df["Platform"].unique().tolist())
-                selected_platform = st.sidebar.selectbox(
-                    "Select Platform", platforms, key="main_platform_filter"
-                )
-                if selected_platform != "All":
-                    df = df[df["Platform"] == selected_platform]
+    # Sidebar: Data source and refresh controls
+    with st.sidebar:
+        st.header("🔧 Data Source")
 
-            # Date range filter
-            if "Created Date" in df.columns:
-                df["Created Date"] = pd.to_datetime(df["Created Date"])
-                min_date = df["Created Date"].min().date()
-                max_data_date = df["Created Date"].max().date()
-                today = datetime.today().date()
-                # Allow selection up to today + 1 day to avoid edge cases
-                max_allowed = max(today + timedelta(days=1), max_data_date)
+        # Check API availability
+        api_available = api_client.is_available()
 
-                try:
-                    date_range = st.sidebar.date_input(
-                        "Select Date Range",
-                        value=(
-                            min_date,
-                            today,
-                        ),  # Default to today instead of max_allowed
-                        min_value=min_date,
-                        max_value=max_allowed,
-                        key="main_date_filter",
+        if api_available:
+            st.success("✅ API Connected")
+
+            # Show cache stats
+            cache_stats = api_client.get_cache_stats()
+            if cache_stats:
+                with st.expander("📊 Cache Statistics"):
+                    st.metric("Cache Entries", cache_stats.get("entries", 0))
+                    st.metric("Hit Rate", f"{cache_stats.get('hit_rate', 0)}%")
+                    st.metric(
+                        "Hits / Misses",
+                        f"{cache_stats.get('hits', 0)} / {cache_stats.get('misses', 0)}",
                     )
 
-                    # Handle both single date and date range selections
-                    if isinstance(date_range, tuple) and len(date_range) == 2:
-                        start_date, end_date = date_range
-                        df = df[
-                            (df["Created Date"].dt.date >= start_date)
-                            & (df["Created Date"].dt.date <= end_date)
-                        ]
-                    elif hasattr(date_range, "__len__") and len(date_range) == 1:
-                        # Single date selected, treat as same start and end
-                        # date
-                        single_date = (
-                            date_range[0]
-                            if isinstance(date_range, tuple)
-                            else date_range
-                        )
-                        df = df[df["Created Date"].dt.date == single_date]
-                    elif (
-                        not isinstance(date_range, (list, tuple))
-                        and date_range is not None
-                    ):
-                        # Single date object
-                        df = df[df["Created Date"].dt.date == date_range]
+            # Refresh button
+            if st.button("🔄 Refresh Data", help="Force refresh data from APIs"):
+                with st.spinner("Fetching fresh data..."):
+                    api_client.invalidate_cache()
+                    st.rerun()
 
-                except Exception as e:
-                    st.sidebar.error(f"Date filter error: {str(e)}")
-                    # Continue with unfiltered data
+            # Excel export button
+            st.markdown("---")
+            if st.button("💾 Export to Excel", help="Export current data to Excel"):
+                with st.spinner("Exporting..."):
+                    result = api_client.export_to_excel()
+                    if result and result.get("success"):
+                        st.success(f"✅ {result.get('message')}")
+                    else:
+                        st.error("❌ Export failed")
+        else:
+            st.warning("⚠️ API Unavailable - Using Excel fallback")
+            data_mode = "excel"
 
-            # Repository filter
-            if "Repository" in df.columns:
-                repos = ["All"] + sorted(df["Repository"].unique().tolist())
-                selected_repo = st.sidebar.selectbox(
-                    "Select Repository", repos, key="main_repo_filter"
-                )
-                if selected_repo != "All":
-                    df = df[df["Repository"] == selected_repo]
+    # Load data based on mode
+    if api_available and data_mode == "api":
+        st.info("🚀 Real-time data mode - Connected to API")
+        force_refresh = st.sidebar.checkbox("Force API Refresh", value=False)
+        df = load_data_from_api(api_client, force_refresh=force_refresh)
+    else:
+        # Fallback to Excel mode
+        data_file = "pr_data.xlsx"
 
-            # Contributor filter
-            if "Created By" in df.columns:
-                contributors = ["All"] + sorted(df["Created By"].unique().tolist())
-                selected_contributor = st.sidebar.selectbox(
-                    "Select Contributor", contributors, key="main_contributor_filter"
-                )
-                if selected_contributor != "All":
-                    df = df[df["Created By"] == selected_contributor]
-
-            # Show data summary (after filtering)
-            total_prs = len(df)
-            st.sidebar.metric("📈 Filtered PRs", total_prs)
-
-            # Platform breakdown in sidebar
-            if "Platform" in df.columns and len(df["Platform"].unique()) > 1:
-                st.sidebar.subheader("🔧 Platform Breakdown")
-                platform_counts = df["Platform"].value_counts()
-                for platform, count in platform_counts.items():
-                    st.sidebar.metric(f"{platform}", count)
-
-            if "Approved By" in df.columns:
-                # Count PRs with approvals (excluding empty lists)
-                approved_prs = sum(
-                    1
-                    for approvals in df["Approved By"]
-                    if approvals and safe_count_items(approvals) > 0
-                )
-                st.sidebar.metric("👍 PRs with Approvals", approved_prs)
-
-            # Create tabs for different views
-            tabs = st.tabs(
-                [
-                    "📊 Repository Overview",
-                    "📅 Temporal Analysis",
-                    "👥 Contributors",
-                    "🔥 Activity Heatmap",
-                    "� Review Analytics",
-                    "🔍 Interactive Analysis",
-                ]
+        # Check if we're in mock mode or if the data file exists
+        if is_mock_mode():
+            st.success("🎭 Running in Mock Mode - No data file required")
+            df = load_data_from_excel(data_file)  # Will use mock data
+        elif os.path.exists(data_file):
+            st.success(f"✅ Found existing data file: {data_file}")
+            df = load_data_from_excel(data_file)
+        else:
+            st.error(
+                f"❌ Data file '{data_file}' not found. Please run the PR extraction script first or start the API."
             )
+            st.markdown(
+                """
+            ### How to get started:
 
-            with tabs[0]:
-                create_repository_overview(df)
+            **Option 1: Use API Mode (Recommended)**
+            1. Start the API: `python api_main.py`
+            2. The dashboard will automatically connect
 
-            with tabs[1]:
-                create_temporal_analysis(df)
+            **Option 2: Use Excel Mode**
+            1. Configure your `.env` file with Azure DevOps and/or GitHub credentials
+            2. Run the extraction script: `python main.py`
+            3. Refresh this dashboard to load the generated data
 
-            with tabs[2]:
-                create_contributor_analysis(df)
+            ### Supported Platforms:
+            - **Azure DevOps**: Configure AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PAT
+            - **GitHub**: Configure GITHUB_TOKEN, GITHUB_OWNER
+            - **Both**: Configure all variables to extract from both platforms
+            """
+            )
+            return
 
-            with tabs[3]:
-                create_repository_heatmap(df)
+    if not df.empty:
+        # Add global filters in sidebar
+        st.sidebar.subheader(
+            "📊 Filters",
+            help="Default exclusions: IAC PRs and personal approvals are automatically filtered out to focus on meaningful peer code reviews.",
+        )
 
-            with tabs[4]:
-                create_review_analytics(df)
+        # Platform filter (if multiple platforms exist)
+        if "Platform" in df.columns and len(df["Platform"].unique()) > 1:
+            platforms = ["All"] + sorted(df["Platform"].unique().tolist())
+            selected_platform = st.sidebar.selectbox(
+                "Select Platform", platforms, key="main_platform_filter"
+            )
+            if selected_platform != "All":
+                df = df[df["Platform"] == selected_platform]
 
-            with tabs[5]:
-                create_interactive_filters(df)
+        # Date range filter
+        if "Created Date" in df.columns:
+            df["Created Date"] = pd.to_datetime(df["Created Date"])
+            min_date = df["Created Date"].min().date()
+            max_data_date = df["Created Date"].max().date()
+            today = datetime.today().date()
+            # Allow selection up to today + 1 day to avoid edge cases
+            max_allowed = max(today + timedelta(days=1), max_data_date)
+
+            try:
+                date_range = st.sidebar.date_input(
+                    "Select Date Range",
+                    value=(
+                        min_date,
+                        today,
+                    ),  # Default to today instead of max_allowed
+                    min_value=min_date,
+                    max_allowed=max_allowed,
+                    key="main_date_filter",
+                )
+
+                # Handle both single date and date range selections
+                if isinstance(date_range, tuple) and len(date_range) == 2:
+                    start_date, end_date = date_range
+                    df = df[
+                        (df["Created Date"].dt.date >= start_date)
+                        & (df["Created Date"].dt.date <= end_date)
+                    ]
+                elif hasattr(date_range, "__len__") and len(date_range) == 1:
+                    # Single date selected, treat as same start and end date
+                    single_date = (
+                        date_range[0] if isinstance(date_range, tuple) else date_range
+                    )
+                    df = df[df["Created Date"].dt.date == single_date]
+                elif (
+                    not isinstance(date_range, (list, tuple)) and date_range is not None
+                ):
+                    # Single date object
+                    df = df[df["Created Date"].dt.date == date_range]
+
+            except Exception as e:
+                st.sidebar.error(f"Date filter error: {str(e)}")
+                # Continue with unfiltered data
+
+        # Repository filter
+        if "Repository" in df.columns:
+            repos = ["All"] + sorted(df["Repository"].unique().tolist())
+            selected_repo = st.sidebar.selectbox(
+                "Select Repository", repos, key="main_repo_filter"
+            )
+            if selected_repo != "All":
+                df = df[df["Repository"] == selected_repo]
+
+        # Contributor filter
+        if "Created By" in df.columns:
+            contributors = ["All"] + sorted(df["Created By"].unique().tolist())
+            selected_contributor = st.sidebar.selectbox(
+                "Select Contributor", contributors, key="main_contributor_filter"
+            )
+            if selected_contributor != "All":
+                df = df[df["Created By"] == selected_contributor]
+
+        # Show data summary (after filtering)
+        total_prs = len(df)
+        st.sidebar.metric("📈 Filtered PRs", total_prs)
+
+        # Platform breakdown in sidebar
+        if "Platform" in df.columns and len(df["Platform"].unique()) > 1:
+            st.sidebar.subheader("🔧 Platform Breakdown")
+            platform_counts = df["Platform"].value_counts()
+            for platform, count in platform_counts.items():
+                st.sidebar.metric(f"{platform}", count)
+
+        if "Approved By" in df.columns:
+            # Count PRs with approvals (excluding empty lists)
+            approved_prs = sum(
+                1
+                for approvals in df["Approved By"]
+                if approvals and safe_count_items(approvals) > 0
+            )
+            st.sidebar.metric("👍 PRs with Approvals", approved_prs)
+
+        # Create tabs for different views
+        tabs = st.tabs(
+            [
+                "📊 Repository Overview",
+                "📅 Temporal Analysis",
+                "👥 Contributors",
+                "🔥 Activity Heatmap",
+                "💬 Review Analytics",
+                "🔍 Interactive Analysis",
+            ]
+        )
+
+        with tabs[0]:
+            create_repository_overview(df)
+
+        with tabs[1]:
+            create_temporal_analysis(df)
+
+        with tabs[2]:
+            create_contributor_analysis(df)
+
+        with tabs[3]:
+            create_repository_heatmap(df)
+
+        with tabs[4]:
+            create_review_analytics(df)
+
+        with tabs[5]:
+            create_interactive_filters(df)
 
     else:
         st.error(
