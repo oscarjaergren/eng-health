@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from azure_pr_analytics.utils.mock_data_generator import MockDataGenerator
+from pr_analytics.utils.mock_data_generator import MockDataGenerator
 
 
 class MockModeConfig:

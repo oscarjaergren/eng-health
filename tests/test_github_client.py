@@ -15,7 +15,7 @@ from requests.exceptions import RequestException
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from azure_pr_analytics.clients.github_client import GitHubClient
+from pr_analytics.clients.github_client import GitHubClient
 
 
 class MockConfig:

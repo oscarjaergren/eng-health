@@ -13,7 +13,7 @@ from requests.exceptions import RequestException
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from azure_pr_analytics.clients.azure_devops_client import AzureDevOpsClient
+from pr_analytics.clients.azure_devops_client import AzureDevOpsClient
 
 
 class MockConfig:

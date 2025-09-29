@@ -39,7 +39,7 @@ jobs:
 
     - name: Run unit tests
       run: |
-        python -m pytest tests/ -v --tb=short --cov=azure_pr_analytics --cov-report=xml --cov-report=term-missing
+        python -m pytest tests/ -v --tb=short --cov=pr_analytics --cov-report=xml --cov-report=term-missing
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -69,15 +69,15 @@ jobs:
 
     - name: Run Black (Code Formatting)
       run: |
-        black --check --diff azure_pr_analytics/ tests/
+        black --check --diff pr_analytics/ tests/
 
     - name: Run Flake8 (Linting)
       run: |
-        flake8 azure_pr_analytics/ tests/ --max-line-length=88 --extend-ignore=E203,W503
+        flake8 pr_analytics/ tests/ --max-line-length=88 --extend-ignore=E203,W503
 
     - name: Run MyPy (Type Checking)
       run: |
-        mypy azure_pr_analytics/ --ignore-missing-imports --no-strict-optional
+        mypy pr_analytics/ --ignore-missing-imports --no-strict-optional
 
   security:
     name: Security Scan
@@ -104,7 +104,7 @@ jobs:
 
     - name: Run Bandit (Code Security)
       run: |
-        bandit -r azure_pr_analytics/ -f json -o bandit-report.json || true
+        bandit -r pr_analytics/ -f json -o bandit-report.json || true
 
     - name: Upload security reports
       uses: actions/upload-artifact@v4
@@ -136,10 +136,10 @@ jobs:
     - name: Test package imports
       run: |
         python -c "
-        from azure_pr_analytics.clients.azure_devops_client import AzureDevOpsClient
-        from azure_pr_analytics.clients.github_client import GitHubClient
-        from azure_pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
-        from azure_pr_analytics.dashboard.dashboard import *
+        from pr_analytics.clients.azure_devops_client import AzureDevOpsClient
+        from pr_analytics.clients.github_client import GitHubClient
+        from pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
+        from pr_analytics.dashboard.dashboard import *
         print('✅ All imports successful!')
         "
 
@@ -177,14 +177,14 @@ jobs:
         python -c "
         import os
         import pkgutil
-        import azure_pr_analytics
+        import pr_analytics
 
         def generate_module_docs(package, path=''):
             for importer, modname, ispkg in pkgutil.iter_modules(package.__path__, package.__name__ + '.'):
                 if not ispkg:
                     print(f'Found module: {modname}')
 
-        generate_module_docs(azure_pr_analytics)
+        generate_module_docs(pr_analytics)
         "
 
   notify:

@@ -492,8 +492,7 @@ class ProgressTracker:
         average_throughput = self.processed_items / total_time if total_time > 0 else 0
 
         self.logger.info(
-            f"Progress complete: {
-                self.operation_name}",
+            f"Progress complete: {self.operation_name}",
             extra={
                 "event_type": "progress_complete",
                 "operation": self.operation_name,

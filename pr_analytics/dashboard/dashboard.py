@@ -13,15 +13,15 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from azure_pr_analytics.core.mock_mode import get_mock_provider, is_mock_mode
-from azure_pr_analytics.core.safe_data_parser import (
+from pr_analytics.core.mock_mode import get_mock_provider, is_mock_mode
+from pr_analytics.core.safe_data_parser import (
     safe_count_items,
     safe_parse_dict,
     safe_parse_list,
 )
-from azure_pr_analytics.dashboard.api_client import APIClient
+from pr_analytics.dashboard.api_client import APIClient
 
-# Add azure_pr_analytics directory to path for imports
+# Add pr_analytics directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
 

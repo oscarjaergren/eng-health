@@ -1,0 +1,5 @@
+{
+    "git.enableStatusBarSync": false,
+    "git.showUncommittedChangesWarning": false,
+    "git.ignoreLimitWarning": true
+}

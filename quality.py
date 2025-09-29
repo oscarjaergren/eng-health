@@ -14,7 +14,7 @@ class CodeQualityManager:
 
     def __init__(self, project_root: str = "."):
         self.project_root = Path(project_root)
-        self.source_dirs = ["azure_pr_analytics/", "tests/"]
+        self.source_dirs = ["pr_analytics/", "tests/"]
 
     def run_command(self, cmd: str, description: str) -> bool:
         """Run a command and return success status."""
@@ -117,7 +117,7 @@ class CodeQualityManager:
         mypy_args = "--ignore-missing-imports --no-strict-optional"
 
         mypy_success = self.run_command(
-            f"python -m mypy azure_pr_analytics/ {mypy_args}", "MyPy (Type checking)"
+            f"python -m mypy pr_analytics/ {mypy_args}", "MyPy (Type checking)"
         )
 
         # Black formatting check

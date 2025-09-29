@@ -43,10 +43,7 @@ class Config:
         platforms = []
 
         # Check if Azure DevOps is configured (project is now optional)
-        if (
-            os.getenv("AZURE_DEVOPS_ORGANIZATION")
-            and os.getenv("AZURE_DEVOPS_PAT")
-        ):
+        if os.getenv("AZURE_DEVOPS_ORGANIZATION") and os.getenv("AZURE_DEVOPS_PAT"):
             platforms.append("azure_devops")
 
         # Check if GitHub is configured

@@ -363,8 +363,7 @@ Raises:
                 arg_info = {
                     "name": arg.arg,
                     "type": ast.unparse(arg.annotation) if arg.annotation else "Any",
-                    "description": f"Description for {
-                        arg.arg}",
+                    "description": f"Description for {arg.arg}",
                 }
                 args.append(arg_info)
 
@@ -382,10 +381,7 @@ Raises:
             args_lines = []
             for arg in args:
                 args_lines.append(
-                    f"            {
-                        arg['name']} ({
-                        arg['type']}): {
-                        arg['description']}"
+                    f"            {arg['name']} ({arg['type']}): {arg['description']}"
                 )
             args_section = "\n".join(args_lines)
 
@@ -419,8 +415,7 @@ Raises:
                 attr_info = {
                     "name": item.target.id,
                     "type": ast.unparse(item.annotation) if item.annotation else "Any",
-                    "description": f"Description for {
-                        item.target.id}",
+                    "description": f"Description for {item.target.id}",
                 }
                 attributes.append(attr_info)
 
@@ -433,10 +428,7 @@ Raises:
             attr_lines = []
             for attr in attributes:
                 attr_lines.append(
-                    f"        {
-                        attr['name']} ({
-                        attr['type']}): {
-                        attr['description']}"
+                    f"        {attr['name']} ({attr['type']}): {attr['description']}"
                 )
             attributes_section = "\n".join(attr_lines)
 
@@ -514,8 +506,7 @@ Raises:
 
         if high_priority_issues:
             suggestions.append(
-                f"Fix {
-                    len(high_priority_issues)} high-priority docstring quality issues."
+                f"Fix {len(high_priority_issues)} high-priority docstring quality issues."
             )
 
         # Specific missing docstrings
@@ -544,15 +535,10 @@ Raises:
             Formatted report as string
         """
         report = []
-        report.append(
-            f"Docstring Quality Report: {
-                Path(
-                    analysis['file_path']).name}"
-        )
+        report.append(f"Docstring Quality Report: {Path(analysis['file_path']).name}")
         report.append("=" * 60)
         report.append(
-            f"Overall Coverage: {
-                analysis['docstring_coverage_percentage']:.1f}%"
+            f"Overall Coverage: {analysis['docstring_coverage_percentage']:.1f}%"
         )
         report.append("")
 
@@ -574,10 +560,7 @@ Raises:
             report.append("Missing Docstrings:")
             for missing in analysis["missing_docstrings"]:
                 report.append(
-                    f"  • {
-                        missing['type'].title()}: {
-                        missing['name']} (line {
-                        missing['line']})"
+                    f"  • {missing['type'].title()}: {missing['name']} (line {missing['line']})"
                 )
             report.append("")
 
@@ -586,11 +569,7 @@ Raises:
             report.append("Quality Issues:")
             for issue in analysis["docstring_quality_issues"]:
                 severity_marker = "⚠️" if issue["severity"] == "high" else "💡"
-                report.append(
-                    f"  {severity_marker} {
-                        issue['name']}: {
-                        issue['issue']}"
-                )
+                report.append(f"  {severity_marker} {issue['name']}: {issue['issue']}")
             report.append("")
 
         # Improvement suggestions

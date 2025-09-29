@@ -12,11 +12,9 @@ import logging
 
 import pytest
 
-from azure_pr_analytics.processors.azure_devops_data_processor import (
-    AzureDevOpsDataProcessor,
-)
-from azure_pr_analytics.processors.github_data_processor import GitHubDataProcessor
-from azure_pr_analytics.utils.mock_data_generator import MockDataGenerator
+from pr_analytics.processors.azure_devops_data_processor import AzureDevOpsDataProcessor
+from pr_analytics.processors.github_data_processor import GitHubDataProcessor
+from pr_analytics.utils.mock_data_generator import MockDataGenerator
 
 
 class MockConfig:

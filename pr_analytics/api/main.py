@@ -15,8 +15,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from azure_pr_analytics.api.data_service import DataService
-from azure_pr_analytics.api.models import (
+from pr_analytics.api.data_service import DataService
+from pr_analytics.api.models import (
     CacheStats,
     Contributor,
     ExportRequest,
@@ -27,7 +27,7 @@ from azure_pr_analytics.api.models import (
     PullRequestDetail,
     Repository,
 )
-from azure_pr_analytics.core.config import Config
+from pr_analytics.core.config import Config
 
 # Load environment variables
 load_dotenv()

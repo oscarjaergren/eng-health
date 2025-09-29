@@ -333,7 +333,7 @@ print(f"Exported {result['record_count']} records")
 ### Dashboard Integration Example
 
 ```python
-from azure_pr_analytics.dashboard.api_client import APIClient
+from pr_analytics.dashboard.api_client import APIClient
 
 # Initialize client
 client = APIClient("http://localhost:8000")

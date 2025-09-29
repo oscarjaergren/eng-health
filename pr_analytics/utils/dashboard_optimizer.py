@@ -366,9 +366,9 @@ class StreamlitOptimizer:
         if len(datetime_cols) > 0:
             first_date = df[datetime_cols[0]].min()
             last_date = df[datetime_cols[0]].max()
-            metrics["date_range"] = (
-                f"{first_date.strftime('%Y-%m-%d')} to {last_date.strftime('%Y-%m-%d')}"
-            )
+            metrics[
+                "date_range"
+            ] = f"{first_date.strftime('%Y-%m-%d')} to {last_date.strftime('%Y-%m-%d')}"
 
         # Column type analysis
         for col in df.columns:

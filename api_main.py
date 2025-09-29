@@ -30,7 +30,7 @@ if __name__ == "__main__":
 
     # Start the API server
     uvicorn.run(
-        "azure_pr_analytics.api.main:app",
+        "pr_analytics.api.main:app",
         host=host,
         port=port,
         reload=reload,

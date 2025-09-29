@@ -64,8 +64,7 @@ class InputValidator:
         for pattern in self.dangerous_patterns:
             if pattern.search(sanitized):
                 self.logger.warning(
-                    f"Dangerous pattern detected and removed: {
-                        pattern.pattern}"
+                    f"Dangerous pattern detected and removed: {pattern.pattern}"
                 )
                 sanitized = pattern.sub("", sanitized)
 
@@ -291,10 +290,7 @@ class InputValidator:
             return value.isoformat()
 
         else:
-            self.logger.warning(
-                f"Invalid date type for {field_name}: {
-                    type(value)}"
-            )
+            self.logger.warning(f"Invalid date type for {field_name}: {type(value)}")
             return None
 
     def _validate_list(self, value: Any, field_name: str) -> List[Any]:
@@ -331,10 +327,7 @@ class InputValidator:
             return sanitized_list
 
         else:
-            self.logger.warning(
-                f"Expected list for {field_name}, got {
-                    type(value)}"
-            )
+            self.logger.warning(f"Expected list for {field_name}, got {type(value)}")
             return []
 
     def validate_file_path(self, file_path: str) -> bool:

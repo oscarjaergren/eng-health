@@ -140,12 +140,12 @@ jobs:
             install_requires=requirements,
             entry_points={
                 "console_scripts": [
-                    "pr-analytics=azure_pr_analytics.core.main:main",
+                    "pr-analytics=pr_analytics.core.main:main",
                 ],
             },
             include_package_data=True,
             package_data={
-                "azure_pr_analytics": ["dashboard/*.py"],
+                "pr_analytics": ["dashboard/*.py"],
             },
         )
         EOF

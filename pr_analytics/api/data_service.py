@@ -10,11 +10,11 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from azure_pr_analytics.api.cache_service import get_cache_service
-from azure_pr_analytics.clients.azure_devops_client import AzureDevOpsClient
-from azure_pr_analytics.clients.github_client import GitHubClient
-from azure_pr_analytics.core.config import Config
-from azure_pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
+from pr_analytics.api.cache_service import get_cache_service
+from pr_analytics.clients.azure_devops_client import AzureDevOpsClient
+from pr_analytics.clients.github_client import GitHubClient
+from pr_analytics.core.config import Config
+from pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
 
 
 class DataService:

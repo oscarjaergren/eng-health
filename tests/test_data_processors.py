@@ -5,14 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from azure_pr_analytics.processors.azure_devops_data_processor import (
-    AzureDevOpsDataProcessor,
-)
-from azure_pr_analytics.processors.base_data_processor import BaseDataProcessor
-from azure_pr_analytics.processors.github_data_processor import GitHubDataProcessor
-from azure_pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
+from pr_analytics.processors.azure_devops_data_processor import AzureDevOpsDataProcessor
+from pr_analytics.processors.base_data_processor import BaseDataProcessor
+from pr_analytics.processors.github_data_processor import GitHubDataProcessor
+from pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
 
-# Add azure_pr_analytics directory to path
+# Add pr_analytics directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
@@ -280,16 +278,12 @@ class TestUnifiedDataProcessor(unittest.TestCase):
         self.mock_logger = Mock()
         # Initialize mocks for the processor instances
         with patch(
-            "azure_pr_analytics.processors.azure_devops_data_processor.AzureDevOpsDataProcessor"
-        ), patch(
-            "azure_pr_analytics.processors.github_data_processor.GitHubDataProcessor"
-        ):
+            "pr_analytics.processors.azure_devops_data_processor.AzureDevOpsDataProcessor"
+        ), patch("pr_analytics.processors.github_data_processor.GitHubDataProcessor"):
             self.processor = UnifiedDataProcessor(self.mock_logger)
 
-    @patch(
-        "azure_pr_analytics.processors.unified_data_processor.AzureDevOpsDataProcessor"
-    )
-    @patch("azure_pr_analytics.processors.unified_data_processor.GitHubDataProcessor")
+    @patch("pr_analytics.processors.unified_data_processor.AzureDevOpsDataProcessor")
+    @patch("pr_analytics.processors.unified_data_processor.GitHubDataProcessor")
     def test_process_mixed_data(
         self, mock_github_processor_cls, mock_azure_processor_cls
     ):

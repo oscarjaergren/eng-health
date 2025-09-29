@@ -13,9 +13,9 @@ import requests
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Local imports after path modification
-from azure_pr_analytics.clients.azure_devops_client import AzureDevOpsClient
-from azure_pr_analytics.clients.github_client import GitHubClient
-from azure_pr_analytics.core.config import Config
+from pr_analytics.clients.azure_devops_client import AzureDevOpsClient
+from pr_analytics.clients.github_client import GitHubClient
+from pr_analytics.core.config import Config
 
 
 class MockResponse:
@@ -64,9 +64,7 @@ class TestAzureDevOpsClientIntegration(unittest.TestCase):
             self.mock_config, self.mock_logger, enable_cache=False
         )
 
-    @patch(
-        "azure_pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request"
-    )
+    @patch("pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request")
     def test_fetch_repositories_success(self, mock_make_request):
         """Test successful repository fetching."""
         # Mock successful response with Azure DevOps format
@@ -117,9 +115,7 @@ class TestAzureDevOpsClientIntegration(unittest.TestCase):
         # The API version should be in the URL parameters
         self.assertIn("api-version=7.1", call_args[1])
 
-    @patch(
-        "azure_pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request"
-    )
+    @patch("pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request")
     def test_fetch_repositories_failure(self, mock_make_request):
         """Test repository fetching failure."""
         # Mock failed response
@@ -135,9 +131,7 @@ class TestAzureDevOpsClientIntegration(unittest.TestCase):
         # Verify API call was made
         mock_make_request.assert_called_once()
 
-    @patch(
-        "azure_pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request"
-    )
+    @patch("pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request")
     def test_fetch_pull_requests_success(self, mock_make_request):
         """Test successful pull request fetching."""
         # Mock API response
@@ -182,9 +176,7 @@ class TestAzureDevOpsClientIntegration(unittest.TestCase):
         # Verify API call
         mock_make_request.assert_called_once()
 
-    @patch(
-        "azure_pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request"
-    )
+    @patch("pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request")
     def test_fetch_pull_requests_with_pagination(self, mock_make_request):
         """Test pull request fetching with pagination."""
         # Mock API responses for pagination
@@ -287,9 +279,7 @@ class TestAzureDevOpsClientIntegration(unittest.TestCase):
         self.assertEqual(pull_requests[2]["pullRequestId"], 3)
         self.assertEqual(pull_requests[3]["pullRequestId"], 4)
 
-    @patch(
-        "azure_pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request"
-    )
+    @patch("pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request")
     @patch("time.sleep")
     def test_rate_limit_handling(self, mock_sleep, mock_make_request):
         """Test rate limit handling."""
@@ -362,9 +352,7 @@ class TestAzureDevOpsClientIntegration(unittest.TestCase):
         # Verify content type
         self.assertEqual(session.headers["Content-Type"], "application/json")
 
-    @patch(
-        "azure_pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request"
-    )
+    @patch("pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request")
     def test_error_recovery(self, mock_make_request):
         """Test error recovery and retry logic."""
         # Mock network error followed by success
@@ -402,7 +390,7 @@ class TestGitHubClientIntegration(unittest.TestCase):
             self.mock_config, self.mock_logger, enable_cache=False
         )
 
-    @patch("azure_pr_analytics.clients.github_client.GitHubClient._make_request")
+    @patch("pr_analytics.clients.github_client.GitHubClient._make_request")
     def test_fetch_repositories_success(self, mock_make_request):
         """Test successful GitHub repository fetching."""
         # Create client
@@ -425,7 +413,7 @@ class TestGitHubClientIntegration(unittest.TestCase):
         self.assertEqual(repositories[0]["name"], "repo1")
         self.assertEqual(repositories[1]["name"], "repo2")
 
-    @patch("azure_pr_analytics.clients.github_client.GitHubClient._make_request")
+    @patch("pr_analytics.clients.github_client.GitHubClient._make_request")
     def test_github_rate_limit_handling(self, mock_make_request):
         """Test GitHub rate limit handling."""
         # Create client with retries enabled
@@ -514,9 +502,7 @@ class TestAPIClientErrorHandling(unittest.TestCase):
             self.github_config, self.mock_logger, enable_cache=False
         )
 
-    @patch(
-        "azure_pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request"
-    )
+    @patch("pr_analytics.clients.azure_devops_client.AzureDevOpsClient._make_request")
     def test_azure_devops_network_error_recovery(self, mock_make_request):
         """Test Azure DevOps client network error recovery."""
         # Create client with retries enabled
@@ -570,7 +556,7 @@ class TestAPIClientErrorHandling(unittest.TestCase):
                 "GET", expected_url, params={"api-version": "7.0"}, cache_ttl=3600
             )
 
-    @patch("azure_pr_analytics.clients.github_client.GitHubClient._make_request")
+    @patch("pr_analytics.clients.github_client.GitHubClient._make_request")
     def test_github_authentication_error(self, mock_make_request):
         """Test GitHub client authentication error handling."""
         # Test initialization with missing token
@@ -612,7 +598,7 @@ class TestAPIClientErrorHandling(unittest.TestCase):
         self.assertEqual(call_kwargs["params"]["type"], "all")
         self.assertEqual(call_kwargs["cache_ttl"], 3600)
 
-    @patch("azure_pr_analytics.clients.base_client.CacheManager")
+    @patch("pr_analytics.clients.base_client.CacheManager")
     def test_invalid_configuration_handling(self, mock_cache_manager):
         """Test handling of invalid configuration."""
         # Mock cache manager to avoid filesystem operations
