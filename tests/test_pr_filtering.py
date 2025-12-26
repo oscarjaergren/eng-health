@@ -347,12 +347,12 @@ class TestPRFiltering:
         assert iac_count_with > 0, "Should have IAC PRs when include_iac=True"
         assert iac_count_without == 0, "Should have no IAC PRs when include_iac=False"
 
-    def test_excel_format_generation(self):
-        """Test that Excel-compatible format is generated correctly."""
+    def test_dashboard_format_generation(self):
+        """Test that dashboard-compatible format is generated correctly."""
         generator = MockDataGenerator(seed=42)
-        excel_data = generator.generate_excel_compatible_data(count=5)
+        dashboard_data = generator.generate_dashboard_data(count=5)
 
-        assert len(excel_data) == 5
+        assert len(dashboard_data) == 5
 
         # Check required fields for dashboard compatibility
         required_fields = [
@@ -367,7 +367,7 @@ class TestPRFiltering:
             "Total Reviewers",
         ]
 
-        for pr in excel_data:
+        for pr in dashboard_data:
             for field in required_fields:
                 assert field in pr, f"Missing required field: {field}"
 

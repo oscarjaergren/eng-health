@@ -210,28 +210,6 @@ class APIClient:
         data = self._make_request("GET", "/api/metrics/platforms")
         return data or []
 
-    def export_to_excel(
-        self,
-        filters: Optional[Dict[str, Any]] = None,
-        filename: str = "pr_data.xlsx",
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Export data to Excel file.
-
-        Args:
-            filters: Filter parameters
-            filename: Output filename
-
-        Returns:
-            Export response or None if failed
-        """
-        request_data = {
-            "filters": filters,
-            "filename": filename,
-        }
-
-        return self._make_request("POST", "/api/export", json_data=request_data)
-
     def get_cache_stats(self) -> Optional[Dict[str, Any]]:
         """
         Get cache statistics.

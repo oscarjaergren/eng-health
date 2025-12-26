@@ -406,9 +406,9 @@ class MockDataGenerator:
 
         print(f"✅ Mock data saved to {output_path}")
 
-    def generate_excel_compatible_data(self, count: int = 50) -> List[Dict[str, Any]]:
+    def generate_dashboard_data(self, count: int = 50) -> List[Dict[str, Any]]:
         """
-        Generate data in the same format as the processed Excel output.
+        Generate data in the format required by the dashboard.
         This can be used to test the dashboard without running the full pipeline.
 
         Args:
@@ -457,6 +457,7 @@ class MockDataGenerator:
             total_comments = random.randint(0, 10)
 
             processed_pr = {
+                "ID": pr_id,
                 "PR ID": pr_id,
                 "Repository": repository,
                 "Title": random.choice(self.pr_titles),
@@ -513,9 +514,6 @@ def main():
     )
     parser.add_argument("--output", default="mock_data.json", help="Output filename")
     parser.add_argument("--seed", type=int, help="Random seed for reproducible data")
-    parser.add_argument(
-        "--excel-format", action="store_true", help="Generate Excel-compatible format"
-    )
     parser.add_argument("--no-iac", action="store_true", help="Exclude IAC PRs")
     parser.add_argument(
         "--no-personal-approvals",
@@ -527,19 +525,13 @@ def main():
 
     generator = MockDataGenerator(seed=args.seed)
 
-    if args.excel_format:
-        data = generator.generate_excel_compatible_data(
-            args.azure_count + args.github_count
-        )
-        output_file = args.output.replace(".json", ".json")
-    else:
-        data = generator.generate_mixed_data(
-            azure_count=args.azure_count,
-            github_count=args.github_count,
-            include_iac=not args.no_iac,
-            include_personal_approvals=not args.no_personal_approvals,
-        )
-        output_file = args.output
+    data = generator.generate_mixed_data(
+        azure_count=args.azure_count,
+        github_count=args.github_count,
+        include_iac=not args.no_iac,
+        include_personal_approvals=not args.no_personal_approvals,
+    )
+    output_file = args.output
 
     generator.save_to_file(data, output_file)
     pr_count = (

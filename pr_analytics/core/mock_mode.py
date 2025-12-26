@@ -21,7 +21,6 @@ class MockModeConfig:
     def __init__(self):
         self.enabled = self._is_mock_mode_enabled()
         self.data_file = os.getenv("MOCK_DATA_FILE", "mock_pr_data.json")
-        self.excel_file = os.getenv("MOCK_EXCEL_FILE", "mock_pr_data.xlsx")
         self.generate_on_startup = (
             os.getenv("MOCK_GENERATE_ON_STARTUP", "true").lower() == "true"
         )
@@ -68,9 +67,9 @@ class MockDataProvider:
         self.generator = MockDataGenerator(seed=self.config.seed)
         self._cached_data = None
 
-    def get_mock_excel_data(self) -> pd.DataFrame:
+    def get_mock_data(self) -> pd.DataFrame:
         """
-        Get mock data in Excel format compatible with the dashboard.
+        Get mock data compatible with the dashboard.
 
         Returns:
             DataFrame with processed PR data ready for dashboard consumption
@@ -78,31 +77,12 @@ class MockDataProvider:
         if self._cached_data is not None:
             return self._cached_data
 
-        # Check if mock Excel file exists
-        excel_path = Path(self.config.excel_file)
-        if excel_path.exists() and not self.config.generate_on_startup:
-            try:
-                df = pd.read_excel(excel_path)
-                self._cached_data = df
-                return df
-            except Exception as e:
-                print(f"Warning: Failed to load existing mock Excel file: {e}")
-
         # Generate new mock data
         print("Generating mock PR data for dashboard...")
-        mock_data = self.generator.generate_excel_compatible_data(
-            count=self.config.pr_count
-        )
+        mock_data = self.generator.generate_dashboard_data(count=self.config.pr_count)
 
         # Convert to DataFrame
         df = pd.DataFrame(mock_data)
-
-        # Save to Excel file for future use
-        try:
-            df.to_excel(excel_path, index=False)
-            print(f"[INFO] Mock data saved to {excel_path}")
-        except Exception as e:
-            print(f"[WARNING] Failed to save mock Excel file: {e}")
 
         self._cached_data = df
         return df
@@ -179,8 +159,8 @@ def create_mock_data_files():
     """
     provider = MockDataProvider()
 
-    # Generate and save Excel data
-    excel_df = provider.get_mock_excel_data()
+    # Generate mock data
+    mock_df = provider.get_mock_data()
     print("[INFO] Generated mock data for dashboard")
 
     # Generate and save raw data
@@ -188,7 +168,7 @@ def create_mock_data_files():
     total_raw = sum(len(data) for data in raw_data.values())
     print(f"[INFO] Generated raw data with {total_raw} PRs")
 
-    return excel_df, raw_data
+    return mock_df, raw_data
 
 
 def main():
@@ -240,7 +220,6 @@ def main():
         print("Mock Mode Status:")
         print(f"   Enabled: {config.enabled}")
         print(f"   Data file: {config.data_file}")
-        print(f"   Excel file: {config.excel_file}")
         print(f"   Generate on startup: {config.generate_on_startup}")
         print(f"   PR count: {config.pr_count}")
         print(f"   Seed: {config.seed}")

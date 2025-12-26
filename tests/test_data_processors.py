@@ -334,28 +334,7 @@ class TestUnifiedDataProcessor(unittest.TestCase):
         result = self.processor._identify_platform(unknown_pr)
         self.assertEqual(result, "unknown")
 
-    def test_save_to_excel_success(self):
-        """Test successful Excel file saving."""
-        test_data = [
-            {"PR ID": 1, "Title": "Test PR 1"},
-            {"PR ID": 2, "Title": "Test PR 2"},
-        ]
-
-        with patch("pandas.DataFrame.to_excel") as mock_to_excel:
-            result = self.processor.save_to_excel(test_data, "test_output.xlsx")
-
-            self.assertTrue(result)
-            mock_to_excel.assert_called_once()
-
-    def test_save_to_excel_failure(self):
-        """Test Excel file saving failure."""
-        test_data = [{"PR ID": 1, "Title": "Test PR"}]
-
-        with patch("pandas.DataFrame.to_excel", side_effect=Exception("Write error")):
-            result = self.processor.save_to_excel(test_data, "test_output.xlsx")
-
-            self.assertFalse(result)
-            self.mock_logger.error.assert_called()
+    # Excel export tests removed - functionality deprecated
 
 
 class TestDataProcessorIntegration(unittest.TestCase):

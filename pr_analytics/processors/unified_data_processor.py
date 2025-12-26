@@ -54,32 +54,6 @@ class UnifiedDataProcessor(BaseDataProcessor):
         else:
             return "unknown"
 
-    def save_to_excel(self, data: List[Dict[str, Any]], output_path: str) -> bool:
-        """Save processed PR data to an Excel file.
-
-        Args:
-            data: List of processed PR dictionaries
-            output_path: Path to save the Excel file
-
-        Returns:
-            bool: True if save was successful, False otherwise
-        """
-        try:
-            import pandas as pd
-
-            if not data:
-                self.logger.warning("No data to save to Excel")
-                return False
-
-            df = pd.DataFrame(data)
-            df.to_excel(output_path, index=False)
-            self.logger.info(f"Successfully saved {len(data)} PRs to {output_path}")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error saving to Excel: {e}")
-            return False
-
     def process_pull_requests(
         self, pr_data: List[Dict[str, Any]], platform: str
     ) -> List[Dict[str, Any]]:

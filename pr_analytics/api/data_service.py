@@ -341,65 +341,6 @@ class DataService:
         self.cache.set("metrics", "platform_stats", stats, ttl=60)
         return stats
 
-    def export_to_excel(
-        self,
-        prs: List[Dict[str, Any]],
-        filename: str,
-    ) -> bool:
-        """
-        Export PR data to Excel file.
-
-        Args:
-            prs: List of pull requests to export
-            filename: Output filename
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            df = pd.DataFrame(prs)
-
-            if df.empty:
-                self.logger.warning("No data to export")
-                return False
-
-            # Sort by platform and creation date
-            if "Created Date" in df.columns:
-                df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
-                # Remove timezone info if present
-                if df["Created Date"].dt.tz is not None:
-                    df["Created Date"] = df["Created Date"].dt.tz_localize(None)
-
-            df = df.sort_values(
-                [col for col in ["Platform", "Created Date"] if col in df.columns],
-                ascending=[True, False],
-            )
-
-            # Remove timezone info from all datetime columns
-            for col in df.columns:
-                if df[col].dtype.name.startswith("datetime64[ns,") or "datetime" in str(
-                    df[col].dtype
-                ):
-                    try:
-                        df[col] = pd.to_datetime(df[col], errors="coerce")
-                        if (
-                            hasattr(df[col].dtype, "tz")
-                            and df[col].dtype.tz is not None
-                        ):
-                            df[col] = df[col].dt.tz_localize(None)
-                    except Exception as e:
-                        self.logger.warning(
-                            f"Could not process datetime column {col}: {e}"
-                        )
-
-            df.to_excel(filename, index=False)
-            self.logger.info(f"Exported {len(prs)} PRs to {filename}")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error exporting to Excel: {e}")
-            return False
-
     def invalidate_cache(self, namespace: Optional[str] = None) -> int:
         """
         Invalidate cache entries.

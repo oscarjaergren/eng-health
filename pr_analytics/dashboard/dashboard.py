@@ -42,20 +42,17 @@ def load_data_from_api(
         return pd.DataFrame()
 
 
-def load_data_from_excel(file_path: str) -> pd.DataFrame:
-    """Load and preprocess PR data from Excel file."""
+def load_mock_data() -> pd.DataFrame:
+    """Load and preprocess mock PR data."""
     try:
-        # Check if we're in mock mode
-        if is_mock_mode():
-            st.info("🎭 Running in Mock Mode - Using generated test data")
-            mock_provider = get_mock_provider()
-            df = mock_provider.get_mock_excel_data()
-        else:
-            df = pd.read_excel(file_path)
-
+        st.info("🎭 Running in Mock Mode - Using generated test data")
+        mock_provider = get_mock_provider()
+        # Clear cache to ensure we get fresh data with latest schema
+        mock_provider.clear_cache()
+        df = mock_provider.get_mock_data()
         return preprocess_dataframe(df)
     except Exception as e:
-        st.error(f"Error loading data from Excel: {e}")
+        st.error(f"Error loading mock data: {e}")
         return pd.DataFrame()
 
 
@@ -447,8 +444,17 @@ def create_review_analytics(df: pd.DataFrame):
 
     for _, row in df.iterrows():
         # Process approvers
-        if pd.notna(row.get("Approved By")):
-            approvers = safe_parse_list(row["Approved By"])
+        approved_by_value = row.get("Approved By")
+        # Handle list/array values properly to avoid ambiguity error
+        if isinstance(approved_by_value, list):
+            has_approvers = len(approved_by_value) > 0
+        elif pd.isna(approved_by_value):
+            has_approvers = False
+        else:
+            has_approvers = bool(approved_by_value)
+
+        if has_approvers:
+            approvers = safe_parse_list(approved_by_value)
             for approver in approvers:
                 clean_approver = approver.split(" (")[
                     0
@@ -458,21 +464,48 @@ def create_review_analytics(df: pd.DataFrame):
                 )
 
         # Process commenters - use the new Comment Counts data
-        if pd.notna(row.get("Comment Counts")):
-            # Comment Counts is a dict of {person: count} per PR
-            pr_comment_counts = safe_parse_dict(row["Comment Counts"])
+        comment_counts_value = row.get("Comment Counts")
+        # Handle list/array values properly to avoid ambiguity error
+        if isinstance(comment_counts_value, list):
+            has_comment_counts = len(comment_counts_value) > 0
+        elif pd.isna(comment_counts_value):
+            has_comment_counts = False
+        else:
+            has_comment_counts = bool(comment_counts_value)
+
+        if has_comment_counts:
+            pr_comment_counts = safe_parse_dict(comment_counts_value)
             if isinstance(pr_comment_counts, dict):
                 for commenter, count in pr_comment_counts.items():
                     comment_counts[commenter] = comment_counts.get(commenter, 0) + count
-        elif pd.notna(row.get("Commenters")):
+        else:
             # Fallback to old method if Comment Counts not available
-            commenters = safe_parse_list(row["Commenters"])
-            for commenter in commenters:
-                comment_counts[commenter] = comment_counts.get(commenter, 0) + 1
+            commenters_value = row.get("Commenters")
+            # Handle list/array values properly to avoid ambiguity error
+            if isinstance(commenters_value, list):
+                has_commenters = len(commenters_value) > 0
+            elif pd.isna(commenters_value):
+                has_commenters = False
+            else:
+                has_commenters = bool(commenters_value)
+
+            if has_commenters:
+                commenters = safe_parse_list(commenters_value)
+                for commenter in commenters:
+                    comment_counts[commenter] = comment_counts.get(commenter, 0) + 1
 
         # Process rejections
-        if pd.notna(row.get("Rejected By")):
-            rejectors = safe_parse_list(row["Rejected By"])
+        rejected_by_value = row.get("Rejected By")
+        # Handle list/array values properly to avoid ambiguity error
+        if isinstance(rejected_by_value, list):
+            has_rejectors = len(rejected_by_value) > 0
+        elif pd.isna(rejected_by_value):
+            has_rejectors = False
+        else:
+            has_rejectors = bool(rejected_by_value)
+
+        if has_rejectors:
+            rejectors = safe_parse_list(rejected_by_value)
             for rejector in rejectors:
                 rejection_counts[rejector] = rejection_counts.get(rejector, 0) + 1
 
@@ -738,59 +771,39 @@ def main():
                     api_client.invalidate_cache()
                     st.rerun()
 
-            # Excel export button
-            st.markdown("---")
-            if st.button("💾 Export to Excel", help="Export current data to Excel"):
-                with st.spinner("Exporting..."):
-                    result = api_client.export_to_excel()
-                    if result and result.get("success"):
-                        st.success(f"✅ {result.get('message')}")
-                    else:
-                        st.error("❌ Export failed")
         else:
-            st.warning("⚠️ API Unavailable - Using Excel fallback")
-            data_mode = "excel"
+            st.warning("⚠️ API Unavailable - Using Mock Mode fallback")
+            data_mode = "mock"
 
     # Load data based on mode
     if api_available and data_mode == "api":
         st.info("🚀 Real-time data mode - Connected to API")
         force_refresh = st.sidebar.checkbox("Force API Refresh", value=False)
         df = load_data_from_api(api_client, force_refresh=force_refresh)
+    elif is_mock_mode() or data_mode == "mock":
+        st.success("🎭 Running in Mock Mode")
+        df = load_mock_data()
     else:
-        # Fallback to Excel mode
-        data_file = "pr_data.xlsx"
-
-        # Check if we're in mock mode or if the data file exists
-        if is_mock_mode():
-            st.success("🎭 Running in Mock Mode - No data file required")
-            df = load_data_from_excel(data_file)  # Will use mock data
-        elif os.path.exists(data_file):
-            st.success(f"✅ Found existing data file: {data_file}")
-            df = load_data_from_excel(data_file)
-        else:
-            st.error(
-                f"❌ Data file '{data_file}' not found. Please run the PR extraction script first or start the API."
-            )
-            st.markdown(
-                """
-            ### How to get started:
-
-            **Option 1: Use API Mode (Recommended)**
-            1. Start the API: `python api_main.py`
-            2. The dashboard will automatically connect
-
-            **Option 2: Use Excel Mode**
-            1. Configure your `.env` file with Azure DevOps and/or GitHub credentials
-            2. Run the extraction script: `python main.py`
-            3. Refresh this dashboard to load the generated data
-
-            ### Supported Platforms:
-            - **Azure DevOps**: Configure AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PAT
-            - **GitHub**: Configure GITHUB_TOKEN, GITHUB_OWNER
-            - **Both**: Configure all variables to extract from both platforms
+        st.error("❌ API unavailable and mock mode not enabled")
+        st.markdown(
             """
-            )
-            return
+        ### How to get started:
+
+        **Option 1: Use API Mode (Recommended)**
+        1. Start the API: `python api_main.py`
+        2. The dashboard will automatically connect
+
+        **Option 2: Use Mock Mode**
+        1. Set environment variable: `MOCK_MODE=true`
+        2. Run the dashboard: `streamlit run dashboard_main.py --mock`
+
+        ### Supported Platforms:
+        - **Azure DevOps**: Configure AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PAT
+        - **GitHub**: Configure GITHUB_TOKEN, GITHUB_OWNER
+        - **Both**: Configure all variables to extract from both platforms
+        """
+        )
+        return
 
     if not df.empty:
         # Add global filters in sidebar
@@ -823,9 +836,9 @@ def main():
                     value=(
                         min_date,
                         today,
-                    ),  # Default to today instead of max_allowed
+                    ),  # Default to today instead of max_value
                     min_value=min_date,
-                    max_allowed=max_allowed,
+                    max_value=max_allowed,
                     key="main_date_filter",
                 )
 
@@ -921,23 +934,7 @@ def main():
             create_interactive_filters(df)
 
     else:
-        st.error(
-            f"❌ Data file '{data_file}' not found. Please run the PR extraction script first."
-        )
-
-        st.markdown(
-            """
-        ### How to generate the data:
-        1. Configure your `.env` file with Azure DevOps and/or GitHub credentials
-        2. Run the extraction script: `python src/main.py`
-        3. Refresh this dashboard to load the generated data
-
-        ### Supported Platforms:
-        - **Azure DevOps**: Configure AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PROJECT, AZURE_DEVOPS_PAT
-        - **GitHub**: Configure GITHUB_TOKEN, GITHUB_OWNER, GITHUB_TYPE
-        - **Both**: Configure all variables to extract from both platforms
-        """
-        )
+        st.info("📊 No data available to display")
 
 
 if __name__ == "__main__":

@@ -13,14 +13,11 @@ from typing import List, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 
 from pr_analytics.api.data_service import DataService
 from pr_analytics.api.models import (
     CacheStats,
     Contributor,
-    ExportRequest,
-    ExportResponse,
     HealthCheck,
     MetricsSummary,
     PlatformStats,
@@ -269,69 +266,6 @@ async def get_platform_stats():
 
     except Exception as e:
         logger.error(f"Error fetching platform stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/export", response_model=ExportResponse)
-async def export_to_excel(request: ExportRequest):
-    """
-    Export PR data to Excel file.
-
-    This endpoint generates an Excel file with filtered PR data.
-    The file is saved in the working directory.
-    """
-    try:
-        service = get_data_service()
-
-        # Fetch PRs with filters
-        prs = service.fetch_pull_requests()
-
-        if request.filters:
-            filters_dict = request.filters.dict(exclude_none=True)
-            prs = service.filter_pull_requests(prs, filters_dict)
-
-        # Export to Excel
-        filename = request.filename or "pr_data.xlsx"
-        success = service.export_to_excel(prs, filename)
-
-        if success:
-            return ExportResponse(
-                success=True,
-                filename=filename,
-                record_count=len(prs),
-                message=f"Successfully exported {len(prs)} records to {filename}",
-            )
-        else:
-            raise HTTPException(
-                status_code=500, detail="Failed to export data to Excel"
-            )
-
-    except Exception as e:
-        logger.error(f"Error exporting to Excel: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/export/download/{filename}")
-async def download_excel(filename: str):
-    """
-    Download an exported Excel file.
-
-    Returns the Excel file as a downloadable attachment.
-    """
-    try:
-        if not os.path.exists(filename):
-            raise HTTPException(status_code=404, detail="File not found")
-
-        return FileResponse(
-            path=filename,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            filename=filename,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error downloading file: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -6,12 +6,14 @@ built on top of the BaseAPIClient class for common functionality.
 """
 
 import base64
+import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Union
 
 import requests
-from requests.exceptions import RequestException
+from requests.exceptions import ConnectionError, RequestException, Timeout
 
 from .base_client import BaseAPIClient
 
@@ -212,28 +214,28 @@ class AzureDevOpsClient(BaseAPIClient):
                 else:
                     self.logger.warning(
                         f"Request failed with status {response.status_code}, "
-                        f"attempt {attempt + 1}/{max_retries + 1}"
+                        f"attempt {attempt + 1}/{self.max_retries + 1}"
                     )
-                    if attempt < max_retries:
+                    if attempt < self.max_retries:
                         time.sleep(2**attempt)  # Exponential backoff
 
             except Timeout as e:
                 self.logger.warning(
-                    f"Request timeout: {e}, attempt {attempt + 1}/{max_retries + 1}"
+                    f"Request timeout: {e}, attempt {attempt + 1}/{self.max_retries + 1}"
                 )
-                if attempt < max_retries:
+                if attempt < self.max_retries:
                     time.sleep(2**attempt)
             except ConnectionError as e:
                 self.logger.warning(
-                    f"Connection error: {e}, attempt {attempt + 1}/{max_retries + 1}"
+                    f"Connection error: {e}, attempt {attempt + 1}/{self.max_retries + 1}"
                 )
-                if attempt < max_retries:
+                if attempt < self.max_retries:
                     time.sleep(2**attempt)
             except RequestException as e:
                 self.logger.warning(
-                    f"Request exception: {e}, attempt {attempt + 1}/{max_retries + 1}"
+                    f"Request exception: {e}, attempt {attempt + 1}/{self.max_retries + 1}"
                 )
-                if attempt < max_retries:
+                if attempt < self.max_retries:
                     time.sleep(2**attempt)
 
         return None
@@ -245,7 +247,7 @@ class AzureDevOpsClient(BaseAPIClient):
                 "Fetching repositories from all Azure DevOps projects in organization..."
             )
 
-            response = self._make_request_with_retry(self.config.repositories_url)
+            response = self._make_request("GET", self.config.repositories_url)
 
             if not response or response.status_code != 200:
                 if response:
@@ -285,30 +287,34 @@ class AzureDevOpsClient(BaseAPIClient):
         Fetch pull requests for a repository with pagination support.
 
         Args:
-            organization: Azure DevOps organization name
-            project: Project name
-            repository: Repository name or ID
-            status: PR status filter ('all', 'active', 'completed', 'abandoned')
-            top: Number of PRs to fetch per page (page size)
-            skip: Number of PRs to skip (for pagination)
+            repository: Repository dictionary containing id, name, and project info
 
         Returns:
             List of pull request objects from all pages
         """
         all_pull_requests = []
-        current_skip = skip
+        current_skip = 0
+        top = 100
+
+        # Extract repository details
+        repo_id = repository.get("id")
+        project_name = repository.get("project", {}).get("name")
+
+        if not repo_id or not project_name:
+            self.logger.error("Repository missing required fields (id or project.name)")
+            return []
 
         while True:
             # Make API request for the current page
-            path = f"{project}/_apis/git/repositories/{repository}/pullrequests"
+            path = f"{project_name}/_apis/git/repositories/{repo_id}/pullrequests"
             params = {
-                "searchCriteria.status": status,
-                "$top": top,  # Page size
+                "searchCriteria.status": "all",
+                "$top": top,
                 "$skip": current_skip,
                 "api-version": self.API_VERSION,
             }
 
-            url = self._build_url(organization, path)
+            url = f"{self.BASE_URL}/{self.config.azure_devops_organization}/{path}"
             response = self._make_request("GET", url, params=params)
 
             # Handle response
@@ -376,38 +382,18 @@ class AzureDevOpsClient(BaseAPIClient):
         repository: str,
         pull_request_id: Union[str, int],
     ) -> List[Dict[str, Any]]:
-        """Fetch detailed information (threads and iterations) for PRs in parallel."""
-        if not pr_data:
-            return pr_data
+        """Fetch commits for a specific pull request."""
+        path = f"{project}/_apis/git/repositories/{repository}/pullRequests/{pull_request_id}/commits"
+        params = {"api-version": self.API_VERSION}
 
-        # Use a smaller worker pool for detailed fetching to avoid overwhelming
-        # the API
-        detail_workers = min(8, len(pr_data))
+        url = f"{self.BASE_URL}/{organization}/{path}"
+        response = self._make_request("GET", url, params=params)
 
-        with ThreadPoolExecutor(max_workers=detail_workers) as executor:
-            # Submit tasks for fetching PR details
-            future_to_pr = {
-                executor.submit(self._fetch_single_pr_details, pr, repo_id): pr
-                for pr in pr_data
-            }
+        if response and response.status_code == 200:
+            data = response.json()
+            return data.get("value", [])
 
-            # Collect results
-            for future in as_completed(future_to_pr):
-                pr = future_to_pr[future]
-                try:
-                    updated_pr = future.result()
-                    # Update the original PR data with fetched details
-                    pr.update(updated_pr)
-                except Exception as e:
-                    pr_id = pr.get("pullRequestId", "unknown")
-                    self.logger.warning(
-                        f"Failed to fetch details for PR {pr_id} in {repo_name}: {e}"
-                    )
-                    # Set empty defaults so processing doesn't fail
-                    pr["threads"] = []
-                    pr["iterations"] = []
-
-        return pr_data
+        return []
 
     def _fetch_single_pr_details(
         self, pr: Dict[str, Any], repo_id: str

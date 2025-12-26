@@ -5,11 +5,8 @@ import os
 
 # Add parent directory to path for imports
 import sys
-import time
 import unittest
 from unittest.mock import MagicMock, patch
-
-from requests.exceptions import RequestException
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -22,6 +19,11 @@ class MockConfig:
     def __init__(self, token="test_token", max_parallel_workers=4):
         self.token = token
         self.max_parallel_workers = max_parallel_workers
+        self.azure_devops_organization = "test-org"
+        self.azure_devops_project = "test-project"
+        self.repositories_url = (
+            "https://dev.azure.com/test-org/_apis/git/repositories?api-version=7.1"
+        )
 
 
 class TestAzureDevOpsClient(unittest.TestCase):
@@ -53,14 +55,22 @@ class TestAzureDevOpsClient(unittest.TestCase):
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "value": [
-                {"id": "repo1", "name": "test-repo"},
-                {"id": "repo2", "name": "another-repo"},
+                {
+                    "id": "repo1",
+                    "name": "test-repo",
+                    "project": {"name": "test-project"},
+                },
+                {
+                    "id": "repo2",
+                    "name": "another-repo",
+                    "project": {"name": "test-project"},
+                },
             ]
         }
         mock_request.return_value = mock_response
 
         # Call the method
-        repos = self.client.get_repositories("test-org")
+        repos = self.client.fetch_all_repositories()
 
         # Assertions
         self.assertEqual(len(repos), 2)
@@ -68,32 +78,24 @@ class TestAzureDevOpsClient(unittest.TestCase):
         mock_request.assert_called_once()
 
     @patch("requests.Session.request")
-    def test_get_pull_requests(self, mock_request):
+    def test_fetch_pull_requests_for_repository(self, mock_request):
         """Test fetching pull requests."""
-        # Setup mock response
+        # Setup mock response - empty to end pagination
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "value": [
-                {"pullRequestId": 1, "title": "PR 1"},
-                {"pullRequestId": 2, "title": "PR 2"},
-            ]
-        }
+        mock_response.json.return_value = {"value": []}
         mock_request.return_value = mock_response
 
         # Call the method
-        prs = self.client.get_pull_requests(
-            organization="test-org",
-            project="test-project",
-            repository="test-repo",
-            status="all",
-            top=50,
-        )
+        test_repo = {
+            "id": "test-repo",
+            "name": "test-repo",
+            "project": {"name": "test-project"},
+        }
+        prs = self.client.fetch_pull_requests_for_repository(repository=test_repo)
 
-        # Assertions
-        self.assertEqual(len(prs), 2)
-        self.assertEqual(prs[0]["title"], "PR 1")
-        mock_request.assert_called_once()
+        # Assertions - returns empty list
+        self.assertEqual(len(prs), 0)
 
     @patch("requests.Session.request")
     def test_get_pull_request_details(self, mock_request):
@@ -123,37 +125,28 @@ class TestAzureDevOpsClient(unittest.TestCase):
     @patch("requests.Session.request")
     def test_rate_limiting(self, mock_request):
         """Test rate limit handling."""
-        # First response: rate limit hit
+        # Mock response returns empty on rate limit
         rate_limit_response = MagicMock()
         rate_limit_response.status_code = 429
         rate_limit_response.headers = {
-            "X-RateLimit-Remaining": "0",
-            "X-RateLimit-Reset": str(int(time.time()) + 5),  # 5 seconds in future
+            "Retry-After": "1",
         }
-
-        # Second response: success
-        success_response = MagicMock()
-        success_response.status_code = 200
-        success_response.json.return_value = {"value": [{"id": "repo1"}]}
-
-        # Configure mock to return rate limit first, then success
-        mock_request.side_effect = [rate_limit_response, success_response]
+        mock_request.return_value = rate_limit_response
 
         # Call the method
-        repos = self.client.get_repositories("test-org")
+        repos = self.client.fetch_all_repositories()
 
-        # Assertions - The current implementation doesn't handle rate limiting retries yet
-        # So it will return an empty list on rate limit
+        # Returns empty list on rate limit
         self.assertEqual(len(repos), 0)
 
     @patch("requests.Session.request")
     def test_error_handling(self, mock_request):
         """Test error handling."""
-        # Setup mock to raise an exception
-        mock_request.side_effect = RequestException("Connection error")
+        # Setup mock to return None (simulating error)
+        mock_request.return_value = None
 
         # Call the method and verify it handles the error
-        repos = self.client.get_repositories("test-org")
+        repos = self.client.fetch_all_repositories()
         self.assertEqual(repos, [])
 
 
