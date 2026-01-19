@@ -73,6 +73,8 @@ class AzureDevOpsClient(BaseAPIClient):
         return {
             "Content-Type": "application/json",
             "Accept": f"application/json; api-version={self.API_VERSION}",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
         }
 
     def _setup_auth(self) -> None:
@@ -440,15 +442,11 @@ class AzureDevOpsClient(BaseAPIClient):
     def _fetch_pr_threads(self, repo_id: str, pr_id: int) -> List[Dict[str, Any]]:
         """Fetch all threads (comments and discussions) for a specific PR."""
         try:
-            # Construct URL for PR threads using organization-level API
             threads_url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/threads?api-version=7.1"
-
-            response = self.session.get(threads_url, timeout=10)  # Reduced timeout
+            response = self.session.get(threads_url, timeout=5)
             if response.status_code == 200:
-                threads_data = response.json()
-                return threads_data.get("value", [])
-            else:
-                return []
+                return response.json().get("value", [])
+            return []
         except Exception:
             return []
 
