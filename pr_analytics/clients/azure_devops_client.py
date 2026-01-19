@@ -281,13 +281,14 @@ class AzureDevOpsClient(BaseAPIClient):
             return []
 
     def fetch_pull_requests_for_repository(
-        self, repository: Dict[str, Any]
+        self, repository: Dict[str, Any], fetch_threads: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Fetch pull requests for a repository with pagination support.
 
         Args:
             repository: Repository dictionary containing id, name, and project info
+            fetch_threads: Whether to fetch threads for each PR (needed for historical approvals)
 
         Returns:
             List of pull request objects from all pages
@@ -328,6 +329,10 @@ class AzureDevOpsClient(BaseAPIClient):
             if not pull_requests:
                 break
 
+            # Parallel thread fetching for much better performance
+            if fetch_threads and pull_requests:
+                self._fetch_threads_parallel(pull_requests, repo_id)
+
             # Add PRs from this page to our results
             all_pull_requests.extend(pull_requests)
 
@@ -342,6 +347,20 @@ class AzureDevOpsClient(BaseAPIClient):
             continue
 
         return all_pull_requests
+
+    def _fetch_threads_parallel(
+        self, pull_requests: List[Dict[str, Any]], repo_id: str
+    ) -> None:
+        """Fetch threads for multiple PRs in parallel for better performance."""
+        def fetch_single_thread(pr: Dict[str, Any]) -> None:
+            pr_id = pr.get("pullRequestId")
+            if pr_id:
+                pr["threads"] = self._fetch_pr_threads(repo_id, pr_id)
+
+        # Use up to 20 workers for thread fetching (I/O bound)
+        max_thread_workers = min(20, len(pull_requests))
+        with ThreadPoolExecutor(max_workers=max_thread_workers) as executor:
+            executor.map(fetch_single_thread, pull_requests)
 
     def get_pull_request_details(
         self,

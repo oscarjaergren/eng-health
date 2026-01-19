@@ -132,12 +132,61 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
 
         return reviewers_info
 
+    def _extract_historical_approvers(self, pr: Dict[str, Any]) -> List[str]:
+        """Extract all users who ever approved the PR from thread history.
+        
+        Azure DevOps records vote changes in system threads. This method parses
+        those threads to find anyone who approved at any point, even if their
+        vote was later reset by new commits.
+        """
+        threads = pr.get("threads", [])
+        historical_approvers = set()
+        created_by = pr.get("createdBy", {}).get("uniqueName", "").lower()
+        
+        if not isinstance(threads, list):
+            return []
+        
+        for thread in threads:
+            # System-generated vote threads have specific properties
+            properties = thread.get("properties", {})
+            
+            # Check for vote threads via CodeReviewVotedByIdentity property
+            voted_by_prop = properties.get("CodeReviewVotedByIdentity", {})
+            vote_prop = properties.get("CodeReviewVoteResult", {})
+            
+            if voted_by_prop and vote_prop:
+                voter_id = voted_by_prop.get("$value", "")
+                vote_result = vote_prop.get("$value", "")
+                
+                # Positive votes (10 = approved, 5 = approved with suggestions)
+                if vote_result in ["10", "5"]:
+                    if voter_id and not self.is_system_identity(voter_id):
+                        if voter_id.lower() != created_by:
+                            historical_approvers.add(voter_id)
+            
+            # Also check thread comments for vote-related system messages
+            for comment in thread.get("comments", []):
+                comment_type = comment.get("commentType", "")
+                
+                if comment_type == "system":
+                    author = comment.get("author", {})
+                    author_name = author.get("uniqueName", "")
+                    content = comment.get("content", "").lower()
+                    
+                    # System messages like "X approved" or "X voted approve"
+                    if any(phrase in content for phrase in ["approved", "voted 10", "voted 5"]):
+                        if author_name and not self.is_system_identity(author_name):
+                            if author_name.lower() != created_by:
+                                historical_approvers.add(author_name)
+        
+        return list(historical_approvers)
+
     def _extract_review_details(self, pr: Dict[str, Any]) -> Dict[str, Any]:
         """Extract detailed review information including votes and approvals, filtering out system/team reviewers."""
         reviewers = pr.get("reviewers", [])
         created_by = pr.get("createdBy", {}).get("uniqueName", "")
 
-        # Count reviewer votes
+        # Count current reviewer votes
         approved_by = []
         rejected_by = []
         waiting_reviewers = []
@@ -162,6 +211,13 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
             else:
                 optional_reviewers.append(reviewer_name)
 
+        # Extract historical approvers from threads
+        historical_approvers = self._extract_historical_approvers(pr)
+        
+        # Merge: "Ever Approved" = current approvers + historical approvers (deduplicated)
+        ever_approved_set = set(approved_by) | set(historical_approvers)
+        ever_approved = list(ever_approved_set)
+
         # Filter system identities from all reviewers for counting
         filtered_reviewers = [
             r
@@ -171,11 +227,13 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
 
         review_info = {
             "Approved By": approved_by,
+            "Ever Approved": ever_approved,
             "Rejected By": rejected_by,
             "Waiting Reviewers": waiting_reviewers,
             "Optional Reviewers": optional_reviewers,
             "Total Reviewers": len(filtered_reviewers),
             "Approval Count": len(approved_by),
+            "Ever Approved Count": len(ever_approved),
             "Rejection Count": len(rejected_by),
         }
 
@@ -319,12 +377,12 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
             return review_info
 
         approved_by = review_info.get("Approved By", [])
+        ever_approved = review_info.get("Ever Approved", [])
         personal_approvals_count = 0
 
         # Filter out approvals from the PR creator
         filtered_approved_by = []
         for approver in approved_by:
-            # Extract the username (before any additional info like "(with suggestions)")
             approver_username = (
                 approver.split(" (")[0] if " (" in approver else approver
             )
@@ -334,10 +392,22 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
             else:
                 personal_approvals_count += 1
 
+        # Also filter "Ever Approved" list
+        filtered_ever_approved = []
+        for approver in ever_approved:
+            approver_username = (
+                approver.split(" (")[0] if " (" in approver else approver
+            )
+
+            if approver_username != created_by:
+                filtered_ever_approved.append(approver)
+
         # Update the review info with filtered data
         updated_review_info = review_info.copy()
         updated_review_info["Approved By"] = filtered_approved_by
         updated_review_info["Approval Count"] = len(filtered_approved_by)
+        updated_review_info["Ever Approved"] = filtered_ever_approved
+        updated_review_info["Ever Approved Count"] = len(filtered_ever_approved)
         updated_review_info["personal_approvals_filtered"] = personal_approvals_count
 
         return updated_review_info

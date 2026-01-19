@@ -67,7 +67,9 @@ def _fetch_new_prs(since_date: str | None = None, progress_container=None) -> li
     from pr_analytics.clients.github_client import GitHubClient
     from pr_analytics.core.config import Config
     from pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     import logging
+    import threading
 
     config = Config()
     logger = logging.getLogger(__name__)
@@ -95,24 +97,39 @@ def _fetch_new_prs(since_date: str | None = None, progress_container=None) -> li
     if not all_repositories:
         return []
 
-    # Fetch PRs with progress tracking
+    # Parallel fetch with progress tracking
     total_repos = len(all_repositories)
     raw_prs_by_platform = {"azure_devops": [], "github": []}
+    completed_count = [0]  # Use list for mutable counter in closure
+    lock = threading.Lock()
     
-    for idx, (platform, repo, client) in enumerate(all_repositories):
+    def fetch_repo_prs(args):
+        platform, repo, client = args
         repo_name = repo.get("name", "Unknown")
-        progress = (idx + 1) / total_repos
-        
-        if progress_container:
-            progress_container.progress(progress, text=f"📂 Fetching PRs from {repo_name} ({idx + 1}/{total_repos})")
-        
         repo_prs = client.fetch_pull_requests_for_repository(repo)
-        
-        # Attach repository name to each PR for later processing
         for pr in repo_prs:
             pr["repository_name"] = repo_name
+        return platform, repo_name, repo_prs
+    
+    # Use ThreadPoolExecutor for parallel repo fetching (I/O bound)
+    max_workers = min(8, total_repos)  # Limit to avoid overwhelming the API
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fetch_repo_prs, args): args for args in all_repositories}
         
-        raw_prs_by_platform[platform].extend(repo_prs)
+        for future in as_completed(futures):
+            try:
+                platform, repo_name, repo_prs = future.result()
+                with lock:
+                    raw_prs_by_platform[platform].extend(repo_prs)
+                    completed_count[0] += 1
+                    if progress_container:
+                        progress = completed_count[0] / total_repos
+                        progress_container.progress(progress, text=f"📂 Fetched {repo_name} ({completed_count[0]}/{total_repos})")
+            except Exception as e:
+                logger.warning(f"Failed to fetch repo: {e}")
+                with lock:
+                    completed_count[0] += 1
 
     # Process all PRs by platform
     for platform, client in clients_info:

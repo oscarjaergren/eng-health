@@ -82,15 +82,16 @@ class BaseAPIClient(ABC):
         # Setup retry strategy
         retry_strategy = Retry(
             total=self.max_retries,
-            backoff_factor=0.5,
+            backoff_factor=0.3,
             status_forcelist=[429, 500, 502, 503, 504],
         )
 
-        # Configure adapter with connection pooling
+        # Configure adapter with larger connection pooling for parallel requests
         adapter = HTTPAdapter(
             max_retries=retry_strategy,
-            pool_connections=100,
-            pool_maxsize=100,
+            pool_connections=200,
+            pool_maxsize=200,
+            pool_block=False,
         )
 
         session.mount("http://", adapter)
