@@ -5,6 +5,7 @@ This module provides a client for interacting with the Azure DevOps API,
 built on top of the BaseAPIClient class for common functionality.
 """
 
+import asyncio
 import base64
 import json
 import logging
@@ -12,11 +13,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Union
 
+import aiohttp
 import requests
 from requests.exceptions import ConnectionError, RequestException, Timeout
 
 from .base_client import BaseAPIClient
-
 
 class AzureDevOpsClient(BaseAPIClient):
     """
@@ -353,16 +354,87 @@ class AzureDevOpsClient(BaseAPIClient):
     def _fetch_threads_parallel(
         self, pull_requests: List[Dict[str, Any]], repo_id: str
     ) -> None:
-        """Fetch threads for multiple PRs in parallel for better performance."""
+        """Fetch threads for multiple PRs using async I/O for maximum performance."""
+        if not pull_requests:
+            return
+        
+        try:
+            # Try to use existing event loop or create new one
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're already in an async context, use thread pool fallback
+                self._fetch_threads_threaded(pull_requests, repo_id)
+            except RuntimeError:
+                # No running loop, we can create one
+                asyncio.run(self._fetch_threads_async(pull_requests, repo_id))
+        except Exception:
+            # Fallback to threaded approach
+            self._fetch_threads_threaded(pull_requests, repo_id)
+    
+    def _fetch_threads_threaded(
+        self, pull_requests: List[Dict[str, Any]], repo_id: str
+    ) -> None:
+        """Fallback threaded implementation for thread fetching."""
         def fetch_single_thread(pr: Dict[str, Any]) -> None:
             pr_id = pr.get("pullRequestId")
             if pr_id:
                 pr["threads"] = self._fetch_pr_threads(repo_id, pr_id)
 
-        # Use up to 20 workers for thread fetching (I/O bound)
         max_thread_workers = min(20, len(pull_requests))
         with ThreadPoolExecutor(max_workers=max_thread_workers) as executor:
             executor.map(fetch_single_thread, pull_requests)
+
+    async def _fetch_threads_async(
+        self, pull_requests: List[Dict[str, Any]], repo_id: str
+    ) -> None:
+        """Async implementation for fetching threads - much faster for I/O bound work."""
+        pat_encoded = base64.b64encode(f":{self.config.token}".encode()).decode()
+        headers = {
+            "Authorization": f"Basic {pat_encoded}",
+            "Accept": "application/json; api-version=7.1",
+            "Accept-Encoding": "gzip, deflate",
+        }
+        
+        connector = aiohttp.TCPConnector(
+            limit=50,  # Max concurrent connections
+            limit_per_host=50,
+            ttl_dns_cache=300,
+            enable_cleanup_closed=True,
+        )
+        
+        timeout = aiohttp.ClientTimeout(total=5, connect=2)
+        
+        async with aiohttp.ClientSession(
+            connector=connector, 
+            headers=headers,
+            timeout=timeout
+        ) as session:
+            tasks = []
+            for pr in pull_requests:
+                pr_id = pr.get("pullRequestId")
+                if pr_id:
+                    tasks.append(self._fetch_single_thread_async(session, pr, repo_id, pr_id))
+            
+            await asyncio.gather(*tasks, return_exceptions=True)
+    
+    async def _fetch_single_thread_async(
+        self, 
+        session: aiohttp.ClientSession, 
+        pr: Dict[str, Any], 
+        repo_id: str, 
+        pr_id: int
+    ) -> None:
+        """Fetch threads for a single PR asynchronously."""
+        try:
+            url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/threads?api-version=7.1"
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    pr["threads"] = data.get("value", [])
+                else:
+                    pr["threads"] = []
+        except Exception:
+            pr["threads"] = []
 
     def get_pull_request_details(
         self,
