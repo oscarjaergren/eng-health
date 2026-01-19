@@ -4,6 +4,7 @@ PR Data Visualizer Dashboard
 A Streamlit web application for visualizing Pull Request data from Azure DevOps and GitHub.
 """
 
+import json
 import os
 import sys
 from datetime import datetime, timedelta
@@ -12,6 +13,10 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from pr_analytics.core.mock_mode import get_mock_provider, is_mock_mode
 from pr_analytics.core.safe_data_parser import (
@@ -19,27 +24,216 @@ from pr_analytics.core.safe_data_parser import (
     safe_parse_dict,
     safe_parse_list,
 )
-from pr_analytics.dashboard.api_client import APIClient
+
+# Cache file for persistent PR storage
+CACHE_FILE = Path(".cache/pr_data_cache.json")
+CACHE_METADATA_FILE = Path(".cache/pr_cache_metadata.json")
+
+
+def _load_cached_prs() -> tuple[list, str | None]:
+    """Load cached PRs from disk."""
+    if not CACHE_FILE.exists():
+        return [], None
+    
+    try:
+        with open(CACHE_FILE, "r") as f:
+            cached_prs = json.load(f)
+        
+        last_fetch = None
+        if CACHE_METADATA_FILE.exists():
+            with open(CACHE_METADATA_FILE, "r") as f:
+                metadata = json.load(f)
+                last_fetch = metadata.get("last_fetch_date")
+        
+        return cached_prs, last_fetch
+    except Exception:
+        return [], None
+
+
+def _save_cached_prs(prs: list, last_fetch_date: str) -> None:
+    """Save PRs to disk cache."""
+    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(CACHE_FILE, "w") as f:
+        json.dump(prs, f)
+    
+    with open(CACHE_METADATA_FILE, "w") as f:
+        json.dump({"last_fetch_date": last_fetch_date}, f)
+
+
+def _fetch_new_prs(since_date: str | None = None, progress_container=None) -> list:
+    """Fetch new PRs since the given date (or all if None)."""
+    from pr_analytics.clients.azure_devops_client import AzureDevOpsClient
+    from pr_analytics.clients.github_client import GitHubClient
+    from pr_analytics.core.config import Config
+    from pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
+    import logging
+
+    config = Config()
+    logger = logging.getLogger(__name__)
+    processor = UnifiedDataProcessor(logger, config)
+
+    all_pr_data = []
+    all_repositories = []
+    clients_info = []
+
+    # First, gather all repositories from all platforms
+    if "azure_devops" in config.platforms:
+        client = AzureDevOpsClient(config, logger)
+        repos = client.fetch_all_repositories()
+        for repo in repos:
+            all_repositories.append(("azure_devops", repo, client))
+        clients_info.append(("azure_devops", client))
+
+    if "github" in config.platforms:
+        client = GitHubClient(config, logger)
+        repos = client.fetch_all_repositories()
+        for repo in repos:
+            all_repositories.append(("github", repo, client))
+        clients_info.append(("github", client))
+
+    if not all_repositories:
+        return []
+
+    # Fetch PRs with progress tracking
+    total_repos = len(all_repositories)
+    raw_prs_by_platform = {"azure_devops": [], "github": []}
+    
+    for idx, (platform, repo, client) in enumerate(all_repositories):
+        repo_name = repo.get("name", "Unknown")
+        progress = (idx + 1) / total_repos
+        
+        if progress_container:
+            progress_container.progress(progress, text=f"📂 Fetching PRs from {repo_name} ({idx + 1}/{total_repos})")
+        
+        repo_prs = client.fetch_pull_requests_for_repository(repo)
+        
+        # Attach repository name to each PR for later processing
+        for pr in repo_prs:
+            pr["repository_name"] = repo_name
+        
+        raw_prs_by_platform[platform].extend(repo_prs)
+
+    # Process all PRs by platform
+    for platform, client in clients_info:
+        raw_prs = raw_prs_by_platform.get(platform, [])
+        if raw_prs:
+            if progress_container:
+                progress_container.progress(1.0, text=f"⚙️ Processing {len(raw_prs)} PRs from {platform}...")
+            processed = processor.process_pull_requests(raw_prs, platform)
+            all_pr_data.extend(processed)
+
+    return all_pr_data
+
+
+def _fetch_and_cache_prs(progress_container=None) -> list:
+    """Fetch PR data with incremental caching and progress display."""
+    from datetime import datetime
+    
+    # Load existing cached data
+    cached_prs, last_fetch_date = _load_cached_prs()
+    
+    # Fetch all PRs with progress
+    new_prs = _fetch_new_prs(since_date=last_fetch_date, progress_container=progress_container)
+    
+    if progress_container:
+        progress_container.progress(1.0, text="✅ Syncing complete!")
+    
+    if not cached_prs:
+        # First time - save everything
+        now = datetime.now().isoformat()
+        _save_cached_prs(new_prs, now)
+        return new_prs
+    
+    # Merge: use PR ID to dedupe, keeping newer versions
+    existing_ids = {pr.get("id"): pr for pr in cached_prs}
+    
+    new_count = 0
+    for pr in new_prs:
+        pr_id = pr.get("id")
+        if pr_id not in existing_ids:
+            new_count += 1
+        existing_ids[pr_id] = pr  # Update with latest data
+    
+    merged_prs = list(existing_ids.values())
+    
+    # Save updated cache
+    now = datetime.now().isoformat()
+    _save_cached_prs(merged_prs, now)
+    
+    return merged_prs
+
+
+def load_pr_data() -> pd.DataFrame:
+    """Load PR data from cache or fetch from Azure DevOps/GitHub."""
+    try:
+        # Check if we have cached data
+        cached_prs, last_fetch = _load_cached_prs()
+        
+        if cached_prs:
+            # Use cached data (fast path)
+            pr_data = cached_prs
+        else:
+            # No cache - need to fetch with progress
+            progress_bar = st.progress(0, text="🔄 Connecting to Azure DevOps/GitHub...")
+            pr_data = _fetch_and_cache_prs(progress_container=progress_bar)
+            progress_bar.empty()
+
+        if not pr_data:
+            return pd.DataFrame()
+
+        # Use the unified converter that handles both formats
+        return _convert_prs_to_dataframe(pr_data)
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame()
+
+
+def _convert_prs_to_dataframe(pr_data: list) -> pd.DataFrame:
+    """Convert PR data list to DataFrame."""
+    if not pr_data:
+        return pd.DataFrame()
+    
+    # Check if data is already in dashboard format (uppercase keys)
+    first_item = pr_data[0] if pr_data else {}
+    if "Repository" in first_item or "ID" in first_item:
+        # Data is already in dashboard format, just convert to DataFrame
+        return pd.DataFrame(pr_data)
+    
+    # Convert from API format (lowercase keys) to dashboard format
+    records = []
+    for pr in pr_data:
+        record = {
+            "ID": pr.get("id"),
+            "Repository": pr.get("repository"),
+            "Title": pr.get("title"),
+            "Created By": pr.get("created_by"),
+            "Created Date": pr.get("created_date"),
+            "State": pr.get("status"),
+            "Platform": pr.get("platform"),
+            "Approvers": pr.get("approvers", []),
+            "Total Approvals": pr.get("total_approvals", 0),
+            "Total Reviewers": pr.get("total_reviewers", 0),
+            "Comments": pr.get("comments", 0),
+            "Assigned To": pr.get("reviewers", []),
+            "Project": pr.get("project", ""),
+        }
+        records.append(record)
+    
+    return pd.DataFrame(records)
+
+
+def _check_direct_mode_available() -> bool:
+    """Check if direct mode is available (credentials configured)."""
+    azure_configured = (
+        os.getenv("AZURE_DEVOPS_ORGANIZATION") and os.getenv("AZURE_DEVOPS_PAT")
+    )
+    github_configured = os.getenv("GITHUB_TOKEN") and os.getenv("GITHUB_OWNER")
+    return azure_configured or github_configured
+
 
 # Add pr_analytics directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
-
-
-def load_data_from_api(
-    api_client: APIClient, force_refresh: bool = False
-) -> pd.DataFrame:
-    """Load and preprocess PR data from API."""
-    try:
-        # Fetch data from API
-        df = api_client.get_pull_requests(force_refresh=force_refresh)
-
-        if df.empty:
-            return df
-
-        return preprocess_dataframe(df)
-    except Exception as e:
-        st.error(f"Error loading data from API: {e}")
-        return pd.DataFrame()
 
 
 def load_mock_data() -> pd.DataFrame:
@@ -89,6 +283,10 @@ def create_repository_overview(df: pd.DataFrame):
     """Create repository overview visualizations."""
     st.header("📊 Repository Overview")
 
+    if df.empty or "Repository" not in df.columns:
+        st.info("📭 No repository data available to display.")
+        return
+
     # Interactive controls
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -115,25 +313,29 @@ def create_repository_overview(df: pd.DataFrame):
             help="Metric to sort repositories by",
         )
 
-    # Calculate repository metrics
+    # Calculate repository metrics - use column names that exist in data
+    approval_col = "Total Approvals" if "Total Approvals" in df.columns else "Approval Count"
+    comments_col = "Comments" if "Comments" in df.columns else "Total Comments"
+    
+    agg_dict = {"ID": "count", "Total Reviewers": "mean"}
+    if approval_col in df.columns:
+        agg_dict[approval_col] = "mean"
+    if comments_col in df.columns:
+        agg_dict[comments_col] = "mean"
+    
     repo_metrics = (
         df.groupby("Repository")
-        .agg(
-            {
-                "ID": "count",
-                "Approval Count": "mean",
-                "Total Comments": "mean",
-                "Total Reviewers": "mean",
-            }
-        )
+        .agg(agg_dict)
         .round(2)
     )
-    repo_metrics.columns = [
-        "PR Count",
-        "Avg Approvals",
-        "Avg Comments",
-        "Avg Reviewers",
-    ]
+    
+    # Rename columns for display
+    rename_map = {"ID": "PR Count", "Total Reviewers": "Avg Reviewers"}
+    if approval_col in agg_dict:
+        rename_map[approval_col] = "Avg Approvals"
+    if comments_col in agg_dict:
+        rename_map[comments_col] = "Avg Comments"
+    repo_metrics.rename(columns=rename_map, inplace=True)
 
     # Sort based on selection
     sort_column = sort_by.replace(" ", "_").lower()
@@ -161,15 +363,17 @@ def create_repository_overview(df: pd.DataFrame):
         )
         title_prefix = f"📊 All {num_repos}"
 
-    # Create the chart
-    chart_values = repo_data[sort_column]
+    # Create the chart using DataFrame
+    chart_df = repo_data[[sort_column]].reset_index()
+    chart_df.columns = ["Repository", sort_by]
+    
     fig = px.bar(
-        x=chart_values.values,
-        y=chart_values.index,
+        chart_df,
+        x=sort_by,
+        y="Repository",
         orientation="h",
         title=f"{title_prefix} Repositories by {sort_by}",
-        labels={"x": sort_by, "y": "Repository"},
-        color=chart_values.values,
+        color=sort_by,
         color_continuous_scale=(
             "viridis" if view_type != "Bottom Performers" else "reds"
         ),
@@ -185,127 +389,168 @@ def create_repository_overview(df: pd.DataFrame):
     # Repository stats
     col1, col2, col3, col4 = st.columns(4)
 
+    unique_repos = df["Repository"].nunique()
+    total_prs = len(df)
+    
     with col1:
-        st.metric("Total Repositories", len(df["Repository"].unique()))
+        st.metric("Total Repositories", unique_repos)
 
     with col2:
-        st.metric("Total PRs", len(df))
+        st.metric("Total PRs", total_prs)
 
     with col3:
-        avg_prs = len(df) / len(df["Repository"].unique())
+        avg_prs = total_prs / unique_repos if unique_repos > 0 else 0
         st.metric("Avg PRs per Repo", f"{avg_prs:.1f}")
 
     with col4:
-        most_active = repo_metrics["PR Count"].idxmax()
-        most_active_count = int(repo_metrics.loc[most_active, "PR Count"])
-        st.metric("Most Active Repo", most_active, f"{most_active_count} PRs")
+        if not repo_metrics.empty and "PR Count" in repo_metrics.columns:
+            most_active = repo_metrics["PR Count"].idxmax()
+            most_active_count = int(repo_metrics.loc[most_active, "PR Count"])
+            st.metric("Most Active Repo", most_active, f"{most_active_count} PRs")
+        else:
+            st.metric("Most Active Repo", "N/A")
 
 
 def create_temporal_analysis(df: pd.DataFrame):
     """Create temporal analysis visualizations."""
     st.header("📅 Temporal Analysis")
 
-    # Time series of PR creation
-    monthly_counts = df.groupby("Year-Month").size()
+    if df.empty or "Year-Month" not in df.columns:
+        st.info("📭 No temporal data available to display.")
+        return
+
+    # Time series of PR creation - convert Period to string for JSON serialization
+    monthly_counts = df.groupby("Year-Month").size().reset_index(name="Count")
+    monthly_counts["Year-Month"] = monthly_counts["Year-Month"].astype(str)
+    monthly_counts.columns = ["Year-Month", "Number of PRs"]
 
     fig = px.line(
-        x=monthly_counts.index.astype(str),
-        y=monthly_counts.values,
+        monthly_counts,
+        x="Year-Month",
+        y="Number of PRs",
         title="PR Creation Over Time",
-        labels={"x": "Year-Month", "y": "Number of PRs"},
         markers=True,
     )
     fig.update_layout(height=400)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     col1, col2 = st.columns(2)
 
     with col1:
         # Day of week analysis
-        weekday_counts = df["Weekday"].value_counts()
-        weekday_order = [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]
-        weekday_counts = weekday_counts.reindex(weekday_order)
+        if "Weekday" in df.columns:
+            weekday_counts = df["Weekday"].value_counts()
+            weekday_order = [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+            weekday_counts = weekday_counts.reindex(weekday_order).fillna(0)
+            weekday_df = pd.DataFrame({
+                "Day": weekday_counts.index,
+                "Count": weekday_counts.values
+            })
 
-        fig = px.bar(
-            x=weekday_counts.index,
-            y=weekday_counts.values,
-            title="PRs by Day of Week",
-            labels={"x": "Day of Week", "y": "Number of PRs"},
-            color=weekday_counts.values,
-            color_continuous_scale="blues",
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            fig = px.bar(
+                weekday_df,
+                x="Day",
+                y="Count",
+                title="PRs by Day of Week",
+                color="Count",
+                color_continuous_scale="blues",
+            )
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("No weekday data available")
 
     with col2:
         # Hour of day analysis
-        hourly_counts = df["Hour"].value_counts().sort_index()
+        if "Hour" in df.columns:
+            hourly_counts = df["Hour"].value_counts().sort_index()
+            hourly_df = pd.DataFrame({
+                "Hour": hourly_counts.index,
+                "Count": hourly_counts.values
+            })
 
-        fig = px.bar(
-            x=hourly_counts.index,
-            y=hourly_counts.values,
-            title="PRs by Hour of Day",
-            labels={"x": "Hour", "y": "Number of PRs"},
-            color=hourly_counts.values,
-            color_continuous_scale="oranges",
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            fig = px.bar(
+                hourly_df,
+                x="Hour",
+                y="Count",
+                title="PRs by Hour of Day",
+                color="Count",
+                color_continuous_scale="oranges",
+            )
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("No hourly data available")
 
 
 def create_contributor_analysis(df: pd.DataFrame):
     """Create contributor analysis visualizations."""
     st.header("👥 Contributor Analysis")
 
+    if df.empty or "Created By" not in df.columns:
+        st.info("📭 No contributor data available to display.")
+        return
+
     # Top contributors
     contributor_counts = df["Created By"].value_counts().head(15)
+    contrib_df = pd.DataFrame({
+        "Count": contributor_counts.values,
+        "Contributor": contributor_counts.index
+    })
 
     fig = px.bar(
-        x=contributor_counts.values,
-        y=contributor_counts.index,
+        contrib_df,
+        x="Count",
+        y="Contributor",
         orientation="h",
         title="Top 15 PR Contributors",
-        labels={"x": "Number of PRs", "y": "Contributor"},
-        color=contributor_counts.values,
+        color="Count",
         color_continuous_scale="plasma",
     )
     fig.update_layout(height=500, showlegend=False)
     fig.update_yaxes(categoryorder="total ascending")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Reviewer analysis
     col1, col2 = st.columns(2)
 
     with col1:
         # Distribution of reviewer counts
-        reviewer_dist = df["Reviewer Count"].value_counts().sort_index()
+        if "Reviewer Count" in df.columns:
+            reviewer_dist = df["Reviewer Count"].value_counts().sort_index()
+            reviewer_df = pd.DataFrame({
+                "Reviewers": reviewer_dist.index,
+                "Count": reviewer_dist.values
+            })
 
-        fig = px.bar(
-            x=reviewer_dist.index,
-            y=reviewer_dist.values,
-            title="Distribution of Reviewer Counts",
-            labels={"x": "Number of Reviewers", "y": "Number of PRs"},
-            color=reviewer_dist.values,
-            color_continuous_scale="greens",
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            fig = px.bar(
+                reviewer_df,
+                x="Reviewers",
+                y="Count",
+                title="Distribution of Reviewer Counts",
+                color="Count",
+                color_continuous_scale="greens",
+            )
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("No reviewer count data available")
 
     with col2:
         # Contributor stats
         st.subheader("Contributor Stats")
         total_contributors = len(df["Created By"].unique())
-        avg_prs_per_contributor = len(df) / total_contributors
+        avg_prs_per_contributor = len(df) / total_contributors if total_contributors > 0 else 0
         median_prs = df["Created By"].value_counts().median()
 
         st.metric("Total Contributors", total_contributors)
         st.metric("Avg PRs per Contributor", f"{avg_prs_per_contributor:.1f}")
-        st.metric("Median PRs per Contributor", f"{median_prs:.1f}")
+        st.metric("Median PRs per Contributor", f"{median_prs:.1f}" if pd.notna(median_prs) else "N/A")
 
 
 def create_repository_heatmap(df: pd.DataFrame):
@@ -330,7 +575,7 @@ def create_repository_heatmap(df: pd.DataFrame):
         color_continuous_scale="viridis",
     )
     fig.update_layout(height=600)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_interactive_filters(df: pd.DataFrame):
@@ -384,7 +629,7 @@ def create_interactive_filters(df: pd.DataFrame):
         )
 
         if selected_columns:
-            st.dataframe(df[selected_columns], use_container_width=True, height=400)
+            st.dataframe(df[selected_columns], width="stretch", height=400)
         else:
             st.warning("Please select at least one column to display.")
     else:
@@ -517,8 +762,9 @@ def create_review_analytics(df: pd.DataFrame):
         st.metric("Total Approvals", total_approvals)
 
     with col2:
+        comments_col = "Comments" if "Comments" in df.columns else "Total Comments"
         total_comments = (
-            df["Total Comments"].sum() if "Total Comments" in df.columns else 0
+            df[comments_col].sum() if comments_col in df.columns else 0
         )
         st.metric("Total Comments", int(total_comments))
 
@@ -607,16 +853,19 @@ def create_review_analytics(df: pd.DataFrame):
     # Create the visualization
     if display_data:
         people, counts = zip(*display_data)
+        
+        chart_df = pd.DataFrame({
+            "Count": list(counts),
+            "Person": [person.split("@")[0] for person in people]
+        })
 
         fig = px.bar(
-            x=list(counts),
-            y=[
-                person.split("@")[0] for person in people
-            ],  # Remove email domain for cleaner display
+            chart_df,
+            x="Count",
+            y="Person",
             orientation="h",
             title=f"{title_prefix} {analysis_type} by {metric_name} {icon}",
-            labels={"x": f"Number of {metric_name}", "y": "Person"},
-            color=list(counts),
+            color="Count",
             color_continuous_scale=chart_color,
         )
         fig.update_layout(
@@ -738,72 +987,70 @@ def main():
     st.title("📊 Multi-Platform PR Data Dashboard")
     st.markdown("---")
 
-    # Data source selection
-    data_mode = os.getenv("DATA_MODE", "api").lower()  # 'api' or 'excel'
-
-    # Initialize API client
-    api_client = APIClient()
+    # Initialize session state for sync trigger
+    if "trigger_sync" not in st.session_state:
+        st.session_state.trigger_sync = False
+    if "trigger_full_reset" not in st.session_state:
+        st.session_state.trigger_full_reset = False
 
     # Sidebar: Data source and refresh controls
     with st.sidebar:
         st.header("🔧 Data Source")
 
-        # Check API availability
-        api_available = api_client.is_available()
+        # Check if direct mode is possible (env vars configured)
+        direct_mode_available = _check_direct_mode_available()
 
-        if api_available:
-            st.success("✅ API Connected")
-
-            # Show cache stats
-            cache_stats = api_client.get_cache_stats()
-            if cache_stats:
-                with st.expander("📊 Cache Statistics"):
-                    st.metric("Cache Entries", cache_stats.get("entries", 0))
-                    st.metric("Hit Rate", f"{cache_stats.get('hit_rate', 0)}%")
-                    st.metric(
-                        "Hits / Misses",
-                        f"{cache_stats.get('hits', 0)} / {cache_stats.get('misses', 0)}",
-                    )
-
-            # Refresh button
-            if st.button("🔄 Refresh Data", help="Force refresh data from APIs"):
-                with st.spinner("Fetching fresh data..."):
-                    api_client.invalidate_cache()
+        if direct_mode_available:
+            st.success("✅ Connected to Azure DevOps/GitHub")
+            
+            # Show cache info
+            cached_prs, last_fetch = _load_cached_prs()
+            if cached_prs:
+                st.caption(f"📦 {len(cached_prs)} PRs cached")
+                if last_fetch:
+                    st.caption(f"Last sync: {last_fetch[:16]}")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 Sync", help="Fetch new PRs only"):
+                    st.session_state.trigger_sync = True
                     st.rerun()
-
+            with col2:
+                if st.button("🗑️ Full Reset", help="Clear cache and refetch all"):
+                    if CACHE_FILE.exists():
+                        CACHE_FILE.unlink()
+                    if CACHE_METADATA_FILE.exists():
+                        CACHE_METADATA_FILE.unlink()
+                    st.session_state.trigger_full_reset = True
+                    st.rerun()
+            data_mode = "direct"
+        elif is_mock_mode():
+            st.info("🎭 Mock Mode Enabled")
+            data_mode = "mock"
         else:
-            st.warning("⚠️ API Unavailable - Using Mock Mode fallback")
+            st.warning("⚠️ Using Mock Mode (No credentials configured)")
             data_mode = "mock"
 
     # Load data based on mode
-    if api_available and data_mode == "api":
-        st.info("🚀 Real-time data mode - Connected to API")
-        force_refresh = st.sidebar.checkbox("Force API Refresh", value=False)
-        df = load_data_from_api(api_client, force_refresh=force_refresh)
-    elif is_mock_mode() or data_mode == "mock":
+    df = pd.DataFrame()
+    if data_mode == "direct":
+        # Check if we need to sync
+        if st.session_state.trigger_sync or st.session_state.trigger_full_reset:
+            st.session_state.trigger_sync = False
+            st.session_state.trigger_full_reset = False
+            progress_bar = st.progress(0, text="🔄 Connecting to Azure DevOps/GitHub...")
+            pr_data = _fetch_and_cache_prs(progress_container=progress_bar)
+            progress_bar.empty()
+            if pr_data:
+                df = _convert_prs_to_dataframe(pr_data)
+                df = preprocess_dataframe(df)
+        else:
+            df = load_pr_data()
+            if not df.empty:
+                df = preprocess_dataframe(df)
+    else:
         st.success("🎭 Running in Mock Mode")
         df = load_mock_data()
-    else:
-        st.error("❌ API unavailable and mock mode not enabled")
-        st.markdown(
-            """
-        ### How to get started:
-
-        **Option 1: Use API Mode (Recommended)**
-        1. Start the API: `python api_main.py`
-        2. The dashboard will automatically connect
-
-        **Option 2: Use Mock Mode**
-        1. Set environment variable: `MOCK_MODE=true`
-        2. Run the dashboard: `streamlit run dashboard_main.py --mock`
-
-        ### Supported Platforms:
-        - **Azure DevOps**: Configure AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PAT
-        - **GitHub**: Configure GITHUB_TOKEN, GITHUB_OWNER
-        - **Both**: Configure all variables to extract from both platforms
-        """
-        )
-        return
 
     if not df.empty:
         # Add global filters in sidebar
@@ -823,9 +1070,19 @@ def main():
 
         # Date range filter
         if "Created Date" in df.columns:
-            df["Created Date"] = pd.to_datetime(df["Created Date"])
-            min_date = df["Created Date"].min().date()
-            max_data_date = df["Created Date"].max().date()
+            df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
+            # Normalize timezone - convert to UTC then remove timezone for consistent comparisons
+            if df["Created Date"].dt.tz is not None:
+                df["Created Date"] = df["Created Date"].dt.tz_convert("UTC").dt.tz_localize(None)
+            
+            # Drop NaT values for date range calculation
+            valid_dates = df["Created Date"].dropna()
+            if len(valid_dates) > 0:
+                min_date = valid_dates.min().date()
+                max_data_date = valid_dates.max().date()
+            else:
+                min_date = datetime.today().date() - timedelta(days=365)
+                max_data_date = datetime.today().date()
             today = datetime.today().date()
             # Allow selection up to today + 1 day to avoid edge cases
             max_allowed = max(today + timedelta(days=1), max_data_date)
@@ -835,8 +1092,8 @@ def main():
                     "Select Date Range",
                     value=(
                         min_date,
-                        today,
-                    ),  # Default to today instead of max_value
+                        max_data_date,  # Use actual max date instead of today
+                    ),
                     min_value=min_date,
                     max_value=max_allowed,
                     key="main_date_filter",
@@ -845,21 +1102,28 @@ def main():
                 # Handle both single date and date range selections
                 if isinstance(date_range, tuple) and len(date_range) == 2:
                     start_date, end_date = date_range
-                    df = df[
-                        (df["Created Date"].dt.date >= start_date)
-                        & (df["Created Date"].dt.date <= end_date)
-                    ]
+                    # Convert dates to datetime for comparison (timezone-naive)
+                    start_dt = pd.Timestamp(start_date)
+                    end_dt = pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+                    mask = (df["Created Date"] >= start_dt) & (df["Created Date"] <= end_dt)
+                    # Also include rows with NaT dates to avoid losing data
+                    mask = mask | df["Created Date"].isna()
+                    df = df[mask]
                 elif hasattr(date_range, "__len__") and len(date_range) == 1:
                     # Single date selected, treat as same start and end date
                     single_date = (
                         date_range[0] if isinstance(date_range, tuple) else date_range
                     )
-                    df = df[df["Created Date"].dt.date == single_date]
+                    start_dt = pd.Timestamp(single_date)
+                    end_dt = pd.Timestamp(single_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+                    df = df[(df["Created Date"] >= start_dt) & (df["Created Date"] <= end_dt)]
                 elif (
                     not isinstance(date_range, (list, tuple)) and date_range is not None
                 ):
                     # Single date object
-                    df = df[df["Created Date"].dt.date == date_range]
+                    start_dt = pd.Timestamp(date_range)
+                    end_dt = pd.Timestamp(date_range) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+                    df = df[(df["Created Date"] >= start_dt) & (df["Created Date"] <= end_dt)]
 
             except Exception as e:
                 st.sidebar.error(f"Date filter error: {str(e)}")

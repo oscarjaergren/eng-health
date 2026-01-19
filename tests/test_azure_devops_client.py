@@ -20,6 +20,7 @@ class MockConfig:
         self.token = token
         self.max_parallel_workers = max_parallel_workers
         self.azure_devops_organization = "test-org"
+        self.organization = "test-org"  # Alias for compatibility
         self.azure_devops_project = "test-project"
         self.repositories_url = (
             "https://dev.azure.com/test-org/_apis/git/repositories?api-version=7.1"

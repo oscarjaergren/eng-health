@@ -314,7 +314,7 @@ class AzureDevOpsClient(BaseAPIClient):
                 "api-version": self.API_VERSION,
             }
 
-            url = f"{self.BASE_URL}/{self.config.azure_devops_organization}/{path}"
+            url = f"{self.BASE_URL}/{self.config.organization}/{path}"
             response = self._make_request("GET", url, params=params)
 
             # Handle response

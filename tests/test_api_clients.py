@@ -52,6 +52,7 @@ class TestAzureDevOpsClientIntegration(unittest.TestCase):
         """Set up test fixtures."""
         self.mock_config = Mock(spec=Config)
         self.mock_config.azure_devops_organization = "test-org"
+        self.mock_config.organization = "test-org"  # Alias for compatibility
         self.mock_config.azure_devops_project = "test-project"
         self.mock_config.azure_devops_token = "test-token"
         self.mock_config.token = "test-token"  # Add this for compatibility
@@ -406,12 +407,14 @@ class TestAPIClientErrorHandling(unittest.TestCase):
         # Azure DevOps config
         self.azure_config = Mock()
         self.azure_config.azure_devops_organization = "test-org"
+        self.azure_config.organization = "test-org"  # Alias for compatibility
         self.azure_config.azure_devops_project = "test-project"
         self.azure_config.token = "azure-test-token"
         self.azure_config.max_parallel_workers = 4
 
         # Test class attributes for direct access in tests
         self.azure_devops_organization = "test-org"
+        self.organization = "test-org"  # Alias for compatibility
         self.azure_devops_project = "test-project"
 
         # GitHub config
