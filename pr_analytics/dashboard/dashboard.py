@@ -45,7 +45,6 @@ def load_data_from_api(
 def load_mock_data() -> pd.DataFrame:
     """Load and preprocess mock PR data."""
     try:
-        st.info("🎭 Running in Mock Mode - Using generated test data")
         mock_provider = get_mock_provider()
         # Clear cache to ensure we get fresh data with latest schema
         mock_provider.clear_cache()
@@ -87,15 +86,61 @@ def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 def create_repository_overview(df: pd.DataFrame):
     """Create repository overview visualizations."""
-    st.header("📊 Repository Overview")
+    st.caption(
+        "💡 Compare repositories by PR activity, approvals, and comments to identify the most and least active repos"
+    )
+
+    # Calculate repository metrics for stats
+    repo_metrics_for_stats = (
+        df.groupby("Repository")
+        .agg(
+            {
+                "ID": "count",
+                "Approval Count": "mean",
+                "Total Comments": "mean",
+                "Total Reviewers": "mean",
+            }
+        )
+        .round(2)
+    )
+    repo_metrics_for_stats.columns = [
+        "PR Count",
+        "Avg Approvals",
+        "Avg Comments",
+        "Avg Reviewers",
+    ]
+
+    # Repository stats at top
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric("Total Repositories", len(df["Repository"].unique()))
+
+    with col2:
+        st.metric("Total PRs", len(df))
+
+    with col3:
+        avg_prs = len(df) / len(df["Repository"].unique())
+        st.metric(
+            "Avg PRs per Repo",
+            f"{avg_prs:.1f}",
+            help="Average number of PRs per repository. Shows how active repos are on average.",
+        )
+
+    with col4:
+        most_active = repo_metrics_for_stats["PR Count"].idxmax()
+        most_active_count = int(repo_metrics_for_stats.loc[most_active, "PR Count"])
+        st.metric("Most Active Repo", most_active, f"{most_active_count} PRs")
+
+    st.markdown("---")
 
     # Interactive controls
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
         view_type = st.selectbox(
             "📈 View Type",
-            ["Top Performers", "Bottom Performers", "Full Range"],
-            help="Choose whether to show most active, least active, or all repositories",
+            ["Top Repos", "Bottom Repos"],
+            help="Show most active repos (highest PR count) or least active repos (lowest PR count)",
         )
 
     with col2:
@@ -106,13 +151,6 @@ def create_repository_overview(df: pd.DataFrame):
             value=20,
             step=5,
             help="How many repositories to display",
-        )
-
-    with col3:
-        sort_by = st.selectbox(
-            "📋 Sort By",
-            ["PR Count", "Avg Approvals", "Avg Comments"],
-            help="Metric to sort repositories by",
         )
 
     # Calculate repository metrics
@@ -135,31 +173,20 @@ def create_repository_overview(df: pd.DataFrame):
         "Avg Reviewers",
     ]
 
-    # Sort based on selection
-    sort_column = sort_by.replace(" ", "_").lower()
-    if sort_column == "pr_count":
-        sort_column = "PR Count"
-    elif sort_column == "avg_approvals":
-        sort_column = "Avg Approvals"
-    elif sort_column == "avg_comments":
-        sort_column = "Avg Comments"
+    # Sort by PR Count
+    sort_column = "PR Count"
 
     # Apply view type filtering
-    if view_type == "Top Performers":
+    if view_type == "Top Repos":
         repo_data = repo_metrics.sort_values(sort_column, ascending=False).head(
             num_repos
         )
         title_prefix = f"🏆 Top {num_repos}"
-    elif view_type == "Bottom Performers":
+    else:  # Bottom Repos
         repo_data = repo_metrics.sort_values(sort_column, ascending=True).head(
             num_repos
         )
         title_prefix = f"📉 Bottom {num_repos}"
-    else:  # Full Range
-        repo_data = repo_metrics.sort_values(sort_column, ascending=False).head(
-            num_repos
-        )
-        title_prefix = f"📊 All {num_repos}"
 
     # Create the chart
     chart_values = repo_data[sort_column]
@@ -167,43 +194,47 @@ def create_repository_overview(df: pd.DataFrame):
         x=chart_values.values,
         y=chart_values.index,
         orientation="h",
-        title=f"{title_prefix} Repositories by {sort_by}",
-        labels={"x": sort_by, "y": "Repository"},
+        title=f"{title_prefix} Repositories by PR Count",
+        labels={"x": "PR Count", "y": "Repository"},
         color=chart_values.values,
-        color_continuous_scale=(
-            "viridis" if view_type != "Bottom Performers" else "reds"
-        ),
+        color_continuous_scale=("viridis" if view_type == "Top Repos" else "reds"),
     )
     fig.update_layout(height=max(400, num_repos * 20), showlegend=False)
     fig.update_yaxes(categoryorder="total ascending")
     st.plotly_chart(fig, width="stretch")
 
-    # Show detailed metrics table
-    st.subheader(f"📋 Detailed Metrics - {title_prefix} Repositories")
-    st.dataframe(repo_data, width="stretch")
-
-    # Repository stats
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric("Total Repositories", len(df["Repository"].unique()))
-
-    with col2:
-        st.metric("Total PRs", len(df))
-
-    with col3:
-        avg_prs = len(df) / len(df["Repository"].unique())
-        st.metric("Avg PRs per Repo", f"{avg_prs:.1f}")
-
-    with col4:
-        most_active = repo_metrics["PR Count"].idxmax()
-        most_active_count = int(repo_metrics.loc[most_active, "PR Count"])
-        st.metric("Most Active Repo", most_active, f"{most_active_count} PRs")
-
 
 def create_temporal_analysis(df: pd.DataFrame):
     """Create temporal analysis visualizations."""
-    st.header("📅 Temporal Analysis")
+    st.caption(
+        "💡 Discover when PRs are created - time trends, busiest days of the week, and peak hours"
+    )
+
+    # Stats at top
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric("Total PRs", len(df))
+
+    with col2:
+        date_range_days = (df["Created Date"].max() - df["Created Date"].min()).days
+        st.metric(
+            "Date Range",
+            f"{date_range_days} days",
+            help="Time period covered by the data",
+        )
+
+    with col3:
+        busiest_day = df["Weekday"].value_counts().idxmax()
+        busiest_count = df["Weekday"].value_counts().max()
+        st.metric("Busiest Day", busiest_day, f"{busiest_count} PRs")
+
+    with col4:
+        busiest_hour = df["Hour"].value_counts().idxmax()
+        busiest_hour_count = df["Hour"].value_counts().max()
+        st.metric("Peak Hour", f"{busiest_hour}:00", f"{busiest_hour_count} PRs")
+
+    st.markdown("---")
 
     # Time series of PR creation
     monthly_counts = df.groupby("Year-Month").size()
@@ -261,7 +292,38 @@ def create_temporal_analysis(df: pd.DataFrame):
 
 def create_contributor_analysis(df: pd.DataFrame):
     """Create contributor analysis visualizations."""
-    st.header("👥 Contributor Analysis")
+    st.caption(
+        "💡 See who creates the most PRs and how reviewers are distributed across pull requests"
+    )
+
+    # Stats at top
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        total_contributors = len(df["Created By"].unique())
+        st.metric(
+            "Total Contributors",
+            total_contributors,
+            help="Number of unique people who have created PRs",
+        )
+
+    with col2:
+        avg_prs_per_contributor = len(df) / total_contributors
+        st.metric(
+            "Avg PRs per Contributor",
+            f"{avg_prs_per_contributor:.1f}",
+            help="Average number of PRs each person creates (total PRs / total people). Skewed by very active contributors.",
+        )
+
+    with col3:
+        median_prs = df["Created By"].value_counts().median()
+        st.metric(
+            "Median PRs per Contributor",
+            f"{median_prs:.1f}",
+            help="Typical number of PRs per person (middle value). Better represents the 'normal' contributor since it's not affected by outliers.",
+        )
+
+    st.markdown("---")
 
     # Top contributors
     contributor_counts = df["Created By"].value_counts().head(15)
@@ -279,38 +341,12 @@ def create_contributor_analysis(df: pd.DataFrame):
     fig.update_yaxes(categoryorder="total ascending")
     st.plotly_chart(fig, use_container_width=True)
 
-    # Reviewer analysis
-    col1, col2 = st.columns(2)
-
-    with col1:
-        # Distribution of reviewer counts
-        reviewer_dist = df["Reviewer Count"].value_counts().sort_index()
-
-        fig = px.bar(
-            x=reviewer_dist.index,
-            y=reviewer_dist.values,
-            title="Distribution of Reviewer Counts",
-            labels={"x": "Number of Reviewers", "y": "Number of PRs"},
-            color=reviewer_dist.values,
-            color_continuous_scale="greens",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col2:
-        # Contributor stats
-        st.subheader("Contributor Stats")
-        total_contributors = len(df["Created By"].unique())
-        avg_prs_per_contributor = len(df) / total_contributors
-        median_prs = df["Created By"].value_counts().median()
-
-        st.metric("Total Contributors", total_contributors)
-        st.metric("Avg PRs per Contributor", f"{avg_prs_per_contributor:.1f}")
-        st.metric("Median PRs per Contributor", f"{median_prs:.1f}")
-
 
 def create_repository_heatmap(df: pd.DataFrame):
     """Create a repository activity heatmap."""
-    st.header("🔥 Repository Activity Heatmap")
+    st.caption(
+        "💡 Find the most worked on repositories over time - visualize activity patterns across repos and months"
+    )
 
     # Create repository-month matrix
     repo_month_data = (
@@ -335,11 +371,10 @@ def create_repository_heatmap(df: pd.DataFrame):
 
 def create_interactive_filters(df: pd.DataFrame):
     """Show filtered data summary and detailed view."""
-    st.header("🔍 Detailed Analysis")
-
-    st.info(
-        "💡 Use the filters in the sidebar to refine the data shown across all tabs."
+    st.caption(
+        "💡 Explore the raw PR data with customizable column views - useful for detailed investigation"
     )
+    st.info("Use the filters in the sidebar to refine the data shown across all tabs.")
 
     # Display filtered results summary
     st.subheader(f"Current Dataset ({len(df)} PRs)")
@@ -359,7 +394,11 @@ def create_interactive_filters(df: pd.DataFrame):
 
         with col4:
             avg_reviewers = df["Reviewer Count"].mean()
-            st.metric("Avg Reviewers", f"{avg_reviewers:.1f}")
+            st.metric(
+                "Avg Reviewers",
+                f"{avg_reviewers:.1f}",
+                help="Average number of reviewers assigned per PR in the filtered dataset.",
+            )
 
         # Show detailed data table
         st.subheader("📋 Detailed PR Data")
@@ -395,7 +434,9 @@ def create_interactive_filters(df: pd.DataFrame):
 
 def create_review_analytics(df: pd.DataFrame):
     """Create comprehensive review analytics and engagement metrics."""
-    st.header("💬 Review Analytics & Engagement")
+    st.caption(
+        "💡 See who reviews the most, who leaves comments, and who isn't participating in code reviews"
+    )
 
     # Check if we have the detailed review data
     if "Approved By" not in df.columns:
@@ -431,11 +472,18 @@ def create_review_analytics(df: pd.DataFrame):
             avg_reviewers = (
                 df["Reviewer Count"].mean() if "Reviewer Count" in df.columns else 0
             )
-            st.metric("Avg Reviewers/PR", f"{avg_reviewers:.1f}")
+            st.metric(
+                "Avg Reviewers/PR",
+                f"{avg_reviewers:.1f}",
+                help="Average number of reviewers assigned to each pull request.",
+            )
 
         return
 
     # Enhanced analytics when detailed data is available
+    st.caption(
+        "💡 See who reviews the most, who leaves comments, and who isn't participating in code reviews"
+    )
 
     # Extract reviewer data
     approval_counts = {}
@@ -516,7 +564,11 @@ def create_review_analytics(df: pd.DataFrame):
         if approval_counts:
             approval_values = list(approval_counts.values())
             median_approvals = pd.Series(approval_values).median()
-            st.metric("Median Approvals per Person", f"{median_approvals:.1f}")
+            st.metric(
+                "Median Approvals per Person",
+                f"{median_approvals:.1f}",
+                help="Typical number of approvals a reviewer gives. The middle value - half of reviewers approve more, half approve less.",
+            )
         else:
             st.metric("Median Approvals per Person", "0")
 
@@ -524,7 +576,11 @@ def create_review_analytics(df: pd.DataFrame):
         if approval_counts:
             approval_values = list(approval_counts.values())
             avg_approvals = pd.Series(approval_values).mean()
-            st.metric("Average Approvals per Person", f"{avg_approvals:.1f}")
+            st.metric(
+                "Average Approvals per Person",
+                f"{avg_approvals:.1f}",
+                help="Mean number of approvals per reviewer. If much higher than median, some reviewers are approving way more than others.",
+            )
         else:
             st.metric("Average Approvals per Person", "0")
 
@@ -532,7 +588,11 @@ def create_review_analytics(df: pd.DataFrame):
         if comment_counts:
             comment_values = list(comment_counts.values())
             median_comments = pd.Series(comment_values).median()
-            st.metric("Median Comments per Person", f"{median_comments:.1f}")
+            st.metric(
+                "Median Comments per Person",
+                f"{median_comments:.1f}",
+                help="Typical number of comments a person leaves on PRs. The middle value - half comment more, half comment less.",
+            )
         else:
             st.metric("Median Comments per Person", "0")
 
@@ -540,9 +600,62 @@ def create_review_analytics(df: pd.DataFrame):
         if comment_counts:
             comment_values = list(comment_counts.values())
             avg_comments = pd.Series(comment_values).mean()
-            st.metric("Average Comments per Person", f"{avg_comments:.1f}")
+            st.metric(
+                "Average Comments per Person",
+                f"{avg_comments:.1f}",
+                help="Mean number of comments per person. If much higher than median, a few people are leaving most of the comments.",
+            )
         else:
             st.metric("Average Comments per Person", "0")
+
+    # Second row - PR Coverage Metrics
+    st.markdown("#### 📊 Review Coverage per PR")
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        if "Reviewer Count" in df.columns:
+            median_reviewers_per_pr = df["Reviewer Count"].median()
+            st.metric(
+                "Median Reviewers per PR",
+                f"{median_reviewers_per_pr:.1f}",
+                help="Typical number of reviewers assigned to each PR. The middle value - shows normal review coverage.",
+            )
+        else:
+            st.metric("Median Reviewers per PR", "0")
+
+    with col2:
+        if "Reviewer Count" in df.columns:
+            avg_reviewers_per_pr = df["Reviewer Count"].mean()
+            st.metric(
+                "Average Reviewers per PR",
+                f"{avg_reviewers_per_pr:.1f}",
+                help="Mean number of reviewers per PR. If higher than median, some PRs have many more reviewers than typical.",
+            )
+        else:
+            st.metric("Average Reviewers per PR", "0")
+
+    with col3:
+        if "Reviewer Count" in df.columns:
+            prs_with_no_reviewers = (df["Reviewer Count"] == 0).sum()
+            st.metric(
+                "PRs with No Reviewers",
+                prs_with_no_reviewers,
+                help="Number of PRs that have no assigned reviewers - potential blind spots in code review.",
+            )
+        else:
+            st.metric("PRs with No Reviewers", "0")
+
+    with col4:
+        if "Reviewer Count" in df.columns:
+            prs_with_multiple = (df["Reviewer Count"] >= 2).sum()
+            pct_multiple = (prs_with_multiple / len(df) * 100) if len(df) > 0 else 0
+            st.metric(
+                "PRs with 2+ Reviewers",
+                f"{pct_multiple:.0f}%",
+                help="Percentage of PRs with at least 2 reviewers - indicates good review coverage.",
+            )
+        else:
+            st.metric("PRs with 2+ Reviewers", "0%")
 
     st.markdown("---")
 
@@ -688,7 +801,6 @@ def main():
         force_refresh = st.sidebar.checkbox("Force API Refresh", value=False)
         df = load_data_from_api(api_client, force_refresh=force_refresh)
     elif is_mock_mode() or data_mode == "mock":
-        st.success("🎭 Running in Mock Mode")
         df = load_mock_data()
     else:
         st.error("❌ API unavailable and mock mode not enabled")
@@ -813,17 +925,18 @@ def main():
         # Create tabs for different views
         tabs = st.tabs(
             [
-                "📊 Repository Overview",
+                "📊 Repository Analysis",
                 "📅 Temporal Analysis",
                 "👥 Contributors",
-                "🔥 Activity Heatmap",
-                "💬 Review Analytics",
+                " Review Analytics",
                 "🔍 Interactive Analysis",
             ]
         )
 
         with tabs[0]:
             create_repository_overview(df)
+            st.markdown("---")
+            create_repository_heatmap(df)
 
         with tabs[1]:
             create_temporal_analysis(df)
@@ -832,12 +945,9 @@ def main():
             create_contributor_analysis(df)
 
         with tabs[3]:
-            create_repository_heatmap(df)
-
-        with tabs[4]:
             create_review_analytics(df)
 
-        with tabs[5]:
+        with tabs[4]:
             create_interactive_filters(df)
 
     else:
