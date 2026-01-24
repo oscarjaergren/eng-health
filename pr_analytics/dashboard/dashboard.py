@@ -509,221 +509,128 @@ def create_review_analytics(df: pd.DataFrame):
             for rejector in rejectors:
                 rejection_counts[rejector] = rejection_counts.get(rejector, 0) + 1
 
-    # Top Metrics Row
+    # Top Metrics Row - Per Person Statistics
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        total_approvals = sum(approval_counts.values())
-        st.metric("Total Approvals", total_approvals)
+        if approval_counts:
+            approval_values = list(approval_counts.values())
+            median_approvals = pd.Series(approval_values).median()
+            st.metric("Median Approvals per Person", f"{median_approvals:.1f}")
+        else:
+            st.metric("Median Approvals per Person", "0")
 
     with col2:
-        total_comments = (
-            df["Total Comments"].sum() if "Total Comments" in df.columns else 0
-        )
-        st.metric("Total Comments", int(total_comments))
+        if approval_counts:
+            approval_values = list(approval_counts.values())
+            avg_approvals = pd.Series(approval_values).mean()
+            st.metric("Average Approvals per Person", f"{avg_approvals:.1f}")
+        else:
+            st.metric("Average Approvals per Person", "0")
 
     with col3:
-        total_threads = (
-            df["Total Threads"].sum() if "Total Threads" in df.columns else 0
-        )
-        st.metric("Discussion Threads", int(total_threads))
+        if comment_counts:
+            comment_values = list(comment_counts.values())
+            median_comments = pd.Series(comment_values).median()
+            st.metric("Median Comments per Person", f"{median_comments:.1f}")
+        else:
+            st.metric("Median Comments per Person", "0")
 
     with col4:
-        unique_reviewers = len(set(approval_counts.keys()) | set(comment_counts.keys()))
-        st.metric("Active Reviewers", unique_reviewers)
+        if comment_counts:
+            comment_values = list(comment_counts.values())
+            avg_comments = pd.Series(comment_values).mean()
+            st.metric("Average Comments per Person", f"{avg_comments:.1f}")
+        else:
+            st.metric("Average Comments per Person", "0")
 
     st.markdown("---")
 
-    # Interactive Analysis Section
+    # Interactive Analysis Section - Side by Side Graphs
     st.subheader("🔍 Interactive Reviewer Analysis")
 
-    # Control panel
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        analysis_type = st.selectbox(
-            "📊 Analysis Type",
-            ["Approvers", "Commenters", "Rejectors"],
-            help="Choose which reviewer activity to analyze",
-        )
+    # Left column: Approvers and Commenters
+    col_left, col_right = st.columns(2)
 
-    with col2:
-        view_perspective = st.selectbox(
-            "📈 View Perspective",
-            ["Top Performers", "Bottom Performers", "Full Spectrum"],
-            help="Show most active, least active, or complete view",
-        )
-
-    with col3:
-        num_people = st.slider(
-            "👥 Number of People",
-            min_value=5,
-            max_value=30,
-            value=15,
-            step=5,
-            help="How many people to display in the analysis",
-        )
-
-    # Get the appropriate data based on analysis type
-    if analysis_type == "Approvers":
-        data_dict = approval_counts
-        metric_name = "Approvals"
-        icon = "👍"
-        color_scale = "greens"
-    elif analysis_type == "Commenters":
-        data_dict = comment_counts
-        metric_name = "Comments"
-        icon = "💬"
-        color_scale = "blues"
-    else:  # Rejectors
-        data_dict = rejection_counts
-        metric_name = "Rejections"
-        icon = "👎"
-        color_scale = "reds"
-
-    # Sort and filter data based on perspective
-    if not data_dict:
-        st.warning(
-            f"No {analysis_type.lower()} data available. This might indicate an issue with data collection."
-        )
-        return
-
-    sorted_data = sorted(data_dict.items(), key=lambda x: x[1], reverse=True)
-
-    if view_perspective == "Top Performers":
-        display_data = sorted_data[:num_people]
-        title_prefix = f"🏆 Top {num_people}"
-        chart_color = color_scale
-    elif view_perspective == "Bottom Performers":
-        # Get bottom performers (those with least activity)
-        display_data = sorted_data[-num_people:]
-        display_data.reverse()  # Show lowest first
-        title_prefix = f"📉 Bottom {num_people}"
-        chart_color = "greys"
-    else:  # Full Spectrum
-        display_data = sorted_data[:num_people]
-        title_prefix = f"📊 All {num_people}"
-        chart_color = color_scale
-
-    # Create the visualization
-    if display_data:
-        people, counts = zip(*display_data)
-
-        fig = px.bar(
-            x=list(counts),
-            y=[
-                person.split("@")[0] for person in people
-            ],  # Remove email domain for cleaner display
-            orientation="h",
-            title=f"{title_prefix} {analysis_type} by {metric_name} {icon}",
-            labels={"x": f"Number of {metric_name}", "y": "Person"},
-            color=list(counts),
-            color_continuous_scale=chart_color,
-        )
-        fig.update_layout(
-            height=max(400, num_people * 25), showlegend=False, title_font_size=16
-        )
-        fig.update_yaxes(categoryorder="total ascending")
-        st.plotly_chart(fig, width="stretch")
-
-        # Detailed breakdown
-        st.subheader(f"📋 Detailed Breakdown - {title_prefix} {analysis_type}")
-
-        breakdown_df = pd.DataFrame(
-            [
-                {"Person": person, f"{metric_name}": count}
-                for person, count in display_data
-            ]
-        )
-        st.dataframe(breakdown_df, width="stretch", hide_index=True)
-
-        # Additional insights
-        if len(display_data) > 0:
-            avg_activity = sum(counts) / len(counts)
-            max_activity = max(counts)
-            min_activity = min(counts)
-
-            st.subheader("📈 Insights")
-            insight_col1, insight_col2, insight_col3 = st.columns(3)
-
-            with insight_col1:
-                st.metric(f"Average {metric_name}", f"{avg_activity:.1f}")
-            with insight_col2:
-                st.metric(f"Highest {metric_name}", max_activity)
-            with insight_col3:
-                st.metric(f"Lowest {metric_name}", min_activity)
-    else:
-        st.warning(f"No data available for {analysis_type.lower()}.")
-
-    # Special Comment Analytics Section
-    if analysis_type == "Commenters" and comment_counts:
-        st.markdown("---")
-        st.subheader("💬 Comment Activity Insights")
-
-        # Quick stats
-        total_people_commenting = len(comment_counts)
-        total_comments_made = sum(comment_counts.values())
-        avg_comments_per_person = (
-            total_comments_made / total_people_commenting
-            if total_people_commenting > 0
-            else 0
-        )
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total People Commenting", total_people_commenting)
-        with col2:
-            st.metric("Total Comments Made", total_comments_made)
-        with col3:
-            st.metric(
-                "Avg Comments per Person",
-                f"{avg_comments_per_person:.1f}",
+    with col_left:
+        # Approvers Chart
+        if approval_counts:
+            sorted_approvals = sorted(
+                approval_counts.items(), key=lambda x: x[1], reverse=True
             )
+            people, counts = zip(*sorted_approvals)
 
-        # Most vs Least Active Commenters
-        st.markdown("### 🏆 Top vs 📉 Least Active Commenters")
+            fig = px.bar(
+                x=list(counts),
+                y=[person.split("@")[0] for person in people],
+                orientation="h",
+                title="👍 Approvers by Approvals",
+                labels={"x": "Number of Approvals", "y": "Person"},
+                color=list(counts),
+                color_continuous_scale="greens",
+            )
+            fig.update_layout(
+                height=max(400, len(sorted_approvals) * 25),
+                showlegend=False,
+                title_font_size=16,
+            )
+            fig.update_yaxes(categoryorder="total ascending")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No approvers data available")
 
-        sorted_commenters = sorted(
-            comment_counts.items(), key=lambda x: x[1], reverse=True
-        )
+        # Commenters Chart
+        if comment_counts:
+            sorted_comments = sorted(
+                comment_counts.items(), key=lambda x: x[1], reverse=True
+            )
+            people, counts = zip(*sorted_comments)
 
-        col1, col2 = st.columns(2)
+            fig = px.bar(
+                x=list(counts),
+                y=[person.split("@")[0] for person in people],
+                orientation="h",
+                title="💬 Commenters by Comments",
+                labels={"x": "Number of Comments", "y": "Person"},
+                color=list(counts),
+                color_continuous_scale="blues",
+            )
+            fig.update_layout(
+                height=max(400, len(sorted_comments) * 25),
+                showlegend=False,
+                title_font_size=16,
+            )
+            fig.update_yaxes(categoryorder="total ascending")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No commenters data available")
 
-        with col1:
-            st.markdown("**🏆 Most Active (Top 5)**")
-            top_5 = sorted_commenters[:5]
-            for i, (person, count) in enumerate(top_5, 1):
-                clean_name = person.split("@")[0]
-                st.write(f"{i}. **{clean_name}**: {count} comments")
+    with col_right:
+        # Rejectors Chart
+        if rejection_counts:
+            sorted_rejections = sorted(
+                rejection_counts.items(), key=lambda x: x[1], reverse=True
+            )
+            people, counts = zip(*sorted_rejections)
 
-        with col2:
-            st.markdown("**📉 Least Active (Bottom 5)**")
-            bottom_5 = sorted_commenters[-5:]
-            bottom_5.reverse()  # Show lowest first
-            for i, (person, count) in enumerate(bottom_5, 1):
-                clean_name = person.split("@")[0]
-                st.write(f"{i}. **{clean_name}**: {count} comments")
-
-        # Comment distribution insights
-        if len(sorted_commenters) >= 3:
-            high_activity = [
-                count for _, count in sorted_commenters[: len(sorted_commenters) // 3]
-            ]
-            low_activity = [
-                count for _, count in sorted_commenters[-len(sorted_commenters) // 3 :]
-            ]
-
-            st.markdown("### 📊 Activity Distribution")
-            dist_col1, dist_col2 = st.columns(2)
-
-            with dist_col1:
-                high_avg = (
-                    sum(high_activity) / len(high_activity) if high_activity else 0
-                )
-                st.metric("Top 1/3 Average", f"{high_avg:.1f} comments")
-
-            with dist_col2:
-                low_avg = sum(low_activity) / len(low_activity) if low_activity else 0
-                st.metric("Bottom 1/3 Average", f"{low_avg:.1f} comments")
+            fig = px.bar(
+                x=list(counts),
+                y=[person.split("@")[0] for person in people],
+                orientation="h",
+                title="� Rejectors by Rejections",
+                labels={"x": "Number of Rejections", "y": "Person"},
+                color=list(counts),
+                color_continuous_scale="reds",
+            )
+            fig.update_layout(
+                height=max(400, len(sorted_rejections) * 25),
+                showlegend=False,
+                title_font_size=16,
+            )
+            fig.update_yaxes(categoryorder="total ascending")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No rejectors data available")
 
 
 def main():
