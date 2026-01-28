@@ -4,6 +4,7 @@ PR Data Visualizer Dashboard
 A Streamlit web application for visualizing Pull Request data from Azure DevOps and GitHub.
 """
 
+import json
 import os
 import sys
 from datetime import datetime, timedelta
@@ -12,6 +13,9 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from pr_analytics.core.mock_mode import get_mock_provider, is_mock_mode
 from pr_analytics.core.safe_data_parser import (
@@ -19,27 +23,209 @@ from pr_analytics.core.safe_data_parser import (
     safe_parse_dict,
     safe_parse_list,
 )
-from pr_analytics.dashboard.api_client import APIClient
 
 # Add pr_analytics directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
+# Cache file for persistent PR storage
+CACHE_FILE = Path(".cache/pr_data_cache.json")
+CACHE_METADATA_FILE = Path(".cache/pr_cache_metadata.json")
 
-def load_data_from_api(
-    api_client: APIClient, force_refresh: bool = False
-) -> pd.DataFrame:
-    """Load and preprocess PR data from API."""
+
+def _load_cached_prs() -> tuple[list, str | None]:
+    """Load cached PRs from disk."""
+    if not CACHE_FILE.exists():
+        return [], None
+    
     try:
-        # Fetch data from API
-        df = api_client.get_pull_requests(force_refresh=force_refresh)
+        with open(CACHE_FILE, "r") as f:
+            cached_prs = json.load(f)
+        
+        last_fetch = None
+        if CACHE_METADATA_FILE.exists():
+            with open(CACHE_METADATA_FILE, "r") as f:
+                metadata = json.load(f)
+                last_fetch = metadata.get("last_fetch_date")
+        
+        return cached_prs, last_fetch
+    except Exception:
+        return [], None
 
-        if df.empty:
-            return df
 
-        return preprocess_dataframe(df)
+def _save_cached_prs(prs: list, last_fetch_date: str) -> None:
+    """Save PRs to disk cache."""
+    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(CACHE_FILE, "w") as f:
+        json.dump(prs, f)
+    
+    with open(CACHE_METADATA_FILE, "w") as f:
+        json.dump({"last_fetch_date": last_fetch_date}, f)
+
+
+def _fetch_new_prs(since_date: str | None = None, progress_container=None) -> list:
+    """Fetch new PRs since the given date (or all if None)."""
+    from pr_analytics.clients.azure_devops_client import AzureDevOpsClient
+    from pr_analytics.clients.github_client import GitHubClient
+    from pr_analytics.core.config import Config
+    from pr_analytics.processors.unified_data_processor import UnifiedDataProcessor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import logging
+    import threading
+
+    config = Config()
+    logger = logging.getLogger(__name__)
+    processor = UnifiedDataProcessor(logger, config)
+
+    all_pr_data = []
+    all_repositories = []
+    clients_info = []
+
+    if "azure_devops" in config.platforms:
+        client = AzureDevOpsClient(config, logger)
+        repos = client.fetch_all_repositories()
+        for repo in repos:
+            all_repositories.append(("azure_devops", repo, client))
+        clients_info.append(("azure_devops", client))
+
+    if "github" in config.platforms:
+        client = GitHubClient(config, logger)
+        repos = client.fetch_all_repositories()
+        for repo in repos:
+            all_repositories.append(("github", repo, client))
+        clients_info.append(("github", client))
+
+    if not all_repositories:
+        return []
+
+    total_repos = len(all_repositories)
+    raw_prs_by_platform = {"azure_devops": [], "github": []}
+    completed_count = [0]
+    lock = threading.Lock()
+    
+    def fetch_repo_prs(args):
+        platform, repo, client = args
+        repo_name = repo.get("name", "Unknown")
+        repo_prs = client.fetch_pull_requests_for_repository(repo)
+        for pr in repo_prs:
+            pr["repository_name"] = repo_name
+        return platform, repo_name, repo_prs
+    
+    max_workers = min(8, total_repos)
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fetch_repo_prs, args): args for args in all_repositories}
+        
+        for future in as_completed(futures):
+            try:
+                platform, repo_name, repo_prs = future.result()
+                with lock:
+                    raw_prs_by_platform[platform].extend(repo_prs)
+                    completed_count[0] += 1
+                    if progress_container:
+                        progress = completed_count[0] / total_repos
+                        progress_container.progress(progress, text=f"📂 Fetched {repo_name} ({completed_count[0]}/{total_repos})")
+            except Exception as e:
+                logger.warning(f"Failed to fetch repo: {e}")
+                with lock:
+                    completed_count[0] += 1
+
+    for platform, client in clients_info:
+        raw_prs = raw_prs_by_platform.get(platform, [])
+        if raw_prs:
+            if progress_container:
+                progress_container.progress(1.0, text=f"⚙️ Processing {len(raw_prs)} PRs from {platform}...")
+            processed = processor.process_pull_requests(raw_prs, platform)
+            all_pr_data.extend(processed)
+
+    return all_pr_data
+
+
+def _fetch_and_cache_prs(progress_container=None) -> list:
+    """Fetch PR data with incremental caching and progress display."""
+    cached_prs, last_fetch_date = _load_cached_prs()
+    new_prs = _fetch_new_prs(since_date=last_fetch_date, progress_container=progress_container)
+    
+    if progress_container:
+        progress_container.progress(1.0, text="✅ Syncing complete!")
+    
+    if not cached_prs:
+        now = datetime.now().isoformat()
+        _save_cached_prs(new_prs, now)
+        return new_prs
+    
+    existing_ids = {pr.get("id"): pr for pr in cached_prs}
+    
+    for pr in new_prs:
+        pr_id = pr.get("id")
+        existing_ids[pr_id] = pr
+    
+    merged_prs = list(existing_ids.values())
+    now = datetime.now().isoformat()
+    _save_cached_prs(merged_prs, now)
+    
+    return merged_prs
+
+
+def load_pr_data() -> pd.DataFrame:
+    """Load PR data from cache or fetch from Azure DevOps/GitHub."""
+    try:
+        cached_prs, last_fetch = _load_cached_prs()
+        
+        if cached_prs:
+            pr_data = cached_prs
+        else:
+            progress_bar = st.progress(0, text="🔄 Connecting to Azure DevOps/GitHub...")
+            pr_data = _fetch_and_cache_prs(progress_container=progress_bar)
+            progress_bar.empty()
+
+        if not pr_data:
+            return pd.DataFrame()
+
+        return _convert_prs_to_dataframe(pr_data)
     except Exception as e:
-        st.error(f"Error loading data from API: {e}")
+        st.error(f"Error loading data: {e}")
         return pd.DataFrame()
+
+
+def _convert_prs_to_dataframe(pr_data: list) -> pd.DataFrame:
+    """Convert PR data list to DataFrame."""
+    if not pr_data:
+        return pd.DataFrame()
+    
+    first_item = pr_data[0] if pr_data else {}
+    if "Repository" in first_item or "ID" in first_item:
+        return pd.DataFrame(pr_data)
+    
+    records = []
+    for pr in pr_data:
+        record = {
+            "ID": pr.get("id"),
+            "Repository": pr.get("repository"),
+            "Title": pr.get("title"),
+            "Created By": pr.get("created_by"),
+            "Created Date": pr.get("created_date"),
+            "State": pr.get("status"),
+            "Platform": pr.get("platform"),
+            "Approvers": pr.get("approvers", []),
+            "Total Approvals": pr.get("total_approvals", 0),
+            "Total Reviewers": pr.get("total_reviewers", 0),
+            "Comments": pr.get("comments", 0),
+            "Assigned To": pr.get("reviewers", []),
+            "Project": pr.get("project", ""),
+        }
+        records.append(record)
+    
+    return pd.DataFrame(records)
+
+
+def _check_direct_mode_available() -> bool:
+    """Check if direct mode is available (credentials configured)."""
+    azure_configured = (
+        os.getenv("AZURE_DEVOPS_ORGANIZATION") and os.getenv("AZURE_DEVOPS_PAT")
+    )
+    github_configured = os.getenv("GITHUB_TOKEN") and os.getenv("GITHUB_OWNER")
+    return azure_configured or github_configured
 
 
 def load_mock_data() -> pd.DataFrame:
@@ -758,71 +944,70 @@ def main():
     st.title("📊 Multi-Platform PR Data Dashboard")
     st.markdown("---")
 
-    # Data source selection
-    data_mode = os.getenv("DATA_MODE", "api").lower()  # 'api' or 'excel'
-
-    # Initialize API client
-    api_client = APIClient()
+    # Initialize session state for sync trigger
+    if "trigger_sync" not in st.session_state:
+        st.session_state.trigger_sync = False
+    if "trigger_full_reset" not in st.session_state:
+        st.session_state.trigger_full_reset = False
 
     # Sidebar: Data source and refresh controls
     with st.sidebar:
         st.header("🔧 Data Source")
 
-        # Check API availability
-        api_available = api_client.is_available()
+        # Check if direct mode is possible (env vars configured)
+        direct_mode_available = _check_direct_mode_available()
 
-        if api_available:
-            st.success("✅ API Connected")
-
-            # Show cache stats
-            cache_stats = api_client.get_cache_stats()
-            if cache_stats:
-                with st.expander("📊 Cache Statistics"):
-                    st.metric("Cache Entries", cache_stats.get("entries", 0))
-                    st.metric("Hit Rate", f"{cache_stats.get('hit_rate', 0)}%")
-                    st.metric(
-                        "Hits / Misses",
-                        f"{cache_stats.get('hits', 0)} / {cache_stats.get('misses', 0)}",
-                    )
-
-            # Refresh button
-            if st.button("🔄 Refresh Data", help="Force refresh data from APIs"):
-                with st.spinner("Fetching fresh data..."):
-                    api_client.invalidate_cache()
+        if direct_mode_available:
+            st.success("✅ Connected to Azure DevOps/GitHub")
+            
+            # Show cache info
+            cached_prs, last_fetch = _load_cached_prs()
+            if cached_prs:
+                st.caption(f"📦 {len(cached_prs)} PRs cached")
+                if last_fetch:
+                    st.caption(f"Last sync: {last_fetch[:16]}")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 Sync", help="Fetch new PRs only"):
+                    st.session_state.trigger_sync = True
                     st.rerun()
-
+            with col2:
+                if st.button("🗑️ Full Reset", help="Clear cache and refetch all"):
+                    if CACHE_FILE.exists():
+                        CACHE_FILE.unlink()
+                    if CACHE_METADATA_FILE.exists():
+                        CACHE_METADATA_FILE.unlink()
+                    st.session_state.trigger_full_reset = True
+                    st.rerun()
+            data_mode = "direct"
+        elif is_mock_mode():
+            st.info("🎭 Mock Mode Enabled")
+            data_mode = "mock"
         else:
-            st.warning("⚠️ API Unavailable - Using Mock Mode fallback")
+            st.warning("⚠️ Using Mock Mode (No credentials configured)")
             data_mode = "mock"
 
     # Load data based on mode
-    if api_available and data_mode == "api":
-        st.info("🚀 Real-time data mode - Connected to API")
-        force_refresh = st.sidebar.checkbox("Force API Refresh", value=False)
-        df = load_data_from_api(api_client, force_refresh=force_refresh)
-    elif is_mock_mode() or data_mode == "mock":
-        df = load_mock_data()
+    df = pd.DataFrame()
+    if data_mode == "direct":
+        # Check if we need to sync
+        if st.session_state.trigger_sync or st.session_state.trigger_full_reset:
+            st.session_state.trigger_sync = False
+            st.session_state.trigger_full_reset = False
+            progress_bar = st.progress(0, text="🔄 Connecting to Azure DevOps/GitHub...")
+            pr_data = _fetch_and_cache_prs(progress_container=progress_bar)
+            progress_bar.empty()
+            if pr_data:
+                df = _convert_prs_to_dataframe(pr_data)
+                df = preprocess_dataframe(df)
+        else:
+            df = load_pr_data()
+            if not df.empty:
+                df = preprocess_dataframe(df)
     else:
-        st.error("❌ API unavailable and mock mode not enabled")
-        st.markdown(
-            """
-        ### How to get started:
-
-        **Option 1: Use API Mode (Recommended)**
-        1. Start the API: `python api_main.py`
-        2. The dashboard will automatically connect
-
-        **Option 2: Use Mock Mode**
-        1. Set environment variable: `MOCK_MODE=true`
-        2. Run the dashboard: `streamlit run dashboard_main.py --mock`
-
-        ### Supported Platforms:
-        - **Azure DevOps**: Configure AZURE_DEVOPS_ORGANIZATION, AZURE_DEVOPS_PAT
-        - **GitHub**: Configure GITHUB_TOKEN, GITHUB_OWNER
-        - **Both**: Configure all variables to extract from both platforms
-        """
-        )
-        return
+        st.success("🎭 Running in Mock Mode")
+        df = load_mock_data()
 
     if not df.empty:
         # Add global filters in sidebar
@@ -842,9 +1027,19 @@ def main():
 
         # Date range filter
         if "Created Date" in df.columns:
-            df["Created Date"] = pd.to_datetime(df["Created Date"])
-            min_date = df["Created Date"].min().date()
-            max_data_date = df["Created Date"].max().date()
+            df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
+            # Normalize timezone - convert to UTC then remove timezone for consistent comparisons
+            if df["Created Date"].dt.tz is not None:
+                df["Created Date"] = df["Created Date"].dt.tz_convert("UTC").dt.tz_localize(None)
+            
+            # Drop NaT values for date range calculation
+            valid_dates = df["Created Date"].dropna()
+            if len(valid_dates) > 0:
+                min_date = valid_dates.min().date()
+                max_data_date = valid_dates.max().date()
+            else:
+                min_date = datetime.today().date() - timedelta(days=365)
+                max_data_date = datetime.today().date()
             today = datetime.today().date()
             # Allow selection up to today + 1 day to avoid edge cases
             max_allowed = max(today + timedelta(days=1), max_data_date)
@@ -854,8 +1049,8 @@ def main():
                     "Select Date Range",
                     value=(
                         min_date,
-                        today,
-                    ),  # Default to today instead of max_value
+                        max_data_date,  # Use actual max date instead of today
+                    ),
                     min_value=min_date,
                     max_value=max_allowed,
                     key="main_date_filter",
@@ -864,21 +1059,28 @@ def main():
                 # Handle both single date and date range selections
                 if isinstance(date_range, tuple) and len(date_range) == 2:
                     start_date, end_date = date_range
-                    df = df[
-                        (df["Created Date"].dt.date >= start_date)
-                        & (df["Created Date"].dt.date <= end_date)
-                    ]
+                    # Convert dates to datetime for comparison (timezone-naive)
+                    start_dt = pd.Timestamp(start_date)
+                    end_dt = pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+                    mask = (df["Created Date"] >= start_dt) & (df["Created Date"] <= end_dt)
+                    # Also include rows with NaT dates to avoid losing data
+                    mask = mask | df["Created Date"].isna()
+                    df = df[mask]
                 elif hasattr(date_range, "__len__") and len(date_range) == 1:
                     # Single date selected, treat as same start and end date
                     single_date = (
                         date_range[0] if isinstance(date_range, tuple) else date_range
                     )
-                    df = df[df["Created Date"].dt.date == single_date]
+                    start_dt = pd.Timestamp(single_date)
+                    end_dt = pd.Timestamp(single_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+                    df = df[(df["Created Date"] >= start_dt) & (df["Created Date"] <= end_dt)]
                 elif (
                     not isinstance(date_range, (list, tuple)) and date_range is not None
                 ):
                     # Single date object
-                    df = df[df["Created Date"].dt.date == date_range]
+                    start_dt = pd.Timestamp(date_range)
+                    end_dt = pd.Timestamp(date_range) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+                    df = df[(df["Created Date"] >= start_dt) & (df["Created Date"] <= end_dt)]
 
             except Exception as e:
                 st.sidebar.error(f"Date filter error: {str(e)}")
