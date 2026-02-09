@@ -300,16 +300,15 @@ class StreamlitOptimizer:
         for trace in fig.data:
             if hasattr(trace, "x") and trace.x is not None:
                 if len(trace.x) > max_points:
-                    # Sample data points
+                    original_count = len(trace.x)
                     indices = np.linspace(0, len(trace.x) - 1, max_points, dtype=int)
 
                     if hasattr(trace, "y") and trace.y is not None:
                         trace.x = [trace.x[i] for i in indices]
                         trace.y = [trace.y[i] for i in indices]
 
-                    # Add annotation about sampling
                     fig.add_annotation(
-                        text=f"Showing {max_points:,} sampled points from {len(trace.x):,} total",
+                        text=f"Showing {max_points:,} sampled points from {original_count:,} total",
                         xref="paper",
                         yref="paper",
                         x=0.02,

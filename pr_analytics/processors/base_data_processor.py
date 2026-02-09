@@ -23,8 +23,42 @@ class BaseDataProcessor:
         self.config = config
         self.validator = InputValidator(logger)
 
-        # Common patterns for filtering
-        self.iac_patterns = [
+        # Canonical IAC patterns used across all platform processors
+        self.iac_keywords = [
+            "terraform",
+            "tf",
+            "bicep",
+            "arm template",
+            "cloudformation",
+            "cfn",
+            "infrastructure",
+            "infra",
+            "deployment",
+            "deploy",
+            "pipeline",
+            "yaml",
+            "yml",
+            "docker",
+            "dockerfile",
+            "kubernetes",
+            "k8s",
+            "helm",
+            "ansible",
+            "puppet",
+            "chef",
+            "pulumi",
+            "cdk",
+            "azure resource manager",
+            "arm",
+            "azuredeploy",
+            "ci/cd",
+        ]
+
+        self.iac_file_patterns = [
+            ".tf", ".bicep", ".yaml", ".yml", "dockerfile", ".json",
+        ]
+
+        self.iac_regex_patterns = [
             r"terraform",
             r"\.tf$",
             r"infrastructure",
@@ -100,8 +134,13 @@ class BaseDataProcessor:
         # Combine title and description for checking
         text_to_check = f"{pr_title} {pr_description}".lower()
 
-        # Check text content
-        for pattern in self.iac_patterns:
+        # Check text content against canonical keyword list
+        for keyword in self.iac_keywords:
+            if keyword in text_to_check:
+                return True
+
+        # Check text content against regex patterns
+        for pattern in self.iac_regex_patterns:
             if re.search(pattern, text_to_check):
                 return True
 
@@ -109,7 +148,10 @@ class BaseDataProcessor:
         if file_changes:
             for file_path in file_changes:
                 file_lower = file_path.lower()
-                for pattern in self.iac_patterns:
+                for pattern in self.iac_file_patterns:
+                    if pattern in file_lower:
+                        return True
+                for pattern in self.iac_regex_patterns:
                     if re.search(pattern, file_lower):
                         return True
 
@@ -291,12 +333,12 @@ class BaseDataProcessor:
             if isinstance(pr_data["approved_by"], list):
                 metrics["approval_count"] = len(pr_data["approved_by"])
             elif isinstance(pr_data["approved_by"], str):
-                # Handle string representation of list
                 try:
-                    approvers = eval(pr_data["approved_by"])
+                    import json as json_module
+                    approvers = json_module.loads(pr_data["approved_by"])
                     if isinstance(approvers, list):
                         metrics["approval_count"] = len(approvers)
-                except BaseException:
+                except (json_module.JSONDecodeError, TypeError):
                     pass
 
         # Count comments and reviewers
@@ -387,17 +429,18 @@ class BaseDataProcessor:
         # Convert approved_by to list if it's a string
         if isinstance(approved_by, str):
             try:
-                approved_by = eval(approved_by)
-            except BaseException:
+                import json as json_module
+                approved_by = json_module.loads(approved_by)
+            except (json_module.JSONDecodeError, TypeError):
                 return False
 
         if not isinstance(approved_by, list):
             return False
 
-        # Check if author approved their own PR
+        # Check if author approved their own PR (case-insensitive)
         for approver in approved_by:
             approver_name = self.extract_user_name(approver)
-            if approver_name == author:
+            if approver_name.lower() == author.lower():
                 return True
 
         return False

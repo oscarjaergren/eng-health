@@ -231,9 +231,10 @@ class GitHubClient(BaseAPIClient):
             raise ValueError("Organization or username is required")
 
         try:
+            github_type = getattr(self.config, "github_type", "org")
             path = (
                 f"orgs/{org_or_user}/repos"
-                if "/" in org_or_user
+                if github_type == "org"
                 else f"users/{org_or_user}/repos"
             )
             params = {
@@ -390,3 +391,40 @@ class GitHubClient(BaseAPIClient):
         url = self._build_url(path)
 
         return self._handle_pagination(url)
+
+    def fetch_all_repositories(self) -> List[Dict[str, Any]]:
+        """Fetch all repositories, matching the Azure DevOps client interface."""
+        owner = getattr(self.config, "github_owner", "")
+        if not owner:
+            self.logger.warning("No github_owner configured")
+            return []
+
+        repos = self.get_repositories(owner)
+        for repo in repos:
+            repo["repository_name"] = repo.get("name", "Unknown")
+        return repos
+
+    def fetch_pull_requests_for_repository(
+        self, repository: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Fetch pull requests for a repository, matching the Azure DevOps client interface."""
+        owner = getattr(self.config, "github_owner", "")
+        repo_name = repository.get("name", "")
+        if not owner or not repo_name:
+            return []
+
+        prs = self.get_pull_requests(owner, repo_name, state="all")
+        for pr in prs:
+            pr["repository_name"] = repo_name
+
+        for pr in prs:
+            pr_number = pr.get("number")
+            if pr_number:
+                pr["reviews"] = self.get_pull_request_reviews(
+                    owner, repo_name, pr_number
+                )
+                pr["review_comments"] = self.get_pull_request_comments(
+                    owner, repo_name, pr_number
+                )
+
+        return prs

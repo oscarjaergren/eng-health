@@ -328,7 +328,7 @@ class UnifiedDataProcessor(BaseDataProcessor):
 
             if state == "APPROVED":
                 approved_by.append(reviewer_name)
-            elif state == "REQUEST_CHANGES":
+            elif state == "CHANGES_REQUESTED":
                 changes_requested_by.append(reviewer_name)
             elif state == "COMMENTED":
                 commented_by.append(reviewer_name)
@@ -463,51 +463,19 @@ class UnifiedDataProcessor(BaseDataProcessor):
         }
 
     def _is_iac_related(self, pr: Dict[str, Any], platform: str) -> bool:
-        """Check if a PR is related to Infrastructure as Code."""
-        # IAC-related keywords to check in title and description
-        iac_keywords = [
-            "terraform",
-            "tf",
-            "bicep",
-            "arm template",
-            "cloudformation",
-            "cfn",
-            "infrastructure",
-            "infra",
-            "deployment",
-            "pipeline",
-            "yaml",
-            "yml",
-            "docker",
-            "dockerfile",
-            "kubernetes",
-            "k8s",
-            "helm",
-            "ansible",
-            "pulumi",
-            "cdk",
-            "azure resource manager",
-            "arm",
-            "azuredeploy",
-        ]
+        """Check if a PR is related to Infrastructure as Code using canonical keywords."""
+        title = pr.get("title", "")
+        description = (pr.get("description") or pr.get("body", ""))
+        repo_name = pr.get("repository_name", "")
 
-        title = pr.get("title", "").lower()
-        description = (pr.get("description") or pr.get("body", "")).lower()
+        text_to_check = f"{title} {description} {repo_name}".lower()
 
-        if platform == "azure_devops":
-            repo_name = pr.get("repository_name", "").lower()
-        else:  # github
-            repo_name = pr.get("repository_name", "").lower()
-
-        # Check if any IAC keywords are present
-        for keyword in iac_keywords:
-            if keyword in title or keyword in description or keyword in repo_name:
+        for keyword in self.iac_keywords:
+            if keyword in text_to_check:
                 return True
 
-        # Check for specific IAC file patterns in the title/description
-        iac_patterns = [".tf", ".bicep", ".yaml", ".yml", "dockerfile", ".json"]
-        for pattern in iac_patterns:
-            if pattern in title or pattern in description:
+        for pattern in self.iac_file_patterns:
+            if pattern in text_to_check:
                 return True
 
         return False
@@ -519,15 +487,13 @@ class UnifiedDataProcessor(BaseDataProcessor):
         approved_by = processed_pr.get("Approved By", [])
         personal_approvals_count = 0
 
-        # Filter out approvals from the PR creator
+        # Filter out approvals from the PR creator (case-insensitive)
         filtered_approved_by = []
         for approver in approved_by:
-            # Extract the username (before any additional info like "(with
-            # suggestions)")
             approver_username = (
                 approver.split(" (")[0] if " (" in approver else approver
             )
-            if approver_username != created_by:
+            if approver_username.lower() != created_by.lower():
                 filtered_approved_by.append(approver)
             else:
                 personal_approvals_count += 1

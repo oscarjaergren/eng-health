@@ -72,7 +72,13 @@ class Config:
     @property
     def base_url(self) -> str:
         """Get the base API URL for Azure DevOps (organization level)."""
-        return f"https://dev.azure.com/{self.organization}/_apis"
+        organization = getattr(self, "organization", None)
+        if not organization:
+            raise ValueError(
+                "Azure DevOps organization is not configured. "
+                "base_url is only available when azure_devops platform is enabled."
+            )
+        return f"https://dev.azure.com/{organization}/_apis"
 
     @property
     def repositories_url(self) -> str:

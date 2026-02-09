@@ -39,6 +39,9 @@ class GitHubDataProcessor(BaseDataProcessor):
                     excluded_count["iac"] += 1
                     continue
 
+                # Extract reviewer information (single call)
+                reviewer_info = self._extract_github_reviewers(pr)
+
                 # Basic PR information
                 processed_pr = {
                     "ID": pr.get("number"),
@@ -48,12 +51,11 @@ class GitHubDataProcessor(BaseDataProcessor):
                     "Title": pr.get("title"),
                     "Description": pr.get("body", ""),
                     "Created By": self._extract_created_by(pr),
-                    "Assigned To": self._extract_github_reviewers(pr),
+                    "Assigned To": reviewer_info.get("Assigned To", []),
                     "State": self._extract_github_status(pr),
                 }
 
-                # Extract reviewer information
-                reviewer_info = self._extract_github_reviewers(pr)
+                # Apply reviewer information
                 processed_pr.update(reviewer_info)
 
                 # Extract comment information
@@ -351,7 +353,7 @@ class GitHubDataProcessor(BaseDataProcessor):
         }
 
     def _is_iac_related(self, pr_or_title: Dict[str, Any], body: str = "") -> bool:
-        """Check if a GitHub PR is related to Infrastructure as Code.
+        """Check if a GitHub PR is related to Infrastructure as Code using canonical keywords.
 
         Args:
             pr_or_title: Either the pull request data dictionary or the PR title
@@ -360,70 +362,40 @@ class GitHubDataProcessor(BaseDataProcessor):
         Returns:
             bool: True if the PR is IAC-related, False otherwise
         """
-        # Get config value, defaulting to True if not set (backward compatibility)
         exclude_iac = getattr(self.config, "exclude_iac", True)
-
-        # If IAC filtering is disabled, always return False
         if not exclude_iac:
             return False
 
-        # Handle both PR dictionary and direct title/body parameters
         if isinstance(pr_or_title, dict):
             pr = pr_or_title
-            title = pr.get("title", "").lower()
-            body = pr.get("body", "").lower()
+            title = pr.get("title", "")
+            body = pr.get("body", "")
+            repo_name = pr.get("repository_name", "")
         else:
-            title = str(pr_or_title).lower()
-            body = str(body).lower()
+            title = str(pr_or_title)
+            body = str(body)
+            repo_name = ""
 
-        # Check for IAC-related keywords
-        iac_keywords = [
-            "terraform",
-            "tf",
-            "infrastructure",
-            "deployment",
-            "deploy",
-            "ansible",
-            "puppet",
-            "chef",
-            "cloudformation",
-            "arm template",
-            "bicep",
-            "helm",
-            "kubernetes",
-            "k8s",
-            "docker",
-            "dockerfile",
-            "ci/cd",
-            "pipeline",
-            "build",
-            "release",
-            "devops",
-        ]
+        text_to_check = f"{title} {body} {repo_name}".lower()
 
-        for keyword in iac_keywords:
-            if keyword in title or keyword in body:
+        for keyword in self.iac_keywords:
+            if keyword in text_to_check:
+                return True
+
+        for pattern in self.iac_file_patterns:
+            if pattern in text_to_check:
                 return True
 
         # Check file changes if available (only when pr_or_title is a dict)
         if isinstance(pr_or_title, dict) and "files" in pr_or_title:
             for file_info in pr_or_title["files"]:
                 filename = file_info.get("filename", "").lower()
-                if any(
-                    ext in filename
-                    for ext in [".tf", ".yml", ".yaml", "dockerfile", ".json"]
-                ):
-                    # Check if it's in infrastructure-related directories
-                    if any(
-                        dir_name in filename
-                        for dir_name in [
-                            "terraform",
-                            "ansible",
-                            "deploy",
-                            "infra",
-                            ".github/workflows",
-                        ]
-                    ):
+                if any(ext in filename for ext in self.iac_file_patterns):
+                    iac_dirs = [
+                        "terraform", "ansible", "deploy", "infra",
+                        ".github/workflows",
+                    ]
+                    if any(d in filename for d in iac_dirs):
                         return True
 
         return False

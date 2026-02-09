@@ -6,7 +6,6 @@ A Streamlit web application for visualizing Pull Request data from Azure DevOps 
 
 import json
 import os
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -23,9 +22,6 @@ from pr_analytics.core.safe_data_parser import (
     safe_parse_dict,
     safe_parse_list,
 )
-
-# Add pr_analytics directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
 
 # Cache file for persistent PR storage
 CACHE_FILE = Path(".cache/pr_data_cache.json")
@@ -64,7 +60,11 @@ def _save_cached_prs(prs: list, last_fetch_date: str) -> None:
 
 
 def _fetch_new_prs(since_date: str | None = None, progress_container=None) -> list:
-    """Fetch new PRs since the given date (or all if None)."""
+    """Fetch new PRs since the given date (or all if None).
+
+    NOTE: since_date is accepted for future incremental fetching but not yet
+    passed to the underlying API clients.
+    """
     from pr_analytics.clients.azure_devops_client import AzureDevOpsClient
     from pr_analytics.clients.github_client import GitHubClient
     from pr_analytics.core.config import Config
@@ -392,7 +392,7 @@ def create_repository_overview(df: pd.DataFrame):
     )
     fig.update_layout(height=max(400, num_repos * 20), showlegend=False)
     fig.update_yaxes(categoryorder="total ascending")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def create_temporal_analysis(df: pd.DataFrame):
@@ -420,13 +420,15 @@ def create_temporal_analysis(df: pd.DataFrame):
         )
 
     with col3:
-        busiest_day = df["Weekday"].value_counts().idxmax()
-        busiest_count = df["Weekday"].value_counts().max()
+        weekday_value_counts = df["Weekday"].value_counts()
+        busiest_day = weekday_value_counts.idxmax()
+        busiest_count = weekday_value_counts.max()
         st.metric("Busiest Day", busiest_day, f"{busiest_count} PRs")
 
     with col4:
-        busiest_hour = df["Hour"].value_counts().idxmax()
-        busiest_hour_count = df["Hour"].value_counts().max()
+        hour_value_counts = df["Hour"].value_counts()
+        busiest_hour = hour_value_counts.idxmax()
+        busiest_hour_count = hour_value_counts.max()
         st.metric("Peak Hour", f"{busiest_hour}:00", f"{busiest_hour_count} PRs")
 
     st.markdown("---")

@@ -16,7 +16,7 @@ class CodeQualityManager:
         self.project_root = Path(project_root)
         self.source_dirs = ["pr_analytics/", "tests/"]
 
-    def run_command(self, cmd: str, description: str) -> bool:
+    def run_command(self, cmd: list[str], description: str) -> bool:
         """Run a command and return success status."""
         print(f"\n{'='*50}")
         print(f"Running {description}")
@@ -24,7 +24,7 @@ class CodeQualityManager:
 
         try:
             result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, cwd=self.project_root
+                cmd, capture_output=True, text=True, cwd=self.project_root
             )
             print(f"Exit code: {result.returncode}")
 
@@ -48,8 +48,7 @@ class CodeQualityManager:
         for tool in tools:
             try:
                 subprocess.run(
-                    f"python -m {tool} --version",
-                    shell=True,
+                    [sys.executable, "-m", tool, "--version"],
                     capture_output=True,
                     check=True,
                 )
@@ -66,28 +65,28 @@ class CodeQualityManager:
         """Run all auto-formatters to fix code quality issues."""
         print("Running automated code quality fixes...")
 
-        source_paths = " ".join(self.source_dirs)
-
         # 1. Remove unused imports and variables
         autoflake_success = self.run_command(
-            f"python -m autoflake --remove-all-unused-imports --remove-unused-variables --in-place --recursive {source_paths}",
+            [sys.executable, "-m", "autoflake", "--remove-all-unused-imports", "--remove-unused-variables", "--in-place", "--recursive"] + self.source_dirs,
             "AutoFlake (Remove unused imports/variables)",
         )
 
         # 2. Sort and organize imports
         isort_success = self.run_command(
-            f"python -m isort {source_paths} --profile black", "isort (Sort imports)"
+            [sys.executable, "-m", "isort"] + self.source_dirs + ["--profile", "black"],
+            "isort (Sort imports)",
         )
 
         # 3. Fix PEP 8 violations
         autopep8_success = self.run_command(
-            f"python -m autopep8 --in-place --aggressive --aggressive --recursive {source_paths}",
+            [sys.executable, "-m", "autopep8", "--in-place", "--aggressive", "--aggressive", "--recursive"] + self.source_dirs,
             "autopep8 (Fix PEP 8 violations)",
         )
 
         # 4. Apply Black formatting (final pass)
         black_success = self.run_command(
-            f"python -m black {source_paths}", "Black (Final formatting)"
+            [sys.executable, "-m", "black"] + self.source_dirs,
+            "Black (Final formatting)",
         )
 
         results = {
@@ -104,25 +103,25 @@ class CodeQualityManager:
         """Run code quality checks."""
         print("Running code quality checks...")
 
-        source_paths = " ".join(self.source_dirs)
-
         # Flake8 linting
         ignore_codes = "E203,W503" if strict else "E203,W503,E501,F541"
         flake8_success = self.run_command(
-            f"python -m flake8 {source_paths} --max-line-length=88 --extend-ignore={ignore_codes}",
+            [sys.executable, "-m", "flake8"] + self.source_dirs + ["--max-line-length=88", f"--extend-ignore={ignore_codes}"],
             "Flake8 (Linting)",
         )
 
         # MyPy type checking
-        mypy_args = "--ignore-missing-imports --no-strict-optional"
+        mypy_args = ["--ignore-missing-imports", "--no-strict-optional"]
 
         mypy_success = self.run_command(
-            f"python -m mypy pr_analytics/ {mypy_args}", "MyPy (Type checking)"
+            [sys.executable, "-m", "mypy", "pr_analytics/"] + mypy_args,
+            "MyPy (Type checking)",
         )
 
         # Black formatting check
         black_success = self.run_command(
-            f"python -m black --check --diff {source_paths}", "Black (Format check)"
+            [sys.executable, "-m", "black", "--check", "--diff"] + self.source_dirs,
+            "Black (Format check)",
         )
 
         results = {
@@ -206,12 +205,14 @@ class CodeQualityManager:
 
         # Install pre-commit
         install_success = self.run_command(
-            "python -m pip install --user pre-commit", "Install pre-commit"
+            [sys.executable, "-m", "pip", "install", "--user", "pre-commit"],
+            "Install pre-commit",
         )
 
         if install_success:
             setup_success = self.run_command(
-                "python -m pre_commit install", "Setup pre-commit hooks"
+                [sys.executable, "-m", "pre_commit", "install"],
+                "Setup pre-commit hooks",
             )
             return setup_success
 

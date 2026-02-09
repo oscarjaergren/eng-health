@@ -3,7 +3,6 @@
 import hashlib
 import json
 import logging
-import pickle
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -98,8 +97,8 @@ class CacheManager:
 
                 for cache_file in cache_type_dir.glob("*.cache"):
                     try:
-                        with open(cache_file, "rb") as f:
-                            cache_entry = pickle.load(f)
+                        with open(cache_file, "r", encoding="utf-8") as f:
+                            cache_entry = json.load(f)
 
                         if not self._is_cache_valid(cache_entry):
                             cache_file.unlink()
@@ -190,8 +189,8 @@ class CacheManager:
         cache_file = self._get_cache_file_path(cache_key, cache_type)
         if cache_file.exists():
             try:
-                with open(cache_file, "rb") as f:
-                    cache_entry = pickle.load(f)
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cache_entry = json.load(f)
 
                 if self._is_cache_valid(cache_entry):
                     # Load back into memory cache for faster access
@@ -248,8 +247,8 @@ class CacheManager:
         # Store in disk cache
         cache_file = self._get_cache_file_path(cache_key, cache_type)
         try:
-            with open(cache_file, "wb") as f:
-                pickle.dump(cache_entry, f)
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(cache_entry, f)
 
             self.logger.debug(f"Cached data: {cache_key} (TTL: {ttl}s)")
 

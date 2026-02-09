@@ -80,7 +80,13 @@ def main() -> None:
         if "azure_devops" in config.platforms:
             logger.info("Fetching data from Azure DevOps...")
             azure_client = AzureDevOpsClient(config, logger)
-            azure_pr_data = azure_client.fetch_all_pull_requests()
+            repos = azure_client.fetch_all_repositories()
+            azure_pr_data = []
+            for repo in repos:
+                repo_prs = azure_client.fetch_pull_requests_for_repository(repo)
+                for pr in repo_prs:
+                    pr["repository_name"] = repo.get("name", "Unknown")
+                azure_pr_data.extend(repo_prs)
 
             if azure_pr_data:
                 logger.info(
@@ -99,7 +105,11 @@ def main() -> None:
         if "github" in config.platforms and github_owner and github_token:
             logger.info("Fetching data from GitHub...")
             github_client = GitHubClient(config, logger)
-            github_pr_data = github_client.fetch_all_pull_requests()
+            repos = github_client.fetch_all_repositories()
+            github_pr_data = []
+            for repo in repos:
+                repo_prs = github_client.fetch_pull_requests_for_repository(repo)
+                github_pr_data.extend(repo_prs)
 
             if github_pr_data:
                 logger.info(f"Processing {len(github_pr_data)} GitHub pull requests...")

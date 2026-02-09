@@ -89,8 +89,8 @@ class BaseAPIClient(ABC):
         # Configure adapter with larger connection pooling for parallel requests
         adapter = HTTPAdapter(
             max_retries=retry_strategy,
-            pool_connections=200,
-            pool_maxsize=200,
+            pool_connections=30,
+            pool_maxsize=30,
             pool_block=False,
         )
 

@@ -5,6 +5,8 @@ This module provides a client for interacting with the Azure DevOps API,
 built on top of the BaseAPIClient class for common functionality.
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import json
@@ -13,9 +15,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Union
 
-import aiohttp
 import requests
-from requests.exceptions import ConnectionError, RequestException, Timeout
 
 from .base_client import BaseAPIClient
 
@@ -129,119 +129,6 @@ class AzureDevOpsClient(BaseAPIClient):
             self.rate_limit_reset = int(
                 response.headers.get("X-RateLimit-Reset", time.time() + 3600)
             )
-
-    def _make_request(
-        self, method: str, url: str, **kwargs
-    ) -> Optional[requests.Response]:
-        """Make an HTTP request with retry logic.
-
-        Args:
-            method: HTTP method (GET, POST, etc.)
-            url: URL to request
-            **kwargs: Additional arguments to pass to requests.request()
-
-        Returns:
-            Response object or None if all retries failed
-        """
-        # Add default headers if not provided
-        headers = kwargs.pop("headers", {})
-        headers.update(self._get_default_headers())
-
-        # Add API version if not provided
-        params = kwargs.pop("params", {})
-        if "api-version" not in params:
-            params["api-version"] = self.API_VERSION
-
-        # Add timeout if not provided
-        if "timeout" not in kwargs:
-            kwargs["timeout"] = self.timeout
-
-        # Make the request with retries
-        for attempt in range(self.max_retries + 1):
-            try:
-                self.logger.debug(
-                    "Making %s request to %s with params: %s", method, url, params
-                )
-                response = self.session.request(
-                    method=method, url=url, headers=headers, params=params, **kwargs
-                )
-
-                # Update rate limit information
-                self._update_rate_limit_headers(response)
-
-                # Check for rate limiting
-                if response.status_code == 429:
-                    self._handle_rate_limit(response)
-                    if attempt < self.max_retries:
-                        continue
-
-                # Check for authentication errors
-                if response.status_code in (401, 403):
-                    self.logger.error("Authentication failed: %s", response.text)
-                    response.raise_for_status()
-
-                # For successful responses, ensure we can parse the JSON
-                if 200 <= response.status_code < 300:
-                    try:
-                        response.json()  # Try to parse JSON to catch any JSON decode errors
-                    except json.JSONDecodeError as e:
-                        self.logger.error("Failed to parse JSON response: %s", str(e))
-                        if attempt < self.max_retries:
-                            continue
-
-                return response
-
-            except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
-                self.logger.error(
-                    "Request error (attempt %d/%d): %s",
-                    attempt + 1,
-                    self.max_retries + 1,
-                    str(e),
-                )
-                if attempt == self.max_retries:
-                    if isinstance(e, requests.exceptions.ConnectionError):
-                        self.logger.error(
-                            "Connection error after %d attempts", attempt + 1
-                        )
-                        raise
-                    return None
-                elif response.status_code == 404:
-                    # Not found is not a retry-able error
-                    return response
-                elif response.status_code == 429:
-                    # Rate limiting
-                    retry_after = int(response.headers.get("Retry-After", 60))
-                    self.logger.warning(f"Rate limited. Waiting {retry_after} seconds")
-                    time.sleep(retry_after)
-                    continue
-                else:
-                    self.logger.warning(
-                        f"Request failed with status {response.status_code}, "
-                        f"attempt {attempt + 1}/{self.max_retries + 1}"
-                    )
-                    if attempt < self.max_retries:
-                        time.sleep(2**attempt)  # Exponential backoff
-
-            except Timeout as e:
-                self.logger.warning(
-                    f"Request timeout: {e}, attempt {attempt + 1}/{self.max_retries + 1}"
-                )
-                if attempt < self.max_retries:
-                    time.sleep(2**attempt)
-            except ConnectionError as e:
-                self.logger.warning(
-                    f"Connection error: {e}, attempt {attempt + 1}/{self.max_retries + 1}"
-                )
-                if attempt < self.max_retries:
-                    time.sleep(2**attempt)
-            except RequestException as e:
-                self.logger.warning(
-                    f"Request exception: {e}, attempt {attempt + 1}/{self.max_retries + 1}"
-                )
-                if attempt < self.max_retries:
-                    time.sleep(2**attempt)
-
-        return None
 
     def fetch_all_repositories(self) -> List[Dict[str, Any]]:
         """Fetch all repositories from all projects in the Azure DevOps organization."""
@@ -388,6 +275,8 @@ class AzureDevOpsClient(BaseAPIClient):
         self, pull_requests: List[Dict[str, Any]], repo_id: str
     ) -> None:
         """Async implementation for fetching threads - much faster for I/O bound work."""
+        import aiohttp
+
         pat_encoded = base64.b64encode(f":{self.config.token}".encode()).decode()
         headers = {
             "Authorization": f"Basic {pat_encoded}",
@@ -514,9 +403,9 @@ class AzureDevOpsClient(BaseAPIClient):
     def _fetch_pr_threads(self, repo_id: str, pr_id: int) -> List[Dict[str, Any]]:
         """Fetch all threads (comments and discussions) for a specific PR."""
         try:
-            threads_url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/threads?api-version=7.1"
-            response = self.session.get(threads_url, timeout=5)
-            if response.status_code == 200:
+            threads_url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/threads"
+            response = self._make_request("GET", threads_url, params={"api-version": "7.1"}, cache_ttl=0)
+            if response and response.status_code == 200:
                 return response.json().get("value", [])
             return []
         except Exception:
@@ -525,17 +414,11 @@ class AzureDevOpsClient(BaseAPIClient):
     def _fetch_pr_iterations(self, repo_id: str, pr_id: int) -> List[Dict[str, Any]]:
         """Fetch all iterations for a specific PR."""
         try:
-            # Construct URL for PR iterations using organization-level API
             iterations_url = f"{self.config.base_url}/git/repositories/{repo_id}/pullRequests/{pr_id}/iterations"
-
             params = {"api-version": "7.1", "searchCriteria.status": "all"}
-            response = self.session.get(
-                iterations_url, params=params, timeout=10
-            )  # Reduced timeout
-            if response.status_code == 200:
-                iterations_data = response.json()
-                return iterations_data.get("value", [])
-            else:
-                return []
+            response = self._make_request("GET", iterations_url, params=params, cache_ttl=0)
+            if response and response.status_code == 200:
+                return response.json().get("value", [])
+            return []
         except Exception:
             return []

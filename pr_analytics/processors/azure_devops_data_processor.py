@@ -59,7 +59,6 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
 
         # Get config values, defaulting to True if not set (backward compatibility)
         exclude_iac = getattr(self.config, "exclude_iac", True)
-        getattr(self.config, "exclude_personal_approvals", True)
 
         for pr in pr_data:
             try:
@@ -202,10 +201,16 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
             vote = reviewer.get("vote", 0)
             is_required = reviewer.get("isRequired", False)
 
-            if vote > 0:
+            # Azure DevOps vote values: 10=approved, 5=approved with suggestions,
+            # -5=waiting for author, -10=rejected, 0=no vote
+            if vote == 10:
                 approved_by.append(reviewer_name)
-            elif vote < 0:
+            elif vote == 5:
+                approved_by.append(f"{reviewer_name} (with suggestions)")
+            elif vote == -10:
                 rejected_by.append(reviewer_name)
+            elif vote == -5:
+                waiting_reviewers.append(reviewer_name)
             elif is_required:
                 waiting_reviewers.append(reviewer_name)
             else:
@@ -310,47 +315,19 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
         }
 
     def _is_iac_related(self, pr: Dict[str, Any]) -> bool:
-        """Check if a PR is related to Infrastructure as Code."""
-        # IAC-related keywords to check in title and description
-        iac_keywords = [
-            "terraform",
-            "tf",
-            "bicep",
-            "arm template",
-            "cloudformation",
-            "cfn",
-            "infrastructure",
-            "infra",
-            "deployment",
-            "pipeline",
-            "yaml",
-            "yml",
-            "docker",
-            "dockerfile",
-            "kubernetes",
-            "k8s",
-            "helm",
-            "ansible",
-            "pulumi",
-            "cdk",
-            "azure resource manager",
-            "arm",
-            "azuredeploy",
-        ]
+        """Check if a PR is related to Infrastructure as Code using canonical keywords."""
+        title = pr.get("title", "")
+        description = pr.get("description", "")
+        repo_name = pr.get("repository_name", "")
 
-        title = pr.get("title", "").lower()
-        description = pr.get("description", "").lower()
-        repo_name = pr.get("repository_name", "").lower()
+        text_to_check = f"{title} {description} {repo_name}".lower()
 
-        # Check if any IAC keywords are present
-        for keyword in iac_keywords:
-            if keyword in title or keyword in description or keyword in repo_name:
+        for keyword in self.iac_keywords:
+            if keyword in text_to_check:
                 return True
 
-        # Check for specific IAC file patterns in the title/description
-        iac_patterns = [".tf", ".bicep", ".yaml", ".yml", "dockerfile", ".json"]
-        for pattern in iac_patterns:
-            if pattern in title or pattern in description:
+        for pattern in self.iac_file_patterns:
+            if pattern in text_to_check:
                 return True
 
         return False
@@ -380,26 +357,26 @@ class AzureDevOpsDataProcessor(BaseDataProcessor):
         ever_approved = review_info.get("Ever Approved", [])
         personal_approvals_count = 0
 
-        # Filter out approvals from the PR creator
+        # Filter out approvals from the PR creator (case-insensitive)
         filtered_approved_by = []
         for approver in approved_by:
             approver_username = (
                 approver.split(" (")[0] if " (" in approver else approver
             )
 
-            if approver_username != created_by:
+            if approver_username.lower() != created_by.lower():
                 filtered_approved_by.append(approver)
             else:
                 personal_approvals_count += 1
 
-        # Also filter "Ever Approved" list
+        # Also filter "Ever Approved" list (case-insensitive)
         filtered_ever_approved = []
         for approver in ever_approved:
             approver_username = (
                 approver.split(" (")[0] if " (" in approver else approver
             )
 
-            if approver_username != created_by:
+            if approver_username.lower() != created_by.lower():
                 filtered_ever_approved.append(approver)
 
         # Update the review info with filtered data
