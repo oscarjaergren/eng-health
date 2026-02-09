@@ -154,10 +154,10 @@ def _fetch_and_cache_prs(progress_container=None) -> list:
         _save_cached_prs(new_prs, now)
         return new_prs
     
-    existing_ids = {pr.get("id"): pr for pr in cached_prs}
+    existing_ids = {pr.get("ID", pr.get("id")): pr for pr in cached_prs}
     
     for pr in new_prs:
-        pr_id = pr.get("id")
+        pr_id = pr.get("ID", pr.get("id"))
         existing_ids[pr_id] = pr
     
     merged_prs = list(existing_ids.values())
@@ -276,6 +276,10 @@ def create_repository_overview(df: pd.DataFrame):
         "💡 Compare repositories by PR activity, approvals, and comments to identify the most and least active repos"
     )
 
+    if df.empty:
+        st.info("No data matches the current filters. Adjust the date range or other filters in the sidebar.")
+        return
+
     # Calculate repository metrics for stats
     repo_metrics_for_stats = (
         df.groupby("Repository")
@@ -306,7 +310,8 @@ def create_repository_overview(df: pd.DataFrame):
         st.metric("Total PRs", len(df))
 
     with col3:
-        avg_prs = len(df) / len(df["Repository"].unique())
+        unique_repos = len(df["Repository"].unique())
+        avg_prs = len(df) / unique_repos if unique_repos > 0 else 0
         st.metric(
             "Avg PRs per Repo",
             f"{avg_prs:.1f}",
@@ -396,6 +401,10 @@ def create_temporal_analysis(df: pd.DataFrame):
         "💡 Discover when PRs are created - time trends, busiest days of the week, and peak hours"
     )
 
+    if df.empty:
+        st.info("No data matches the current filters. Adjust the date range or other filters in the sidebar.")
+        return
+
     # Stats at top
     col1, col2, col3, col4 = st.columns(4)
 
@@ -482,6 +491,10 @@ def create_contributor_analysis(df: pd.DataFrame):
         "💡 See who creates the most PRs and how reviewers are distributed across pull requests"
     )
 
+    if df.empty:
+        st.info("No data matches the current filters. Adjust the date range or other filters in the sidebar.")
+        return
+
     # Stats at top
     col1, col2, col3 = st.columns(3)
 
@@ -494,7 +507,7 @@ def create_contributor_analysis(df: pd.DataFrame):
         )
 
     with col2:
-        avg_prs_per_contributor = len(df) / total_contributors
+        avg_prs_per_contributor = len(df) / total_contributors if total_contributors > 0 else 0
         st.metric(
             "Avg PRs per Contributor",
             f"{avg_prs_per_contributor:.1f}",
@@ -533,6 +546,10 @@ def create_repository_heatmap(df: pd.DataFrame):
     st.caption(
         "💡 Find the most worked on repositories over time - visualize activity patterns across repos and months"
     )
+
+    if df.empty:
+        st.info("No data matches the current filters. Adjust the date range or other filters in the sidebar.")
+        return
 
     # Create repository-month matrix
     repo_month_data = (
@@ -623,6 +640,10 @@ def create_review_analytics(df: pd.DataFrame):
     st.caption(
         "💡 See who reviews the most, who leaves comments, and who isn't participating in code reviews"
     )
+
+    if df.empty:
+        st.info("No data matches the current filters. Adjust the date range or other filters in the sidebar.")
+        return
 
     # Check if we have the detailed review data
     if "Approved By" not in df.columns:
@@ -1107,6 +1128,9 @@ def main():
         # Show data summary (after filtering)
         total_prs = len(df)
         st.sidebar.metric("📈 Filtered PRs", total_prs)
+
+        if total_prs == 0:
+            st.sidebar.warning("⚠️ No PRs match the current filters")
 
         # Platform breakdown in sidebar
         if "Platform" in df.columns and len(df["Platform"].unique()) > 1:
