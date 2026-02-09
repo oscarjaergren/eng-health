@@ -59,11 +59,19 @@ def _save_cached_prs(prs: list, last_fetch_date: str) -> None:
         json.dump({"last_fetch_date": last_fetch_date}, f)
 
 
-def _fetch_new_prs(since_date: str | None = None, progress_container=None) -> list:
+def _fetch_new_prs(
+    since_date: str | None = None,
+    known_pr_ids: set | None = None,
+    progress_container=None,
+) -> list:
     """Fetch new PRs since the given date (or all if None).
 
-    NOTE: since_date is accepted for future incremental fetching but not yet
-    passed to the underlying API clients.
+    Args:
+        since_date: ISO date string. Only PRs created/updated after this date
+                    are fetched, drastically reducing API calls on incremental syncs.
+        known_pr_ids: Set of PR IDs already in cache. Thread/review fetching is
+                      skipped for these — the single biggest performance win.
+        progress_container: Optional Streamlit progress bar.
     """
     from pr_analytics.clients.azure_devops_client import AzureDevOpsClient
     from pr_analytics.clients.github_client import GitHubClient
@@ -77,6 +85,7 @@ def _fetch_new_prs(since_date: str | None = None, progress_container=None) -> li
     logger = logging.getLogger(__name__)
     processor = UnifiedDataProcessor(logger, config)
 
+    known_pr_ids = known_pr_ids or set()
     all_pr_data = []
     all_repositories = []
     clients_info = []
@@ -106,7 +115,9 @@ def _fetch_new_prs(since_date: str | None = None, progress_container=None) -> li
     def fetch_repo_prs(args):
         platform, repo, client = args
         repo_name = repo.get("name", "Unknown")
-        repo_prs = client.fetch_pull_requests_for_repository(repo)
+        repo_prs = client.fetch_pull_requests_for_repository(
+            repo, since_date=since_date, known_pr_ids=known_pr_ids
+        )
         for pr in repo_prs:
             pr["repository_name"] = repo_name
         return platform, repo_name, repo_prs
@@ -144,7 +155,29 @@ def _fetch_new_prs(since_date: str | None = None, progress_container=None) -> li
 def _fetch_and_cache_prs(progress_container=None) -> list:
     """Fetch PR data with incremental caching and progress display."""
     cached_prs, last_fetch_date = _load_cached_prs()
-    new_prs = _fetch_new_prs(since_date=last_fetch_date, progress_container=progress_container)
+
+    # Build the set of already-cached PR IDs so clients can skip
+    # expensive thread/review fetching for those PRs.
+    known_pr_ids: set = set()
+    for pr in cached_prs:
+        pr_id = pr.get("ID", pr.get("id"))
+        if pr_id is not None:
+            known_pr_ids.add(pr_id)
+
+    # Apply a 1-day buffer so recently-updated PRs are re-checked
+    incremental_since = None
+    if last_fetch_date:
+        try:
+            last_dt = datetime.fromisoformat(last_fetch_date)
+            incremental_since = (last_dt - timedelta(days=1)).isoformat()
+        except (ValueError, TypeError):
+            incremental_since = None
+
+    new_prs = _fetch_new_prs(
+        since_date=incremental_since,
+        known_pr_ids=known_pr_ids,
+        progress_container=progress_container,
+    )
     
     if progress_container:
         progress_container.progress(1.0, text="✅ Syncing complete!")

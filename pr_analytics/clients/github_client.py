@@ -405,21 +405,70 @@ class GitHubClient(BaseAPIClient):
         return repos
 
     def fetch_pull_requests_for_repository(
-        self, repository: Dict[str, Any]
+        self,
+        repository: Dict[str, Any],
+        since_date: Optional[str] = None,
+        known_pr_ids: Optional[set] = None,
     ) -> List[Dict[str, Any]]:
-        """Fetch pull requests for a repository, matching the Azure DevOps client interface."""
+        """Fetch pull requests for a repository, matching the Azure DevOps client interface.
+
+        Args:
+            repository: Repository dict with at least a 'name' key
+            since_date: ISO date string — stop paginating once all PRs on a page
+                        were updated before this date
+            known_pr_ids: Set of PR numbers already in cache — review/comment
+                          fetching is skipped for these
+        """
         owner = getattr(self.config, "github_owner", "")
         repo_name = repository.get("name", "")
         if not owner or not repo_name:
             return []
 
-        prs = self.get_pull_requests(owner, repo_name, state="all")
-        for pr in prs:
-            pr["repository_name"] = repo_name
+        known_pr_ids = known_pr_ids or set()
 
-        for pr in prs:
+        # Fetch PRs sorted by updated desc — allows early exit on incremental sync
+        all_prs: List[Dict[str, Any]] = []
+        path = f"repos/{owner}/{repo_name}/pulls"
+        params = {"state": "all", "sort": "updated", "direction": "desc"}
+        url = self._build_url(path)
+        page = 1
+
+        while True:
+            page_params = {**params, "page": page, "per_page": self.PER_PAGE}
+            response = self._make_request("GET", url, params=page_params, cache_ttl=3600)
+
+            if response is None or response.status_code != 200:
+                break
+
+            try:
+                page_items = response.json()
+                if not isinstance(page_items, list):
+                    page_items = [page_items]
+            except ValueError:
+                break
+
+            if not page_items:
+                break
+
+            for pr in page_items:
+                pr["repository_name"] = repo_name
+            all_prs.extend(page_items)
+
+            # Early exit: if every PR on this page was updated before our
+            # last sync, older pages won't have anything new either.
+            if since_date and page_items:
+                newest_on_page = page_items[0].get("updated_at", "")
+                if newest_on_page and newest_on_page < since_date:
+                    break
+
+            if len(page_items) < self.PER_PAGE:
+                break
+            page += 1
+
+        # Enrich only NEW PRs with reviews and comments (most expensive part)
+        for pr in all_prs:
             pr_number = pr.get("number")
-            if pr_number:
+            if pr_number and pr_number not in known_pr_ids:
                 pr["reviews"] = self.get_pull_request_reviews(
                     owner, repo_name, pr_number
                 )
@@ -427,4 +476,4 @@ class GitHubClient(BaseAPIClient):
                     owner, repo_name, pr_number
                 )
 
-        return prs
+        return all_prs

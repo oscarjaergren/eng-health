@@ -171,7 +171,11 @@ class AzureDevOpsClient(BaseAPIClient):
             return []
 
     def fetch_pull_requests_for_repository(
-        self, repository: Dict[str, Any], fetch_threads: bool = True
+        self,
+        repository: Dict[str, Any],
+        fetch_threads: bool = True,
+        since_date: Optional[str] = None,
+        known_pr_ids: Optional[set] = None,
     ) -> List[Dict[str, Any]]:
         """
         Fetch pull requests for a repository with pagination support.
@@ -179,6 +183,8 @@ class AzureDevOpsClient(BaseAPIClient):
         Args:
             repository: Repository dictionary containing id, name, and project info
             fetch_threads: Whether to fetch threads for each PR (needed for historical approvals)
+            since_date: ISO date string to only fetch PRs created after this date
+            known_pr_ids: Set of PR IDs already in cache — thread fetching is skipped for these
 
         Returns:
             List of pull request objects from all pages
@@ -187,7 +193,6 @@ class AzureDevOpsClient(BaseAPIClient):
         current_skip = 0
         top = 100
 
-        # Extract repository details
         repo_id = repository.get("id")
         project_name = repository.get("project", {}).get("name")
 
@@ -195,8 +200,9 @@ class AzureDevOpsClient(BaseAPIClient):
             self.logger.error("Repository missing required fields (id or project.name)")
             return []
 
+        known_pr_ids = known_pr_ids or set()
+
         while True:
-            # Make API request for the current page
             path = f"{project_name}/_apis/git/repositories/{repo_id}/pullrequests"
             params = {
                 "searchCriteria.status": "all",
@@ -204,6 +210,9 @@ class AzureDevOpsClient(BaseAPIClient):
                 "$skip": current_skip,
                 "api-version": self.API_VERSION,
             }
+
+            if since_date:
+                params["searchCriteria.minTime"] = since_date
 
             url = f"{self.BASE_URL}/{self.config.organization}/{path}"
             response = self._make_request("GET", url, params=params)
@@ -219,9 +228,18 @@ class AzureDevOpsClient(BaseAPIClient):
             if not pull_requests:
                 break
 
-            # Parallel thread fetching for much better performance
+            # Only fetch threads for PRs not already in cache
             if fetch_threads and pull_requests:
-                self._fetch_threads_parallel(pull_requests, repo_id)
+                new_prs = [
+                    pr for pr in pull_requests
+                    if pr.get("pullRequestId") not in known_pr_ids
+                ]
+                if new_prs:
+                    self._fetch_threads_parallel(new_prs, repo_id)
+                # Mark cached PRs so the processor knows threads weren't re-fetched
+                for pr in pull_requests:
+                    if pr.get("pullRequestId") in known_pr_ids and "threads" not in pr:
+                        pr["threads"] = []
 
             # Add PRs from this page to our results
             all_pull_requests.extend(pull_requests)
