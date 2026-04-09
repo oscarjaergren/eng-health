@@ -21,6 +21,17 @@ from ..utils.cache_manager import CacheManager
 T = TypeVar("T")
 
 
+class _CachedResponse:
+    """Minimal response-like wrapper for cached API JSON data."""
+
+    def __init__(self, data: Any) -> None:
+        self._data = data
+        self.status_code = 200
+
+    def json(self) -> Any:
+        return self._data
+
+
 class BaseAPIClient(ABC):
     """
     Base class for API clients with common functionality.
@@ -142,10 +153,10 @@ class BaseAPIClient(ABC):
 
         # Check cache first if enabled and method is GET
         if cache_ttl > 0 and method.upper() == "GET" and self.cache_manager:
-            cached_response = self.cache_manager.get(cache_key, max_age=cache_ttl)
-            if cached_response is not None:
+            cached_data = self.cache_manager.get(cache_key, max_age=cache_ttl)
+            if cached_data is not None:
                 self.logger.debug(f"Cache hit for {url}")
-                return cached_response
+                return _CachedResponse(cached_data)
 
         # Prepare request
         request_headers = {}
@@ -184,9 +195,12 @@ class BaseAPIClient(ABC):
             # Check for other errors
             response.raise_for_status()
 
-            # Cache successful responses
+            # Cache successful responses (store parsed JSON, not the Response object)
             if cache_ttl > 0 and method.upper() == "GET" and self.cache_manager:
-                self.cache_manager.set(cache_key, response, ttl=cache_ttl)
+                try:
+                    self.cache_manager.set(cache_key, response.json(), ttl=cache_ttl)
+                except Exception:
+                    pass  # Skip caching non-JSON or unserializable responses
 
             return response
 
@@ -194,6 +208,9 @@ class BaseAPIClient(ABC):
             if e.response is not None and e.response.status_code == 401:
                 self.logger.error(f"Authentication failed: {e}")
                 raise ValueError(str(e)) from e
+            if e.response is not None and e.response.status_code == 404:
+                # Return the response so callers can implement fallback logic
+                return e.response
             self.logger.error(f"HTTP error: {e}")
             return None
 

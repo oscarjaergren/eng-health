@@ -203,7 +203,6 @@ class AzureDevOpsClient(BaseAPIClient):
         known_pr_ids = known_pr_ids or set()
 
         while True:
-            path = f"{project_name}/_apis/git/repositories/{repo_id}/pullrequests"
             params = {
                 "searchCriteria.status": "all",
                 "$top": top,
@@ -214,8 +213,13 @@ class AzureDevOpsClient(BaseAPIClient):
             if since_date:
                 params["searchCriteria.minTime"] = since_date
 
-            url = f"{self.BASE_URL}/{self.config.organization}/{path}"
+            # Try project-scoped URL first; fall back to org-scoped if 404
+            url = f"{self.BASE_URL}/{self.config.organization}/{project_name}/_apis/git/repositories/{repo_id}/pullrequests"
             response = self._make_request("GET", url, params=params)
+
+            if response is None or response.status_code == 404:
+                fallback_url = f"{self.BASE_URL}/{self.config.organization}/_apis/git/repositories/{repo_id}/pullrequests"
+                response = self._make_request("GET", fallback_url, params=params)
 
             # Handle response
             if not response or response.status_code != 200:

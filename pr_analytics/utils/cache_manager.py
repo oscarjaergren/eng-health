@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -160,6 +161,7 @@ class CacheManager:
         params: Dict = None,
         headers: Dict = None,
         cache_type: str = "api_responses",
+        max_age: Optional[int] = None,
     ) -> Optional[Any]:
         """
         Retrieve cached response if available and valid.
@@ -244,12 +246,21 @@ class CacheManager:
         # Store in memory cache
         self.memory_cache[cache_key] = cache_entry
 
-        # Store in disk cache
+        # Store in disk cache using an atomic write (temp file + rename)
+        # to avoid leaving truncated/corrupted files if interrupted mid-write.
         cache_file = self._get_cache_file_path(cache_key, cache_type)
         try:
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(cache_entry, f)
-
+            dir_path = cache_file.parent
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=dir_path,
+                delete=False,
+                suffix=".tmp",
+            ) as tmp:
+                json.dump(cache_entry, tmp)
+                tmp_path = Path(tmp.name)
+            tmp_path.replace(cache_file)
             self.logger.debug(f"Cached data: {cache_key} (TTL: {ttl}s)")
 
         except Exception as e:

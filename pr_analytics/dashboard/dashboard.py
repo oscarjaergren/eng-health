@@ -290,7 +290,7 @@ def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df["Hour"] = df["Created Date"].dt.hour
 
     # Create year-month column for time series
-    df["Year-Month"] = df["Created Date"].dt.to_period("M")
+    df["Year-Month"] = df["Created Date"].dt.tz_convert(None).dt.to_period("M")
 
     # Clean up reviewer data
     if "Assigned To" in df.columns:
@@ -425,7 +425,7 @@ def create_repository_overview(df: pd.DataFrame):
     )
     fig.update_layout(height=max(400, num_repos * 20), showlegend=False)
     fig.update_yaxes(categoryorder="total ascending")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_temporal_analysis(df: pd.DataFrame):
@@ -477,7 +477,7 @@ def create_temporal_analysis(df: pd.DataFrame):
         markers=True,
     )
     fig.update_layout(height=400)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     col1, col2 = st.columns(2)
 
@@ -503,7 +503,7 @@ def create_temporal_analysis(df: pd.DataFrame):
             color=weekday_counts.values,
             color_continuous_scale="blues",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col2:
         # Hour of day analysis
@@ -517,7 +517,7 @@ def create_temporal_analysis(df: pd.DataFrame):
             color=hourly_counts.values,
             color_continuous_scale="oranges",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 
 def create_contributor_analysis(df: pd.DataFrame):
@@ -573,7 +573,7 @@ def create_contributor_analysis(df: pd.DataFrame):
     )
     fig.update_layout(height=500, showlegend=False)
     fig.update_yaxes(categoryorder="total ascending")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_repository_heatmap(df: pd.DataFrame):
@@ -604,7 +604,7 @@ def create_repository_heatmap(df: pd.DataFrame):
         color_continuous_scale="viridis",
     )
     fig.update_layout(height=600)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def create_interactive_filters(df: pd.DataFrame):
@@ -661,7 +661,7 @@ def create_interactive_filters(df: pd.DataFrame):
         )
 
         if selected_columns:
-            st.dataframe(df[selected_columns], use_container_width=True, height=400)
+            st.dataframe(df[selected_columns], width="stretch", height=400)
         else:
             st.warning("Please select at least one column to display.")
     else:
@@ -930,7 +930,7 @@ def create_review_analytics(df: pd.DataFrame):
                 title_font_size=16,
             )
             fig.update_yaxes(categoryorder="total ascending")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.warning("No approvers data available")
 
@@ -956,7 +956,7 @@ def create_review_analytics(df: pd.DataFrame):
                 title_font_size=16,
             )
             fig.update_yaxes(categoryorder="total ascending")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.warning("No commenters data available")
 
@@ -983,9 +983,148 @@ def create_review_analytics(df: pd.DataFrame):
                 title_font_size=16,
             )
             fig.update_yaxes(categoryorder="total ascending")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.warning("No rejectors data available")
+
+    # --- Comment Activity by Repo ---
+    st.markdown("---")
+    st.subheader("🗂️ Where Are People Commenting? (by Repository)")
+    st.caption("Click a bar to drill into that person's repos, or use the selector below.")
+
+    # Build person → repo → comment_count mapping
+    person_repo_counts: dict[str, dict[str, int]] = {}
+    for _, row in df.iterrows():
+        repo = row.get("Repository", "Unknown")
+        comment_counts_value = row.get("Comment Counts")
+        if isinstance(comment_counts_value, list):
+            has_cc = len(comment_counts_value) > 0
+        elif pd.isna(comment_counts_value) if not isinstance(comment_counts_value, (list, dict)) else False:
+            has_cc = False
+        else:
+            has_cc = bool(comment_counts_value)
+
+        if has_cc:
+            pr_cc = safe_parse_dict(comment_counts_value)
+            if isinstance(pr_cc, dict):
+                for person, count in pr_cc.items():
+                    name = person.split("@")[0]
+                    person_repo_counts.setdefault(name, {})
+                    person_repo_counts[name][repo] = person_repo_counts[name].get(repo, 0) + count
+        else:
+            commenters_value = row.get("Commenters")
+            if isinstance(commenters_value, list):
+                has_c = len(commenters_value) > 0
+            elif pd.isna(commenters_value) if not isinstance(commenters_value, (list, dict)) else False:
+                has_c = False
+            else:
+                has_c = bool(commenters_value)
+            if has_c:
+                for person in safe_parse_list(commenters_value):
+                    name = person.split("@")[0]
+                    person_repo_counts.setdefault(name, {})
+                    person_repo_counts[name][repo] = person_repo_counts[name].get(repo, 0) + 1
+
+    if person_repo_counts:
+        # Heatmap: people (rows) × repos (cols), value = comment count
+        all_people = sorted(person_repo_counts.keys(), key=lambda p: sum(person_repo_counts[p].values()), reverse=True)
+        all_repos = sorted({r for prc in person_repo_counts.values() for r in prc})
+
+        heat_data = [[person_repo_counts.get(p, {}).get(r, 0) for r in all_repos] for p in all_people]
+        heat_df = pd.DataFrame(heat_data, index=all_people, columns=all_repos)
+
+        # Limit to top 30 commenters and top 30 repos (by total comments) to keep it readable
+        top_people = heat_df.sum(axis=1).nlargest(30).index.tolist()
+        top_repos = heat_df.sum(axis=0).nlargest(30).index.tolist()
+        heat_df_trimmed = heat_df.loc[top_people, top_repos]
+
+        fig_heat = px.imshow(
+            heat_df_trimmed,
+            labels={"x": "Repository", "y": "Person", "color": "Comments"},
+            title="💬 Comment Heatmap — Person × Repository",
+            color_continuous_scale="Blues",
+            aspect="auto",
+        )
+        fig_heat.update_layout(
+            height=max(400, len(top_people) * 22),
+            xaxis_tickangle=-45,
+            title_font_size=16,
+        )
+        st.plotly_chart(fig_heat, width="stretch")
+
+        # Drill-down: pick a person, see their repo bar chart
+        st.markdown("#### 🔎 Drill-down: Repos for a Specific Person")
+        selected_person = st.selectbox(
+            "Select person",
+            options=all_people,
+            key="commenter_repo_drilldown",
+        )
+        if selected_person:
+            repo_data = person_repo_counts[selected_person]
+            sorted_repos = sorted(repo_data.items(), key=lambda x: x[1], reverse=True)
+            rnames, rcounts = zip(*sorted_repos)
+            fig_drill = px.bar(
+                x=list(rcounts),
+                y=list(rnames),
+                orientation="h",
+                title=f"💬 {selected_person} — Comments by Repository",
+                labels={"x": "Comments", "y": "Repository"},
+                color=list(rcounts),
+                color_continuous_scale="Blues",
+            )
+            fig_drill.update_layout(
+                height=max(300, len(rnames) * 28),
+                showlegend=False,
+                title_font_size=15,
+            )
+            fig_drill.update_yaxes(categoryorder="total ascending")
+            st.plotly_chart(fig_drill, width="stretch")
+
+            # PR-level table: which specific PRs did this person comment on?
+            st.markdown(f"#### 📋 PRs {selected_person} commented on")
+            pr_rows = []
+            for _, row in df.iterrows():
+                cc_val = row.get("Comment Counts")
+                if isinstance(cc_val, list):
+                    has_cc = len(cc_val) > 0
+                elif pd.isna(cc_val) if not isinstance(cc_val, (list, dict)) else False:
+                    has_cc = False
+                else:
+                    has_cc = bool(cc_val)
+
+                if not has_cc:
+                    continue
+
+                cc = safe_parse_dict(cc_val)
+                if not isinstance(cc, dict):
+                    continue
+
+                # Match by full key or display-name prefix
+                person_comments = 0
+                for k, v in cc.items():
+                    if k.split("@")[0] == selected_person or k == selected_person:
+                        person_comments += v
+
+                if person_comments > 0:
+                    pr_rows.append({
+                        "Repository": row.get("Repository", ""),
+                        "Title": row.get("Title", ""),
+                        "Created By": row.get("Created By", ""),
+                        "Created Date": row.get("Created Date", ""),
+                        f"{selected_person}'s Comments": person_comments,
+                        "Total Comments": row.get("Total Comments", row.get("Comments", "")),
+                        "State": row.get("State", ""),
+                    })
+
+            if pr_rows:
+                pr_table = pd.DataFrame(pr_rows).sort_values(
+                    f"{selected_person}'s Comments", ascending=False
+                ).reset_index(drop=True)
+                st.dataframe(pr_table, width="stretch", height=400)
+            else:
+                st.info("No individual PR records found for this person in the current filter.")
+    else:
+        st.info("Comment-by-repo data not available — re-sync to fetch thread data.")
 
 
 def main():
