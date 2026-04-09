@@ -727,12 +727,23 @@ def create_review_analytics(df: pd.DataFrame):
         "💡 See who reviews the most, who leaves comments, and who isn't participating in code reviews"
     )
 
+    # Comment counting options
+    with st.expander("⚙️ Comment counting options", expanded=False):
+        opt_no_own_pr = st.checkbox(
+            "Don't count comments on your own PRs",
+            value=False,
+            key="opt_no_own_pr_comments",
+            help="Exclude comments that authors leave on their own pull requests.",
+        )
+
     # Extract reviewer data
     approval_counts = {}
     comment_counts = {}
     rejection_counts = {}
 
     for _, row in df.iterrows():
+        pr_author = str(row.get("Created By", "") or "")
+
         # Process approvers
         approved_by_value = row.get("Approved By")
         # Handle list/array values properly to avoid ambiguity error
@@ -767,6 +778,12 @@ def create_review_analytics(df: pd.DataFrame):
             pr_comment_counts = safe_parse_dict(comment_counts_value)
             if isinstance(pr_comment_counts, dict):
                 for commenter, count in pr_comment_counts.items():
+                    # Skip if author commenting on own PR
+                    if opt_no_own_pr:
+                        commenter_name = commenter.split("@")[0]
+                        author_name = pr_author.split("@")[0]
+                        if commenter_name == author_name or commenter == pr_author:
+                            continue
                     comment_counts[commenter] = comment_counts.get(commenter, 0) + count
         else:
             # Fallback to old method if Comment Counts not available
@@ -782,6 +799,11 @@ def create_review_analytics(df: pd.DataFrame):
             if has_commenters:
                 commenters = safe_parse_list(commenters_value)
                 for commenter in commenters:
+                    if opt_no_own_pr:
+                        commenter_name = commenter.split("@")[0]
+                        author_name = pr_author.split("@")[0]
+                        if commenter_name == author_name or commenter == pr_author:
+                            continue
                     comment_counts[commenter] = comment_counts.get(commenter, 0) + 1
 
         # Process rejections
