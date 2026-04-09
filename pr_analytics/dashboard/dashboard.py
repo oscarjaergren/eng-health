@@ -607,69 +607,6 @@ def create_repository_heatmap(df: pd.DataFrame):
     st.plotly_chart(fig, width="stretch")
 
 
-def create_interactive_filters(df: pd.DataFrame):
-    """Show filtered data summary and detailed view."""
-    st.caption(
-        "💡 Explore the raw PR data with customizable column views - useful for detailed investigation"
-    )
-    st.info("Use the filters in the sidebar to refine the data shown across all tabs.")
-
-    # Display filtered results summary
-    st.subheader(f"Current Dataset ({len(df)} PRs)")
-
-    if len(df) > 0:
-        # Quick stats for the filtered data
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.metric("Total PRs", len(df))
-
-        with col2:
-            st.metric("Repositories", len(df["Repository"].unique()))
-
-        with col3:
-            st.metric("Contributors", len(df["Created By"].unique()))
-
-        with col4:
-            avg_reviewers = df["Reviewer Count"].mean()
-            st.metric(
-                "Avg Reviewers",
-                f"{avg_reviewers:.1f}",
-                help="Average number of reviewers assigned per PR in the filtered dataset.",
-            )
-
-        # Show detailed data table
-        st.subheader("📋 Detailed PR Data")
-
-        # Select columns to display
-        available_columns = df.columns.tolist()
-        default_columns = [
-            "Repository",
-            "Title",
-            "Created By",
-            "Created Date",
-            "Status",
-            "Reviewer Count",
-        ]
-        display_columns = [col for col in default_columns if col in available_columns]
-
-        selected_columns = st.multiselect(
-            "Select columns to display:",
-            available_columns,
-            default=display_columns,
-            key="column_selector",
-        )
-
-        if selected_columns:
-            st.dataframe(df[selected_columns], width="stretch", height=400)
-        else:
-            st.warning("Please select at least one column to display.")
-    else:
-        st.warning(
-            "No data matches the current filters. Try adjusting the filters in the sidebar."
-        )
-
-
 def create_review_analytics(df: pd.DataFrame):
     """Create comprehensive review analytics and engagement metrics."""
     st.caption(
@@ -723,9 +660,6 @@ def create_review_analytics(df: pd.DataFrame):
         return
 
     # Enhanced analytics when detailed data is available
-    st.caption(
-        "💡 See who reviews the most, who leaves comments, and who isn't participating in code reviews"
-    )
 
     # Comment counting options
     with st.expander("⚙️ Comment counting options", expanded=False):
@@ -1350,8 +1284,7 @@ def main():
                 "📊 Repository Analysis",
                 "📅 Temporal Analysis",
                 "👥 Contributors",
-                " Review Analytics",
-                "🔍 Interactive Analysis",
+                "🔍 Review Analytics",
             ]
         )
 
@@ -1368,9 +1301,6 @@ def main():
 
         with tabs[3]:
             create_review_analytics(df)
-
-        with tabs[4]:
-            create_interactive_filters(df)
 
     else:
         st.info("📊 No data available to display")
