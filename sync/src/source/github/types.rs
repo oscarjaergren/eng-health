@@ -1,6 +1,6 @@
 //! Shapes of the GraphQL responses to the queries in `mod.rs`.
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 
 #[derive(Debug, Deserialize)]
 pub struct Response<T> {
@@ -86,7 +86,7 @@ pub struct PullRepo {
     pub pull_request: Option<PrNode>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum PrState {
     Open,
@@ -94,7 +94,7 @@ pub enum PrState {
     Merged,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrNode {
     pub number: i64,
@@ -113,14 +113,14 @@ pub struct PrNode {
     pub review_threads: Connection<Thread>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Actor {
     #[serde(rename = "__typename")]
     pub typename: String,
     pub login: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", bound(deserialize = "T: Deserialize<'de>"))]
 pub struct Connection<T> {
     #[serde(default)]
@@ -138,19 +138,19 @@ impl<T> Connection<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewRequest {
     /// Only users are asked for; teams come back as an empty object.
     pub requested_reviewer: Option<RequestedReviewer>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct RequestedReviewer {
     pub login: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Review {
     pub state: String,
@@ -158,14 +158,14 @@ pub struct Review {
     pub author: Option<Actor>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Comment {
     pub created_at: String,
     pub author: Option<Actor>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Thread {
     pub comments: Connection<Comment>,
 }

@@ -33,7 +33,6 @@ class Report:
     saved: int = 0
     incomplete: int = 0
     requests: int = 0
-    interrupted: bool = False
     errors: list[str] = field(default_factory=list)
 
     @classmethod

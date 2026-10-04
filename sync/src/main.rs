@@ -150,29 +150,20 @@ async fn sync(
         on_event: &emit,
     };
     let store = Arc::new(Mutex::new(store));
-    let mut reports: Vec<Report> = Vec::new();
-
-    let azure = settings.azure.as_ref().map(Azure::new);
-    let github = settings.github.clone().map(GitHub::new);
-    let results = [
-        match &azure {
-            Some(a) => Some(sync_platform(a, &store, &opts).await),
-            None => None,
-        },
-        match &github {
-            Some(g) => Some(sync_platform(g, &store, &opts).await),
-            None => None,
-        },
-    ];
-    for result in results.into_iter().flatten() {
-        match result {
-            Ok(r) => reports.push(r),
-            Err(e) => {
-                eprintln!("{e}");
-                return ExitCode::from(EXIT_ERRORS);
-            }
-        }
+    let mut results = Vec::new();
+    if let Some(az) = &settings.azure {
+        results.push(sync_platform(&Azure::new(az), &store, &opts).await);
     }
+    if let Some(gh) = &settings.github {
+        results.push(sync_platform(&GitHub::new(gh.clone()), &store, &opts).await);
+    }
+    let reports: Vec<Report> = match results.into_iter().collect() {
+        Ok(reports) => reports,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(EXIT_ERRORS);
+        }
+    };
 
     for r in &reports {
         emit(Event::Report(r.clone()));

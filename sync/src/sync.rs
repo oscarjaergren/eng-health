@@ -254,25 +254,6 @@ async fn save(
     db(store, move |s| s.upsert(&prs, &people)).await
 }
 
-/// Re-read one PR and save it, for targeted refreshes such as a webhook.
-pub async fn refresh_one<S: Source>(
-    source: &S,
-    store: &Shared,
-    repo: &Repo,
-    number: i64,
-) -> Result<bool, SyncError> {
-    let Ok(Some(item)) = source.pull_request(repo, number).await else {
-        return Ok(false);
-    };
-    let Ok(item) = source.complete(repo, item).await else {
-        return Ok(false);
-    };
-    let mut people = People::new();
-    let mut batch = vec![source.convert(repo, &item, &mut people)];
-    save(store, &mut batch, &people).await?;
-    Ok(true)
-}
-
 #[allow(clippy::cast_precision_loss)] // progress fractions; counts are far below 2^52
 fn f64_ratio(done: usize, total: usize) -> f64 {
     done as f64 / total as f64

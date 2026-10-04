@@ -10,8 +10,8 @@ from streamlit.testing.v1 import AppTest
 
 from pr_analytics.cli import main as cli
 from pr_analytics.mock import mock_pull_requests
-from pr_analytics.store import Store
 
+from .seed import WritableStore
 from .test_prsync import fake_binary
 
 APP = str(Path(__file__).parent.parent / "dashboard_main.py")
@@ -104,7 +104,7 @@ def test_missing_prsync_is_explained(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
 def test_live_mode_reads_the_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     prs, people = mock_pull_requests(count=60)
-    Store(tmp_path / "pr_analytics.db").upsert(prs, people)
+    WritableStore(tmp_path / "pr_analytics.db").upsert(prs, people)
     monkeypatch.setenv("AZURE_DEVOPS_ORGANIZATION", "org")
     monkeypatch.setenv("AZURE_DEVOPS_PAT", "pat")
     at = run()
@@ -117,9 +117,9 @@ def test_bad_config_is_shown_not_raised(monkeypatch: pytest.MonkeyPatch) -> None
     assert "GITHUB_OWNER" in at.error[0].value
 
 
-def test_cli_export(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_export(tmp_path: Path) -> None:
     prs, people = mock_pull_requests(count=20)
-    Store(tmp_path / "pr_analytics.db").upsert(prs, people)
+    WritableStore(tmp_path / "pr_analytics.db").upsert(prs, people)
     out = tmp_path / "prs.csv"
     assert cli(["export", str(out)]) == 0
     assert len(pd.read_csv(out)) == 20

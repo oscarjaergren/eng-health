@@ -106,10 +106,6 @@ impl Source for Fake {
             .collect())
     }
 
-    async fn pull_request(&self, _repo: &Repo, _number: i64) -> Result<Option<Item>, SourceError> {
-        Ok(None)
-    }
-
     fn number(item: &Item) -> i64 {
         item.pr.number
     }
@@ -166,7 +162,7 @@ impl Source for Fake {
 }
 
 struct Env {
-    _dir: TempDir,
+    dir: TempDir,
     store: Arc<Mutex<Store>>,
 }
 
@@ -174,7 +170,7 @@ fn env() -> Env {
     let dir = TempDir::new().unwrap();
     let store = Store::open(&dir.path().join("db.sqlite")).unwrap();
     Env {
-        _dir: dir,
+        dir,
         store: Arc::new(Mutex::new(store)),
     }
 }
@@ -214,7 +210,11 @@ async fn first_sync_saves_everything_and_keeps_same_numbers_apart() {
     );
     assert_eq!(*fake.since_seen.lock().unwrap(), [None, None]);
     assert_eq!(comments(&env).len(), 2);
-    assert_eq!(env.store.lock().unwrap().people().unwrap()["bob"], "BOB");
+    let name: String = rusqlite::Connection::open(env.dir.path().join("db.sqlite"))
+        .unwrap()
+        .query_row("SELECT name FROM people WHERE id = 'bob'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(name, "BOB");
 }
 
 #[tokio::test]

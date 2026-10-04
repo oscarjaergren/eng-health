@@ -16,8 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pr_analytics.store import Store
 from tests.helpers import make_pr
+from tests.seed import WritableStore
 
 
 def emit(event: dict) -> None:
@@ -50,7 +50,7 @@ def main() -> int:
     emit(
         {"type": "progress", "platform": "github", "fraction": 0.3, "message": "github: listed web"}
     )
-    store = Store(Path(os.environ["DATA_DIR"]) / "pr_analytics.db")
+    store = WritableStore(Path(os.environ["DATA_DIR"]) / "pr_analytics.db")
     if "--reset" in sys.argv:
         store.clear()
     store.upsert(
