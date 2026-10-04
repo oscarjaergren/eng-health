@@ -270,13 +270,6 @@ impl Source for GitHub {
         }
     }
 
-    async fn pull_request(&self, repo: &Repo, number: i64) -> Result<Option<Item>, SourceError> {
-        Ok(self
-            .fetch_one(repo, number, NESTED_MAX)
-            .await?
-            .map(Item::new))
-    }
-
     fn number(item: &Item) -> i64 {
         item.node.number
     }

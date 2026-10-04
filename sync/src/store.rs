@@ -137,12 +137,6 @@ impl Store {
         .collect()
     }
 
-    pub fn people(&self) -> Result<BTreeMap<String, String>, StoreError> {
-        let mut stmt = self.conn.prepare("SELECT id, name FROM people")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        Ok(rows.collect::<Result<_, _>>()?)
-    }
-
     pub fn sync_state(&self, platform: Platform) -> Result<SyncState, StoreError> {
         let row: Option<(Option<String>, Option<String>, Option<String>)> = self
             .conn
@@ -195,13 +189,6 @@ impl Store {
         bump(&tx)?;
         tx.commit()?;
         Ok(())
-    }
-
-    /// Increases on every write; the dashboard uses it as a cache key.
-    pub fn version(&self) -> Result<i64, StoreError> {
-        Ok(self
-            .conn
-            .query_row("SELECT revision FROM meta", [], |r| r.get(0))?)
     }
 }
 

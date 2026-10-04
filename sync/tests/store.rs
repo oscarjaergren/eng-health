@@ -16,6 +16,11 @@ fn golden(name: &str) -> PullRequest {
     serde_json::from_value(v["pull_request"].clone()).unwrap()
 }
 
+/// The dashboard reads these tables directly, so tests check them the same way.
+fn db(dir: &TempDir) -> Connection {
+    Connection::open(dir.path().join("db.sqlite")).unwrap()
+}
+
 fn store() -> (TempDir, Store) {
     let dir = TempDir::new().unwrap();
     let s = Store::open(&dir.path().join("db.sqlite")).unwrap();
@@ -34,7 +39,7 @@ fn same_number_in_two_repositories_is_two_rows() {
 
 #[test]
 fn upsert_replaces_and_keeps_people() {
-    let (_d, mut s) = store();
+    let (dir, mut s) = store();
     let mut pr = golden("github/abandoned.json");
     s.upsert(
         &[pr.clone()],
@@ -48,7 +53,12 @@ fn upsert_replaces_and_keeps_people() {
         all.iter().map(|p| p.title.as_str()).collect::<Vec<_>>(),
         ["new"]
     );
-    assert_eq!(s.people().unwrap()["alice"], "Alice");
+    let name: String = db(&dir)
+        .query_row("SELECT name FROM people WHERE id = 'alice'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(name, "Alice");
     assert_eq!(
         s.pull_requests(Some(Platform::AzureDevops)).unwrap().len(),
         0
@@ -95,14 +105,19 @@ fn failed_sync_keeps_previous_window() {
 
 #[test]
 fn every_write_bumps_the_revision() {
-    let (_d, mut s) = store();
-    let v0 = s.version().unwrap();
+    let (dir, mut s) = store();
+    let revision = || -> i64 {
+        db(&dir)
+            .query_row("SELECT revision FROM meta", [], |r| r.get(0))
+            .unwrap()
+    };
+    let v0 = revision();
     s.upsert(&[golden("github/abandoned.json")], &BTreeMap::new())
         .unwrap();
     s.record_sync(Platform::Github, Utc::now(), true, None)
         .unwrap();
     s.clear().unwrap();
-    assert_eq!(s.version().unwrap(), v0 + 3);
+    assert_eq!(revision(), v0 + 3);
     assert_eq!(s.pull_requests(None).unwrap().len(), 0);
 }
 

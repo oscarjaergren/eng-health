@@ -52,10 +52,7 @@ def _data_source(settings: Settings, store: Store | None) -> DeltaGenerator | No
 
 
 def _sync_status(settings: Settings, store: Store, slot: DeltaGenerator) -> None:
-    owners = {
-        "azure_devops": settings.azure.organization if settings.azure else "",
-        "github": settings.github.owner if settings.github else "",
-    }
+    owners = {"azure_devops": settings.azure_organization, "github": settings.github_owner}
     for platform in settings.platforms:
         state = store.sync_state(platform)
         slot.markdown(f"**{PLATFORM_NAMES[platform]}** · {owners[platform]}")

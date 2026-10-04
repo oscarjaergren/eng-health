@@ -185,31 +185,6 @@ async fn rejected_credentials_are_auth_errors() {
 }
 
 #[tokio::test]
-async fn a_missing_pr_is_none() {
-    let server = MockServer::start().await;
-    Mock::given(path(format!("{PRS}/7")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(pr(7, "active")))
-        .mount(&server)
-        .await;
-    Mock::given(path(format!("{PRS}/8")))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&server)
-        .await;
-    let az = client(&server);
-    assert_eq!(
-        az.pull_request(&repo(), 7)
-            .await
-            .unwrap()
-            .unwrap()
-            .pr
-            .pull_request_id,
-        7
-    );
-    assert!(az.pull_request(&repo(), 8).await.unwrap().is_none());
-}
-
-/// Two real syncs: the second must re-read the open PR but not the closed one.
-#[tokio::test]
 async fn second_sync_only_refetches_open_prs() {
     let server = MockServer::start().await;
     Mock::given(path("/org/_apis/git/repositories"))

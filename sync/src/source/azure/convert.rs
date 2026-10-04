@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{Platform, PullRequest, Repo, State, Timestamp};
 use crate::rules::{identity, is_bot, is_infrastructure, parse_time};
-use crate::source::People;
+use crate::source::{People, Responses};
 
 use super::types::{IdentityRef, PullRequestInfo, Thread};
 
@@ -44,18 +44,6 @@ fn voter(thread: &Thread, people: &mut People) -> String {
         .comments
         .first()
         .map_or_else(String::new, |c| person(&c.author, people))
-}
-
-#[derive(Default)]
-struct Responses(BTreeMap<String, Timestamp>);
-
-impl Responses {
-    fn note(&mut self, who: &str, when: Option<Timestamp>) {
-        if let Some(when) = when {
-            let slot = self.0.entry(who.to_owned()).or_insert(when);
-            *slot = (*slot).min(when);
-        }
-    }
 }
 
 /// `threads` is `None` when fetching them failed, which marks the PR incomplete.
@@ -146,7 +134,7 @@ pub fn convert(
         approvers: approvers.into_iter().collect(),
         rejecters: rejecters.into_iter().collect(),
         comment_counts,
-        first_responses: responses.0,
+        first_responses: responses.times,
         details_complete: threads.is_some(),
     }
 }

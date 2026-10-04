@@ -5,13 +5,32 @@ use std::future::Future;
 
 use chrono::{DateTime, Utc};
 
-use crate::model::{Platform, PullRequest, Repo};
+use crate::model::{Platform, PullRequest, Repo, Timestamp};
 
 pub mod azure;
 pub mod github;
 
 /// Identity -> display name, filled in while converting.
 pub type People = BTreeMap<String, String>;
+
+/// Each person's earliest response to a PR (comment, vote or review), plus the
+/// order people first appeared in, which orders the reviewer list.
+#[derive(Default)]
+pub(crate) struct Responses {
+    pub order: Vec<String>,
+    pub times: BTreeMap<String, Timestamp>,
+}
+
+impl Responses {
+    pub fn note(&mut self, who: &str, when: Option<Timestamp>) {
+        let Some(when) = when else { return };
+        if !self.times.contains_key(who) {
+            self.order.push(who.to_owned());
+        }
+        let first = self.times.entry(who.to_owned()).or_insert(when);
+        *first = (*first).min(when);
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SourceError {
@@ -37,13 +56,6 @@ pub trait Source: Send + Sync {
         repo: &Repo,
         since: Option<DateTime<Utc>>,
     ) -> impl Future<Output = Result<Vec<Self::Item>, SourceError>> + Send;
-
-    /// One PR by number, for targeted refreshes such as a future webhook.
-    fn pull_request(
-        &self,
-        repo: &Repo,
-        number: i64,
-    ) -> impl Future<Output = Result<Option<Self::Item>, SourceError>> + Send;
 
     fn number(item: &Self::Item) -> i64;
 

@@ -16,11 +16,10 @@ def test_both_platforms() -> None:
             "AZURE_DEVOPS_PAT": "pat",
             "GITHUB_OWNER": "me",
             "GITHUB_TOKEN": "tok",
-            "GITHUB_TYPE": "User",
         }
     )
     assert s.platforms == ["azure_devops", "github"]
-    assert s.github and s.github.owner_type == "user"
+    assert (s.azure_organization, s.github_owner) == ("org", "me")
 
 
 @pytest.mark.parametrize(
@@ -28,8 +27,6 @@ def test_both_platforms() -> None:
     [
         {"AZURE_DEVOPS_ORGANIZATION": "org"},
         {"GITHUB_TOKEN": "tok"},
-        {"GITHUB_TYPE": "team"},
-        {"MAX_PARALLEL_WORKERS": "many"},
         {"IDENTITY_ALIASES": "bob"},
     ],
 )

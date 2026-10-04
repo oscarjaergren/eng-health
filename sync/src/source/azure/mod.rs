@@ -215,20 +215,6 @@ impl Source for Azure {
             .collect())
     }
 
-    async fn pull_request(&self, repo: &Repo, number: i64) -> Result<Option<Item>, SourceError> {
-        let url = self.pr_url(repo, &["pullrequests", &number.to_string()]);
-        let Some(resp) = self.http.send_optional(self.get(&url, &[])).await? else {
-            return Ok(None);
-        };
-        let pr: PullRequestInfo = resp.json().await.map_err(|e| {
-            SourceError::Api(format!("azure_devops: unexpected response from {url}: {e}"))
-        })?;
-        Ok(Some(Item {
-            pr,
-            threads: Threads::NotFetched,
-        }))
-    }
-
     fn number(item: &Item) -> i64 {
         item.pr.pull_request_id
     }

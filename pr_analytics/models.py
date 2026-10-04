@@ -16,14 +16,6 @@ class State(StrEnum):
     ABANDONED = "abandoned"
 
 
-@dataclass(frozen=True)
-class Repo:
-    platform: str
-    id: str
-    name: str
-    raw: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
-
-
 @dataclass
 class PullRequest:
     platform: str
@@ -55,10 +47,6 @@ class PullRequest:
         # PR numbers are only unique within a repository on GitHub, and the two
         # platforms' numbering overlaps, so all three parts are needed.
         return f"{self.platform}:{self.repo_id}:{self.number}"
-
-    @property
-    def first_review_at(self) -> datetime | None:
-        return min(self.first_responses.values(), default=None)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

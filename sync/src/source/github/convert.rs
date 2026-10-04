@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{Platform, PullRequest, Repo, State, Timestamp};
 use crate::rules::{identity, is_bot, is_infrastructure, parse_time};
-use crate::source::People;
+use crate::source::{People, Responses};
 
 use super::types::{Actor, PrNode, PrState};
 
@@ -28,29 +28,6 @@ fn person(raw: &str, people: &mut People) -> String {
             .or_insert_with(|| raw.to_owned());
     }
     ident
-}
-
-/// First response per person, remembering first-seen order like a Python dict.
-#[derive(Default)]
-struct Responses {
-    order: Vec<String>,
-    times: BTreeMap<String, Timestamp>,
-}
-
-impl Responses {
-    fn note(&mut self, who: &str, when: Option<Timestamp>) {
-        let Some(when) = when else { return };
-        match self.times.get(who) {
-            Some(t) if *t <= when => {}
-            Some(_) => {
-                self.times.insert(who.to_owned(), when);
-            }
-            None => {
-                self.order.push(who.to_owned());
-                self.times.insert(who.to_owned(), when);
-            }
-        }
-    }
 }
 
 #[must_use]

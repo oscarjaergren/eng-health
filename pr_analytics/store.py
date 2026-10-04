@@ -1,14 +1,14 @@
-"""SQLite storage for synced pull requests.
+"""Reads the SQLite database that prsync (sync/) writes.
 
-One row per PR keyed by platform, repository and number, so a sync updates
-individual PRs in place instead of rewriting one large file.
+One row per PR keyed by platform, repository and number. prsync is the only
+writer; the schema here must match sync/src/store.rs.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -71,33 +71,15 @@ class Store:
             c.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     @contextmanager
-    def _conn(self, write: bool = False) -> Iterator[sqlite3.Connection]:
+    def _conn(self) -> Iterator[sqlite3.Connection]:
         # A connection per call: Streamlit runs each session on its own thread.
         conn = sqlite3.connect(self.path, timeout=30)
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             with conn:
                 yield conn
-                if write:
-                    conn.execute("UPDATE meta SET revision = revision + 1")
         finally:
             conn.close()
-
-    def upsert(self, prs: Iterable[PullRequest], people: dict[str, str] | None = None) -> int:
-        rows = [(pr.key, pr.platform, json.dumps(pr.to_dict())) for pr in prs]
-        with self._conn(write=True) as c:
-            c.executemany(
-                "INSERT INTO pull_requests (key, platform, data) VALUES (?, ?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET data = excluded.data",
-                rows,
-            )
-            if people:
-                c.executemany(
-                    "INSERT INTO people (id, name) VALUES (?, ?) "
-                    "ON CONFLICT(id) DO UPDATE SET name = excluded.name",
-                    people.items(),
-                )
-        return len(rows)
 
     def pull_requests(self, platform: str | None = None) -> list[PullRequest]:
         sql = "SELECT data FROM pull_requests"
@@ -124,29 +106,6 @@ class Store:
             datetime.fromisoformat(last_attempt) if last_attempt else None,
             error,
         )
-
-    def record_sync(
-        self, platform: str, attempted: datetime, *, succeeded: bool, error: str | None = None
-    ) -> None:
-        with self._conn(write=True) as c:
-            c.execute(
-                "INSERT INTO sync_state (platform, last_sync, last_attempt, last_error) "
-                "VALUES (?, ?, ?, ?) ON CONFLICT(platform) DO UPDATE SET "
-                "last_sync = COALESCE(excluded.last_sync, sync_state.last_sync), "
-                "last_attempt = excluded.last_attempt, last_error = excluded.last_error",
-                (
-                    platform,
-                    attempted.isoformat() if succeeded else None,
-                    attempted.isoformat(),
-                    error,
-                ),
-            )
-
-    def clear(self) -> None:
-        with self._conn(write=True) as c:
-            c.execute("DELETE FROM pull_requests")
-            c.execute("DELETE FROM people")
-            c.execute("DELETE FROM sync_state")
 
     def version(self) -> int:
         """Increases on every write; used as a dashboard cache key."""
