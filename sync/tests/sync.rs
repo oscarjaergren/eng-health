@@ -1,5 +1,5 @@
-//! Sync rules against an in-memory source. Ports `tests/test_sync.py`, including
-//! the regressions where re-syncing erased review data.
+//! Sync rules against an in-memory source, including the regressions where
+//! re-syncing erased review data.
 
 // The fake answers from memory, so its async methods have nothing to await.
 #![allow(clippy::unused_async_trait_impl)]

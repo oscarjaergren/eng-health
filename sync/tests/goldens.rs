@@ -1,6 +1,5 @@
-//! The expected outputs in testdata/ come from the Python processing code
-//! (`python -m tests.export_goldens`). Every one must survive a round trip
-//! through the Rust model unchanged, which pins the JSON contract.
+//! Every expected record in testdata/ must survive a round trip through the
+//! Rust model unchanged, which pins the JSON the dashboard reads.
 
 use std::fs;
 use std::path::PathBuf;

@@ -1,7 +1,7 @@
 """Generated sample data for running the dashboard without credentials.
 
-It builds raw API-shaped payloads and runs them through the real processing
-code, so mock mode exercises the same path as live data.
+Azure DevOps people are identified by email and GitHub people by login, as
+in real data; ALIASES merges the two.
 """
 
 from __future__ import annotations
@@ -10,8 +10,7 @@ import random
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from .models import PullRequest, Repo
-from .processing import from_azure, from_github
+from .models import PullRequest, State
 
 PEOPLE = [
     ("Alice Johnson", "alice"),
@@ -55,24 +54,17 @@ def mock_pull_requests(
 ) -> tuple[list[PullRequest], dict[str, str]]:
     rng = random.Random(seed)
     now = now or datetime.now(UTC)
-    people: dict[str, str] = {}
-    prs: list[PullRequest] = []
-    repos = [
-        Repo("azure_devops", f"az-{n}", n, {"webUrl": f"https://dev.azure.com/demo/_git/{n}"})
-        for n in AZURE_REPOS
-    ]
-    repos += [Repo("github", f"gh-{n}", n) for n in GITHUB_REPOS]
+    repos = [("azure_devops", n) for n in AZURE_REPOS] + [("github", n) for n in GITHUB_REPOS]
     weights = [rng.uniform(0.3, 3) for _ in repos]
-    numbers = {r.id: 0 for r in repos}
+    numbers = dict.fromkeys(repos, 0)
+    people = {f"{login}@example.com": name for name, login in PEOPLE}
+    people.update({login: login for _, login in PEOPLE})
 
+    prs = []
     for _ in range(count):
         repo = rng.choices(repos, weights)[0]
-        numbers[repo.id] += 1
-        spec = _spec(rng, now, numbers[repo.id])
-        if repo.platform == "azure_devops":
-            prs.append(from_azure(_azure_raw(spec), repo, people))
-        else:
-            prs.append(from_github(_github_raw(spec, repo.name), repo, people))
+        numbers[repo] += 1
+        prs.append(_record(_spec(rng, now, numbers[repo]), *repo))
     return prs, people
 
 
@@ -119,118 +111,44 @@ def _spec(rng: random.Random, now: datetime, number: int) -> dict[str, Any]:
         "reviewers": reviewers,
         "events": events,
         "author_replies": rng.choice([0, 0, 1, 2]) if events else 0,
-        "bot_comments": rng.random() < 0.3,
     }
 
 
-def _iso(t: datetime | None) -> str | None:
-    return t.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if t else None
+_STATES = {"open": State.OPEN, "merged": State.MERGED, "abandoned": State.ABANDONED}
 
 
-def _azure_ref(p: tuple[str, str]) -> dict[str, str]:
-    return {"displayName": p[0], "uniqueName": f"{p[1]}@example.com"}
+def _record(s: dict[str, Any], platform: str, repo: str) -> PullRequest:
+    azure = platform == "azure_devops"
 
+    def who(p: tuple[str, str]) -> str:
+        return f"{p[1]}@example.com" if azure else p[1]
 
-def _azure_raw(s: dict[str, Any]) -> dict[str, Any]:
-    status = {"open": "active", "merged": "completed", "abandoned": "abandoned"}[s["state"]]
-    votes = {e["who"]: e["vote"] for e in s["events"]}
-    threads: list[dict[str, Any]] = []
-    for e in s["events"]:
-        if e["vote"]:
-            threads.append(
-                {
-                    "publishedDate": _iso(e["at"]),
-                    "properties": {
-                        "CodeReviewThreadType": {"$value": "VoteUpdate"},
-                        "CodeReviewVoteResult": {"$value": str(e["vote"])},
-                        "CodeReviewVotedByIdentity": {"$value": "1"},
-                    },
-                    "identities": {"1": _azure_ref(e["who"])},
-                    "comments": [{"commentType": "system", "author": _azure_ref(e["who"])}],
-                }
-            )
-        comments = [
-            {"commentType": "text", "author": _azure_ref(e["who"]), "publishedDate": _iso(e["at"])}
-            for _ in range(e["comments"])
-        ]
-        comments += [
-            {
-                "commentType": "text",
-                "author": _azure_ref(s["author"]),
-                "publishedDate": _iso(e["at"]),
-            }
-            for _ in range(s["author_replies"])
-        ]
-        if comments:
-            threads.append({"status": "fixed", "comments": comments})
-    if s["bot_comments"]:
-        bot = {"displayName": "Build Service", "uniqueName": "Build\\0f1e2d3c"}
-        threads.append({"comments": [{"commentType": "text", "author": bot}]})
-    reviewers = [{**_azure_ref(p), "vote": votes.get(p, 0)} for p in s["reviewers"]]
-    reviewers.append(
-        {
-            "displayName": "[Demo]\\Reviewers",
-            "uniqueName": "vstfs:///Classification/TeamProject/x\\Reviewers",
-            "isContainer": True,
-            "vote": 0,
-        }
+    author = who(s["author"])
+    comment_counts = {who(e["who"]): e["comments"] for e in s["events"] if e["comments"]}
+    if s["author_replies"]:
+        comment_counts[author] = s["author_replies"]
+    number = s["number"]
+    return PullRequest(
+        platform=platform,
+        repo_id=f"{platform[:2]}-{repo}",
+        repository=repo,
+        number=number,
+        title=s["title"],
+        author=author,
+        state=_STATES[s["state"]],
+        is_draft=s["draft"],
+        created_at=s["created"],
+        closed_at=s["closed"],
+        url=(
+            f"https://dev.azure.com/demo/_git/{repo}/pullrequest/{number}"
+            if azure
+            else f"https://github.com/demo/{repo}/pull/{number}"
+        ),
+        is_infrastructure=s["title"] in INFRA_TITLES,
+        updated_at=None if azure else max([s["created"], *(e["at"] for e in s["events"])]),
+        reviewers=[who(p) for p in s["reviewers"]],
+        approvers=sorted(who(e["who"]) for e in s["events"] if e["vote"] >= 5),
+        rejecters=sorted(who(e["who"]) for e in s["events"] if e["vote"] == -10),
+        comment_counts=comment_counts,
+        first_responses={who(e["who"]): e["at"] for e in s["events"]},
     )
-    return {
-        "pullRequestId": s["number"],
-        "title": s["title"],
-        "status": status,
-        "isDraft": s["draft"],
-        "createdBy": _azure_ref(s["author"]),
-        "creationDate": _iso(s["created"]),
-        "closedDate": _iso(s["closed"]),
-        "reviewers": reviewers,
-        "threads": threads,
-    }
-
-
-def _gh_user(p: tuple[str, str]) -> dict[str, str]:
-    return {"login": p[1]}
-
-
-def _github_raw(s: dict[str, Any], repo: str) -> dict[str, Any]:
-    reviews, review_comments, issue_comments = [], [], []
-    state_for = {10: "APPROVED", 5: "APPROVED", -10: "CHANGES_REQUESTED", 0: "COMMENTED"}
-    for e in s["events"]:
-        reviews.append(
-            {
-                "user": _gh_user(e["who"]),
-                "state": state_for[e["vote"]],
-                "submitted_at": _iso(e["at"]),
-            }
-        )
-        review_comments += [
-            {"user": _gh_user(e["who"]), "created_at": _iso(e["at"])} for _ in range(e["comments"])
-        ]
-    issue_comments += [
-        {"user": _gh_user(s["author"]), "created_at": _iso(s["created"])}
-        for _ in range(s["author_replies"])
-    ]
-    if s["bot_comments"]:
-        issue_comments.append(
-            {"user": {"login": "github-actions[bot]"}, "created_at": _iso(s["created"])}
-        )
-    reviewed = {e["who"] for e in s["events"]}
-    last = max(
-        [s["created"], *(e["at"] for e in s["events"])] + ([s["closed"]] if s["closed"] else [])
-    )
-    return {
-        "number": s["number"],
-        "title": s["title"],
-        "state": "open" if s["state"] == "open" else "closed",
-        "draft": s["draft"],
-        "user": _gh_user(s["author"]),
-        "created_at": _iso(s["created"]),
-        "updated_at": _iso(last),
-        "closed_at": _iso(s["closed"]),
-        "merged_at": _iso(s["closed"]) if s["state"] == "merged" else None,
-        "html_url": f"https://github.com/demo/{repo}/pull/{s['number']}",
-        "requested_reviewers": [_gh_user(p) for p in s["reviewers"] if p not in reviewed],
-        "reviews": reviews,
-        "review_comments": review_comments,
-        "issue_comments": issue_comments,
-    }

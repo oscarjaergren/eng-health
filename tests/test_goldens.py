@@ -1,21 +1,17 @@
-"""The shared expected outputs must match what the Python processing produces."""
+"""testdata/expected holds the records prsync writes for the shared fixtures
+(checked by the Rust parity tests). The dashboard must load every one."""
 
 import json
+from pathlib import Path
 
 from pr_analytics.models import PullRequest
 
-from .export_goldens import goldens
-
-
-def test_goldens_are_up_to_date() -> None:
-    stale = [
-        str(p.name) for p, text in goldens().items() if not p.exists() or p.read_text() != text
-    ]
-    assert not stale, f"Run `python -m tests.export_goldens`; stale: {stale}"
+EXPECTED = Path(__file__).parent.parent / "testdata" / "expected"
 
 
 def test_python_reads_the_shared_json_shape() -> None:
-    """The Rust engine writes exactly the golden JSON; the dashboard must load it."""
-    for text in goldens().values():
-        data = json.loads(text)["pull_request"]
-        assert PullRequest.from_dict(data).to_dict() == data
+    files = sorted(EXPECTED.glob("*/*.json"))
+    assert len(files) >= 10
+    for path in files:
+        data = json.loads(path.read_text())["pull_request"]
+        assert PullRequest.from_dict(data).to_dict() == data, path.name

@@ -3,4 +3,7 @@
 !pr_analytics/
 !main.py
 !dashboard_main.py
+!sync/Cargo.toml
+!sync/Cargo.lock
+!sync/src/
 **/__pycache__
