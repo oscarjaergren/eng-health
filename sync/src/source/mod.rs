@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 
 use crate::model::{Platform, PullRequest, Repo};
 
+pub mod azure;
 pub mod github;
 
 /// Identity -> display name, filled in while converting.

@@ -64,6 +64,25 @@ impl Http {
         &self,
         build: impl Fn(&Client) -> RequestBuilder,
     ) -> Result<Response, SourceError> {
+        // With not_found_ok false, a 404 has already become an error.
+        self.send_inner(build, false)
+            .await?
+            .ok_or_else(|| SourceError::Api(format!("{}: not found", self.label)))
+    }
+
+    /// Like `send`, but a 404 is `Ok(None)` rather than an error.
+    pub async fn send_optional(
+        &self,
+        build: impl Fn(&Client) -> RequestBuilder,
+    ) -> Result<Option<Response>, SourceError> {
+        self.send_inner(build, true).await
+    }
+
+    async fn send_inner(
+        &self,
+        build: impl Fn(&Client) -> RequestBuilder,
+        not_found_ok: bool,
+    ) -> Result<Option<Response>, SourceError> {
         let mut attempt = 0;
         loop {
             self.requests.fetch_add(1, Ordering::Relaxed);
@@ -103,6 +122,9 @@ impl Http {
                 attempt += 1;
                 continue;
             }
+            if status == StatusCode::NOT_FOUND && not_found_ok {
+                return Ok(None);
+            }
             if !status.is_success() {
                 return Err(SourceError::Api(format!(
                     "{}: {status} from {}",
@@ -110,7 +132,7 @@ impl Http {
                     resp.url()
                 )));
             }
-            return Ok(resp);
+            return Ok(Some(resp));
         }
     }
 

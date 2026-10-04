@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use clap::{Parser, Subcommand, ValueEnum};
 use prsync::config::Settings;
 use prsync::model::Platform;
+use prsync::source::azure::Azure;
 use prsync::source::github::GitHub;
 use prsync::store::Store;
 use prsync::sync::{Event, Options, Report, sync_platform};
@@ -153,11 +154,20 @@ async fn sync(
     let store = Arc::new(Mutex::new(store));
     let mut reports: Vec<Report> = Vec::new();
 
-    if settings.azure.is_some() {
-        tracing::warn!("Azure DevOps is not supported by prsync yet; skipping it");
-    }
-    if let Some(gh) = settings.github.clone() {
-        match sync_platform(&GitHub::new(gh), &store, &opts).await {
+    let azure = settings.azure.as_ref().map(Azure::new);
+    let github = settings.github.clone().map(GitHub::new);
+    let results = [
+        match &azure {
+            Some(a) => Some(sync_platform(a, &store, &opts).await),
+            None => None,
+        },
+        match &github {
+            Some(g) => Some(sync_platform(g, &store, &opts).await),
+            None => None,
+        },
+    ];
+    for result in results.into_iter().flatten() {
+        match result {
             Ok(r) => reports.push(r),
             Err(e) => {
                 eprintln!("{e}");

@@ -15,12 +15,27 @@ pub enum ConfigError {
     OwnerType(String),
     #[error("MAX_PARALLEL_WORKERS must be an integer")]
     Workers,
+    #[error("{name} is not a valid http(s) URL: {value:?}")]
+    Url { name: &'static str, value: String },
+}
+
+fn url(name: &'static str, value: &str, default: &str) -> Result<String, ConfigError> {
+    let value = if value.is_empty() { default } else { value };
+    match reqwest::Url::parse(value) {
+        Ok(u) if matches!(u.scheme(), "http" | "https") && u.has_host() => Ok(value.to_owned()),
+        _ => Err(ConfigError::Url {
+            name,
+            value: value.to_owned(),
+        }),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AzureSettings {
     pub organization: String,
     pub token: String,
+    /// `https://dev.azure.com`, or an Azure DevOps Server address.
+    pub api_url: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,11 +87,17 @@ impl Settings {
                 }
             };
 
+        let azure_url = url(
+            "AZURE_DEVOPS_URL",
+            &get("AZURE_DEVOPS_URL"),
+            crate::source::azure::API,
+        )?;
         let azure =
             pair("AZURE_DEVOPS_ORGANIZATION", "AZURE_DEVOPS_PAT")?.map(|(organization, token)| {
                 AzureSettings {
                     organization,
                     token,
+                    api_url: azure_url,
                 }
             });
 
@@ -85,10 +106,11 @@ impl Settings {
             "user" => OwnerType::User,
             other => return Err(ConfigError::OwnerType(other.to_owned())),
         };
-        let api_url = match get("GITHUB_API_URL").as_str() {
-            "" => crate::source::github::API.to_owned(),
-            v => v.to_owned(),
-        };
+        let api_url = url(
+            "GITHUB_API_URL",
+            &get("GITHUB_API_URL"),
+            crate::source::github::API,
+        )?;
         let github = pair("GITHUB_OWNER", "GITHUB_TOKEN")?.map(|(owner, token)| GitHubSettings {
             owner,
             token,
@@ -159,6 +181,8 @@ mod tests {
             env(&[("GITHUB_TOKEN", "tok")]),
             env(&[("GITHUB_TYPE", "team")]),
             env(&[("MAX_PARALLEL_WORKERS", "many")]),
+            env(&[("AZURE_DEVOPS_URL", "dev.azure.com")]),
+            env(&[("GITHUB_API_URL", "ftp://example.com")]),
         ] {
             assert!(Settings::from_env(&case).is_err(), "{case:?}");
         }
