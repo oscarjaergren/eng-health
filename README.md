@@ -23,7 +23,7 @@ Syncing is done by `prsync`, a Rust program in `sync/` that the image includes. 
 PRs are kept in a SQLite database under `./data`. Later syncs fetch only what changed,
 so they are quick. To sync on a schedule, run the CLI from cron.
 
-Without Docker you need Python 3.12 and a Rust toolchain:
+Without Docker you need Python 3.14 and a Rust toolchain:
 
 ```bash
 cargo build --release --manifest-path sync/Cargo.toml   # the dashboard finds it there

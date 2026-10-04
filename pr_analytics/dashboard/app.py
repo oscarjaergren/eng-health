@@ -21,7 +21,7 @@ def _browser_timezone() -> str:
     tz = st.context.timezone or "UTC"
     try:
         ZoneInfo(tz)
-    except (ZoneInfoNotFoundError, ValueError):
+    except ZoneInfoNotFoundError, ValueError:
         return "UTC"
     return tz
 

@@ -121,11 +121,9 @@ async fn sync(
         eprintln!("No platform configured. Copy .env.example to .env and fill it in.");
         return ExitCode::from(EXIT_CONFIG);
     }
-    if reset {
-        if let Err(e) = store.clear() {
-            eprintln!("{e}");
-            return ExitCode::from(EXIT_ERRORS);
-        }
+    if reset && let Err(e) = store.clear() {
+        eprintln!("{e}");
+        return ExitCode::from(EXIT_ERRORS);
     }
 
     let stop = Arc::new(AtomicBool::new(false));

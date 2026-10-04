@@ -2,7 +2,7 @@
 # Docker image can install them in a cached layer.
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 extend-exclude = [".windsurf"]
 
@@ -18,7 +18,7 @@ addopts = "-q"
 source = ["pr_analytics"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 packages = ["pr_analytics"]
 ignore_missing_imports = true
 check_untyped_defs = true
