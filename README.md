@@ -85,3 +85,12 @@ the expected records, generated from the Python code with
 ```bash
 cd sync && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
+
+`prsync` syncs GitHub today, over GraphQL; Azure DevOps still goes through the
+Python sync until it is ported:
+
+```bash
+cd sync && cargo run --release -- sync      # or: sync --full, sync --reset, status
+```
+
+It reads the same `.env`. `GITHUB_API_URL` points it at GitHub Enterprise Server.

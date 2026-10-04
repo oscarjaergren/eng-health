@@ -8,6 +8,13 @@ license = "MIT"
 publish = false
 
 [dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+futures = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "rustls-tls"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 dotenvy = "0.15"
 regex = "1"
@@ -17,6 +24,7 @@ serde_json = "1"
 thiserror = "2"
 
 [dev-dependencies]
+wiremock = "0.6"
 pretty_assertions = "1"
 tempfile = "3"
 
