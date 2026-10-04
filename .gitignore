@@ -172,3 +172,10 @@ cython_debug/
 *.log
 .DS_Store
 mock_pr_data.json
+
+# Local data (the folder is kept so Docker does not create it as root)
+data/*
+!data/.gitkeep
+*.db
+*.db-shm
+*.db-wal

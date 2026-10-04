@@ -1,1 +1,1 @@
-"""Dashboard and visualization components."""
+"""Streamlit dashboard."""
