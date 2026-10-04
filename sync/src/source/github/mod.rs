@@ -255,10 +255,10 @@ impl Source for GitHub {
                 .pull_requests;
             for node in page.nodes {
                 let updated = parse_time(Some(&node.updated_at)).map(crate::model::Timestamp::get);
-                if let (Some(since), Some(updated)) = (since, updated) {
-                    if updated < since {
-                        return Ok(out); // newest first, so nothing older is new
-                    }
+                if let (Some(since), Some(updated)) = (since, updated)
+                    && updated < since
+                {
+                    return Ok(out); // newest first, so nothing older is new
                 }
                 out.push(Item::new(node));
             }

@@ -1,4 +1,4 @@
-pandas>=2.2
-plotly>=7.1.0
-python-dotenv>=1.0
-streamlit>=1.50
+pandas>=3.0
+plotly>=7.1
+python-dotenv>=1.2
+streamlit>=1.65

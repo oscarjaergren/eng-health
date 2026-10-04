@@ -8,7 +8,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
 COPY sync/src ./src
 RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
