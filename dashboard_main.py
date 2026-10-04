@@ -1,13 +1,5 @@
-"""Main entry point for the Streamlit dashboard."""
+"""Run with: streamlit run dashboard_main.py"""
 
-import sys
-from pathlib import Path
+from pr_analytics.dashboard.app import main
 
-# Add the pr_analytics package to the Python path
-sys.path.insert(0, str(Path(__file__).parent))
-
-# Import and run the dashboard
-from pr_analytics.dashboard.dashboard import main
-
-if __name__ == "__main__":
-    main()
+main()

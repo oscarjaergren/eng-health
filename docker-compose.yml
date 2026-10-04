@@ -1,46 +1,22 @@
-version: '3.8'
-
 services:
-  # Dashboard service - Streamlit web interface
   dashboard:
     build: .
-    container_name: pr-analytics-dashboard
-    command: streamlit run dashboard_main.py --server.port=8501 --server.address=0.0.0.0
     ports:
       - "8501:8501"
     volumes:
       - ./data:/app/data
-      - ./cache:/app/cache
     env_file:
-      - .env
-    environment:
-      - PYTHONUNBUFFERED=1
+      - path: .env
+        required: false
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8501/_stcore/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
-  # CLI service - Data collection (run manually or scheduled)
+  # docker compose run --rm cli sync
   cli:
     build: .
-    container_name: pr-analytics-cli
-    command: python main.py
+    entrypoint: ["python", "main.py"]
     volumes:
       - ./data:/app/data
-      - ./cache:/app/cache
     env_file:
-      - .env
-    environment:
-      - PYTHONUNBUFFERED=1
-    profiles:
-      - tools
-    # This service is meant to be run manually or scheduled
-    # Use: docker-compose run --rm cli
-    # Or schedule it with cron/scheduled tasks
-
-volumes:
-  data:
-  cache:
+      - path: .env
+        required: false
+    profiles: [tools]

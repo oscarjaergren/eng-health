@@ -2,45 +2,31 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "🚀 Start Dashboard",
+            "name": "Dashboard",
             "type": "debugpy",
             "request": "launch",
             "module": "streamlit",
-            "args": [
-                "run",
-                "dashboard_main.py",
-                "--server.port=8501"
-            ],
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "envFile": "${workspaceFolder}/.env"
-        },
-        {
-            "name": "🚀 Start Dashboard (Mock Data)",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "streamlit",
-            "args": [
-                "run",
-                "dashboard_main.py",
-                "--server.port=8501",
-                "--",
-                "--mock"
-            ],
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
+            "args": ["run", "dashboard_main.py"],
+            "envFile": "${workspaceFolder}/.env",
             "justMyCode": false
         },
         {
-            "name": "📊 Extract PR Data",
+            "name": "Dashboard (sample data)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "streamlit",
+            "args": ["run", "dashboard_main.py"],
+            "env": {"MOCK_MODE": "true"},
+            "justMyCode": false
+        },
+        {
+            "name": "Sync",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "envFile": "${workspaceFolder}/.env"
+            "args": ["sync"],
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
         }
     ]
 }
