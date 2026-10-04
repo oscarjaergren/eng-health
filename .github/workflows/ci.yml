@@ -25,6 +25,26 @@ jobs:
       - run: mypy
       - run: pytest --cov --cov-report=term-missing
 
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sync
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sync
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: sync/Cargo.toml
+
   security:
     runs-on: ubuntu-latest
     steps:

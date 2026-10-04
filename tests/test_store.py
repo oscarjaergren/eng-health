@@ -1,9 +1,12 @@
+import sqlite3
 from datetime import timedelta
 from pathlib import Path
 
+import pytest
+
 from pr_analytics.models import Repo
 from pr_analytics.processing import from_github
-from pr_analytics.store import Store
+from pr_analytics.store import SCHEMA_VERSION, SchemaError, Store
 
 from .helpers import NOW, gh_pr
 
@@ -44,3 +47,13 @@ def test_version_changes_after_sync_and_clear(tmp_path: Path) -> None:
     store.clear()
     assert len({v0, v1, store.version()}) == 3
     assert store.pull_requests() == []
+
+
+def test_newer_schema_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "db.sqlite"
+    Store(path)
+    with sqlite3.connect(path) as c:
+        assert c.execute("PRAGMA user_version").fetchone() == (SCHEMA_VERSION,)
+        c.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
+    with pytest.raises(SchemaError):
+        Store(path)

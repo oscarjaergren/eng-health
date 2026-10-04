@@ -1,0 +1,27 @@
+{
+  "people": {
+    "alice@example.com": "Alice",
+    "vstfs:///classification/teamproject/x\\team": "[p]\\Team"
+  },
+  "pull_request": {
+    "approvers": [],
+    "author": "alice@example.com",
+    "closed_at": "2026-09-02T09:00:00+00:00",
+    "comment_counts": {},
+    "created_at": "2026-09-01T09:00:00+00:00",
+    "details_complete": true,
+    "first_responses": {},
+    "is_draft": false,
+    "is_infrastructure": false,
+    "number": 3,
+    "platform": "azure_devops",
+    "rejecters": [],
+    "repo_id": "repo-1",
+    "repository": "api",
+    "reviewers": [],
+    "state": "merged",
+    "title": "Add search",
+    "updated_at": null,
+    "url": "https://dev.azure.com/o/p/_git/api/pullrequest/3"
+  }
+}

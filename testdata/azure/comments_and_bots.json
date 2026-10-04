@@ -1,0 +1,80 @@
+{
+  "repo": {
+    "id": "repo-1",
+    "name": "api",
+    "raw": {
+      "webUrl": "https://dev.azure.com/o/p/_git/api",
+      "project": {
+        "id": "p1"
+      }
+    }
+  },
+  "pr": {
+    "pullRequestId": 1,
+    "title": "Add search",
+    "status": "completed",
+    "createdBy": {
+      "displayName": "Alice",
+      "uniqueName": "alice@example.com"
+    },
+    "creationDate": "2026-09-01T09:00:00Z",
+    "closedDate": "2026-09-02T09:00:00Z",
+    "reviewers": [],
+    "threads": [
+      {
+        "status": "active",
+        "comments": [
+          {
+            "commentType": "text",
+            "author": {
+              "displayName": "Bob",
+              "uniqueName": "bob@example.com"
+            },
+            "publishedDate": "2026-09-01T14:00:00Z"
+          },
+          {
+            "commentType": "text",
+            "author": {
+              "displayName": "Bob",
+              "uniqueName": "bob@example.com"
+            },
+            "publishedDate": "2026-09-01T15:00:00Z"
+          },
+          {
+            "commentType": "system",
+            "author": {
+              "displayName": "Bob",
+              "uniqueName": "bob@example.com"
+            },
+            "publishedDate": "2026-09-01T13:00:00Z"
+          },
+          {
+            "commentType": "text",
+            "author": {
+              "displayName": "Carol",
+              "uniqueName": "carol@example.com"
+            },
+            "publishedDate": "2026-09-01T13:00:00Z",
+            "isDeleted": true
+          },
+          {
+            "commentType": "text",
+            "author": {
+              "displayName": "Build",
+              "uniqueName": "Build\\abc"
+            },
+            "publishedDate": "2026-09-01T10:00:00Z"
+          },
+          {
+            "commentType": "text",
+            "author": {
+              "displayName": "Alice",
+              "uniqueName": "alice@example.com"
+            },
+            "publishedDate": "2026-09-01T16:00:00Z"
+          }
+        ]
+      }
+    ]
+  }
+}

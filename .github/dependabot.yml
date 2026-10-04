@@ -17,3 +17,9 @@ updates:
     schedule:
       interval: weekly
     labels: [dependencies]
+
+  - package-ecosystem: cargo
+    directory: /sync
+    schedule:
+      interval: weekly
+    labels: [dependencies]

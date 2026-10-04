@@ -1,0 +1,26 @@
+{
+  "people": {
+    "alice@example.com": "Alice"
+  },
+  "pull_request": {
+    "approvers": [],
+    "author": "alice@example.com",
+    "closed_at": null,
+    "comment_counts": {},
+    "created_at": "2026-09-01T09:00:00+00:00",
+    "details_complete": true,
+    "first_responses": {},
+    "is_draft": true,
+    "is_infrastructure": true,
+    "number": 4,
+    "platform": "azure_devops",
+    "rejecters": [],
+    "repo_id": "repo-1",
+    "repository": "api",
+    "reviewers": [],
+    "state": "open",
+    "title": "Bump Terraform provider",
+    "updated_at": null,
+    "url": "https://dev.azure.com/o/p/_git/api/pullrequest/4"
+  }
+}
