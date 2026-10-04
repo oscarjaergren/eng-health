@@ -1,4 +1,4 @@
-//! Identity, bot and infrastructure rules. Mirrors `pr_analytics/processing.py`.
+//! Identity, bot and infrastructure rules.
 
 use std::sync::LazyLock;
 

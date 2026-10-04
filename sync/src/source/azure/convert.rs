@@ -1,5 +1,5 @@
-//! Azure DevOps pull request -> `PullRequest`. Ports `from_azure` in
-//! `pr_analytics/processing.py`; `testdata/azure` and its goldens pin parity.
+//! Azure DevOps pull request -> `PullRequest`. `testdata/azure` and the expected
+//! records beside it pin the behaviour.
 
 use std::collections::{BTreeMap, BTreeSet};
 

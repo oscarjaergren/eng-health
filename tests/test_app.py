@@ -12,7 +12,7 @@ from pr_analytics.cli import main as cli
 from pr_analytics.mock import mock_pull_requests
 from pr_analytics.store import Store
 
-from .helpers import FakeClient
+from .test_prsync import fake_binary
 
 APP = str(Path(__file__).parent.parent / "dashboard_main.py")
 CREDENTIAL_VARS = ["AZURE_DEVOPS_ORGANIZATION", "AZURE_DEVOPS_PAT", "GITHUB_OWNER", "GITHUB_TOKEN"]
@@ -20,7 +20,7 @@ CREDENTIAL_VARS = ["AZURE_DEVOPS_ORGANIZATION", "AZURE_DEVOPS_PAT", "GITHUB_OWNE
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    for var in [*CREDENTIAL_VARS, "MOCK_MODE", "IDENTITY_ALIASES"]:
+    for var in [*CREDENTIAL_VARS, "MOCK_MODE", "IDENTITY_ALIASES", "PRSYNC_BIN", "FAKE_PRSYNC"]:
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.chdir(tmp_path)  # keep a developer's .env out of the test
@@ -55,19 +55,51 @@ def test_live_mode_with_empty_store_offers_first_sync(monkeypatch: pytest.Monkey
     assert "never" in " ".join(c.value for c in at.sidebar.caption)
 
 
-def test_sync_button_fills_an_empty_store(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeClient()
-    fake.add("web", 1)
-    fake.add("api", 1, title="Bump Terraform provider")
-    monkeypatch.setattr("pr_analytics.dashboard.data.make_clients", lambda settings: [fake])
+def live_github(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, scenario: str = "ok") -> None:
     monkeypatch.setenv("GITHUB_OWNER", "acme")
     monkeypatch.setenv("GITHUB_TOKEN", "tok")
+    monkeypatch.setenv("PRSYNC_BIN", fake_binary(tmp_path))
+    monkeypatch.setenv("FAKE_PRSYNC", scenario)
+
+
+def test_sync_button_runs_prsync_and_shows_the_data(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    live_github(monkeypatch, tmp_path)
     at = run()
     at.sidebar.button[0].click().run()
     assert not at.exception, at.exception
     assert at.status[0].label == "Sync finished"
+    assert "2 API requests" in " ".join(m.value for m in at.markdown)
+    # The sidebar reflects the sync that just ran, not the state before it.
+    assert "Last synced just now" in " ".join(c.value for c in at.sidebar.caption)
     assert len(at.tabs) == 5
+    # The infrastructure PR is hidden by default.
     assert "1 of 2 PRs match" in " ".join(c.value for c in at.sidebar.caption)
+
+
+def test_sync_errors_are_shown(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    live_github(monkeypatch, tmp_path, "errors")
+    at = run()
+    at.sidebar.button[0].click().run()
+    assert at.status[0].label == "Sync finished with errors"
+    assert any("502" in e.value for e in at.error)
+
+
+def test_prsync_config_problem_is_shown(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    live_github(monkeypatch, tmp_path, "config")
+    at = run()
+    at.sidebar.button[0].click().run()
+    assert at.status[0].label == "Sync failed"
+    assert any("GITHUB_OWNER" in e.value for e in at.error)
+
+
+def test_missing_prsync_is_explained(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    live_github(monkeypatch, tmp_path)
+    monkeypatch.setenv("PRSYNC_BIN", str(tmp_path / "nope"))
+    at = run()
+    at.sidebar.button[0].click().run()
+    assert any("prsync" in e.value and "cargo build" in e.value for e in at.error)
 
 
 def test_live_mode_reads_the_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -91,8 +123,3 @@ def test_cli_export(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     out = tmp_path / "prs.csv"
     assert cli(["export", str(out)]) == 0
     assert len(pd.read_csv(out)) == 20
-
-
-def test_cli_sync_without_credentials_fails(capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli(["sync"]) == 2
-    assert "No platform configured" in capsys.readouterr().err

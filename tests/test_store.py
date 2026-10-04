@@ -4,26 +4,21 @@ from pathlib import Path
 
 import pytest
 
-from pr_analytics.models import Repo
-from pr_analytics.processing import from_github
 from pr_analytics.store import SCHEMA_VERSION, SchemaError, Store
 
-from .helpers import NOW, gh_pr
+from .helpers import NOW, make_pr
 
 
 def test_same_number_in_two_repositories_is_two_rows(tmp_path: Path) -> None:
     store = Store(tmp_path / "db.sqlite")
-    a = from_github(gh_pr(5, title="in web"), Repo("github", "1", "web"), {})
-    b = from_github(gh_pr(5, title="in api"), Repo("github", "2", "api"), {})
-    store.upsert([a, b])
+    store.upsert([make_pr(5, title="in web"), make_pr(5, repo_id="2", title="in api")])
     assert sorted(pr.title for pr in store.pull_requests()) == ["in api", "in web"]
 
 
 def test_upsert_replaces_and_keeps_people(tmp_path: Path) -> None:
     store = Store(tmp_path / "db.sqlite")
-    repo = Repo("github", "1", "web")
-    store.upsert([from_github(gh_pr(1, title="old"), repo, {})], {"alice": "Alice"})
-    store.upsert([from_github(gh_pr(1, title="new"), repo, {})])
+    store.upsert([make_pr(1, title="old")], {"alice": "Alice"})
+    store.upsert([make_pr(1, title="new")])
     assert [pr.title for pr in store.pull_requests()] == ["new"]
     assert store.people() == {"alice": "Alice"}
 
@@ -38,10 +33,10 @@ def test_failed_sync_keeps_previous_window(tmp_path: Path) -> None:
     assert state.last_error == "boom"
 
 
-def test_version_changes_after_sync_and_clear(tmp_path: Path) -> None:
+def test_version_changes_after_every_write(tmp_path: Path) -> None:
     store = Store(tmp_path / "db.sqlite")
     v0 = store.version()
-    store.upsert([from_github(gh_pr(), Repo("github", "1", "web"), {})])
+    store.upsert([make_pr()])
     store.record_sync("github", NOW, succeeded=True)
     v1 = store.version()
     store.clear()

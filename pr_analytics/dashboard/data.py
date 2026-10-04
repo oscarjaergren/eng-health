@@ -7,14 +7,12 @@ from datetime import UTC, datetime
 import pandas as pd
 import streamlit as st
 
-from .. import metrics
-from ..clients import make_clients
+from .. import metrics, prsync
 from ..config import Settings
 from ..mock import ALIASES as MOCK_ALIASES
 from ..mock import mock_pull_requests
 from ..models import PLATFORM_NAMES
 from ..store import Store
-from ..sync import sync
 
 
 @st.cache_data(show_spinner=False)
@@ -39,37 +37,43 @@ def load(settings: Settings, store: Store | None) -> tuple[pd.DataFrame, dict[st
     return _load_store(str(store.path), store.version(), tuple(sorted(settings.aliases.items())))
 
 
-def run_sync(settings: Settings, store: Store, *, full: bool = False) -> None:
+def run_sync(settings: Settings, *, full: bool = False, reset: bool = False) -> None:
+    binary = prsync.find_binary()
+    if binary is None:
+        st.error(
+            "The `prsync` sync engine was not found. The Docker image includes it; "
+            "otherwise build it with `cargo build --release` in `sync/`, or set PRSYNC_BIN."
+        )
+        return
+
     with st.status("Syncing pull requests…", expanded=True) as status:
         bar = st.progress(0.0)
 
         def progress(frac: float, msg: str) -> None:
             bar.progress(min(frac, 1.0), text=msg)
 
-        reports = sync(
-            make_clients(settings),
-            store,
-            full=full,
-            max_workers=settings.max_workers,
-            progress=progress,
-        )
+        result = prsync.run(binary, settings, full=full, reset=reset, on_progress=progress)
         bar.empty()
-        for r in reports:
+        for r in result.reports:
             line = (
-                f"**{PLATFORM_NAMES[r.platform]}**: {r.repositories} repositories, "
-                f"{r.listed} PRs checked, {r.saved} updated"
+                f"**{PLATFORM_NAMES.get(r.platform, r.platform)}**: {r.repositories} repositories, "
+                f"{r.listed} PRs checked, {r.saved} updated, {r.requests} API requests"
             )
             if r.incomplete:
                 line += f", {r.incomplete} missing review data (will retry)"
             st.markdown(line)
             for err in r.errors[:10]:
                 st.error(err)
-        ok = all(r.ok for r in reports)
-        status.update(
-            label="Sync finished" if ok else "Sync finished with errors",
-            state="complete" if ok else "error",
-        )
-    st.session_state["sync_done"] = ok
+        if result.exit_code == prsync.EXIT_INTERRUPTED:
+            label = "Sync stopped; what was fetched so far is saved"
+        elif not result.ok and not any(r.errors for r in result.reports):
+            # Nothing structured to show (bad configuration, crash): show its output.
+            lines = result.stderr.strip().splitlines()
+            st.error(lines[-1] if lines else "prsync failed")
+            label = "Sync failed"
+        else:
+            label = "Sync finished" if result.ok else "Sync finished with errors"
+        status.update(label=label, state="complete" if result.ok else "error")
 
 
 def relative(t: datetime | None) -> str:

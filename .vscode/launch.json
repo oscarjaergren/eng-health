@@ -18,15 +18,6 @@
             "args": ["run", "dashboard_main.py"],
             "env": {"MOCK_MODE": "true"},
             "justMyCode": false
-        },
-        {
-            "name": "Sync",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/main.py",
-            "args": ["sync"],
-            "envFile": "${workspaceFolder}/.env",
-            "justMyCode": false
         }
     ]
 }
