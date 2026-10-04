@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import streamlit as st
 from dotenv import load_dotenv
+from streamlit.delta_generator import DeltaGenerator
 
 from .. import metrics
 from ..config import ConfigError, Settings
@@ -25,7 +26,9 @@ def _browser_timezone() -> str:
     return tz
 
 
-def _data_source(settings: Settings, store: Store | None) -> None:
+def _data_source(settings: Settings, store: Store | None) -> DeltaGenerator | None:
+    """Draw the sidebar's data section. Returns a slot for the sync status, which
+    is filled after any sync this run so it is never stale."""
     st.sidebar.header("Data")
     if store is None:
         why = "MOCK_MODE is on" if settings.mock else "no credentials are configured"
@@ -33,20 +36,9 @@ def _data_source(settings: Settings, store: Store | None) -> None:
             f"Showing generated sample data because {why}. "
             "See the README to connect Azure DevOps or GitHub."
         )
-        return
+        return None
 
-    owners = {
-        "azure_devops": settings.azure.organization if settings.azure else "",
-        "github": settings.github.owner if settings.github else "",
-    }
-    for platform in settings.platforms:
-        state = store.sync_state(platform)
-        owner = owners[platform]
-        st.sidebar.markdown(f"**{PLATFORM_NAMES[platform]}** · {owner}")
-        st.sidebar.caption(f"Last synced {relative(state.last_sync)}")
-        if state.last_error:
-            st.sidebar.error(f"Last sync failed: {state.last_error}", icon=None)
-
+    status = st.sidebar.container()
     if st.sidebar.button("Sync now", type="primary", width="stretch"):
         st.session_state["sync_request"] = "incremental"
     with st.sidebar.expander("More sync options"):
@@ -56,6 +48,20 @@ def _data_source(settings: Settings, store: Store | None) -> None:
         confirm = st.checkbox("I want to delete the local data")
         if st.button("Delete local data and resync", disabled=not confirm, width="stretch"):
             st.session_state["sync_request"] = "reset"
+    return status
+
+
+def _sync_status(settings: Settings, store: Store, slot: DeltaGenerator) -> None:
+    owners = {
+        "azure_devops": settings.azure.organization if settings.azure else "",
+        "github": settings.github.owner if settings.github else "",
+    }
+    for platform in settings.platforms:
+        state = store.sync_state(platform)
+        slot.markdown(f"**{PLATFORM_NAMES[platform]}** · {owners[platform]}")
+        slot.caption(f"Last synced {relative(state.last_sync)}")
+        if state.last_error:
+            slot.error(f"Last sync failed: {state.last_error}", icon=None)
 
 
 def main() -> None:
@@ -75,16 +81,16 @@ def main() -> None:
     except SchemaError as e:
         st.error(str(e))
         st.stop()
-    _data_source(settings, store)
+    slot = _data_source(settings, store)
 
     request = st.session_state.pop("sync_request", None)
     if store is not None and request:
-        if request == "reset":
-            store.clear()
         st.caption(
             "Each batch of PRs is saved as it arrives, so stopping a sync keeps its progress."
         )
-        run_sync(settings, store, full=request != "incremental")
+        run_sync(settings, full=request == "full", reset=request == "reset")
+    if store is not None and slot is not None:
+        _sync_status(settings, store, slot)
 
     df, names = load(settings, store)
     if df.empty:

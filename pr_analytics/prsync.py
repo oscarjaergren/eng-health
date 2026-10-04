@@ -1,0 +1,105 @@
+"""Run the Rust sync engine (`sync/`, binary `prsync`) and read its progress.
+
+prsync writes one JSON object per line on stdout: `progress` events while it
+runs, then a `report` per platform. Logs go to stderr.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import signal
+import subprocess
+import tempfile
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .config import Settings
+
+EXIT_CONFIG = 2
+EXIT_INTERRUPTED = 130
+
+_LOCAL_BUILD = Path(__file__).resolve().parent.parent / "sync" / "target" / "release" / "prsync"
+
+
+@dataclass
+class Report:
+    platform: str
+    repositories: int = 0
+    listed: int = 0
+    saved: int = 0
+    incomplete: int = 0
+    requests: int = 0
+    interrupted: bool = False
+    errors: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_event(cls, event: dict[str, Any]) -> Report:
+        known = cls.__dataclass_fields__
+        return cls(**{k: v for k, v in event.items() if k in known})
+
+
+@dataclass
+class Result:
+    exit_code: int
+    reports: list[Report]
+    stderr: str
+
+    @property
+    def ok(self) -> bool:
+        return self.exit_code == 0
+
+
+def find_binary() -> str | None:
+    """PRSYNC_BIN, then prsync on PATH, then a local release build."""
+    configured = os.environ.get("PRSYNC_BIN", "").strip()
+    if configured:
+        return configured if Path(configured).is_file() else None
+    return shutil.which("prsync") or (str(_LOCAL_BUILD) if _LOCAL_BUILD.is_file() else None)
+
+
+def run(
+    binary: str,
+    settings: Settings,
+    *,
+    full: bool = False,
+    reset: bool = False,
+    on_progress: Callable[[float, str], None] | None = None,
+) -> Result:
+    args = [binary, "sync", "--progress", "json"]
+    if reset:
+        args.append("--reset")
+    elif full:
+        args.append("--full")
+    env = {**os.environ, "DATA_DIR": str(settings.data_dir)}
+
+    reports: list[Report] = []
+    # stderr goes to a file: if it were a pipe nobody reads until the end, a
+    # chatty run could fill it and block prsync.
+    with tempfile.TemporaryFile("w+") as err:
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=err, text=True, env=env)
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("type") == "progress" and on_progress:
+                    on_progress(float(event.get("fraction", 0)), str(event.get("message", "")))
+                elif event.get("type") == "report":
+                    reports.append(Report.from_event(event))
+            code = proc.wait()
+        finally:
+            if proc.poll() is None:
+                # The page was stopped mid-sync: let prsync finish its batch.
+                proc.send_signal(signal.SIGINT)
+                try:
+                    proc.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+        err.seek(0)
+        return Result(code, reports, err.read())

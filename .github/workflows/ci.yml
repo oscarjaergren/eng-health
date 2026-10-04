@@ -61,6 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: docker build -t pr-analytics .
+      - run: docker run --rm pr-analytics prsync --version
       - name: Dashboard starts and answers its health check
         run: |
           docker run -d --name app -e MOCK_MODE=true -p 8501:8501 pr-analytics

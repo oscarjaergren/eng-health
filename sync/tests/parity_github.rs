@@ -1,15 +1,16 @@
-//! GraphQL payloads must convert to exactly what the Python code produced from
-//! the equivalent REST payloads (testdata/expected/github).
+//! GraphQL payloads must convert to exactly the expected records in
+//! testdata/expected/github (`UPDATE_GOLDENS=1` rewrites them).
 
 use std::fs;
 use std::path::PathBuf;
 
-use pretty_assertions::assert_eq;
 use prsync::model::{Platform, Repo};
 use prsync::source::People;
 use prsync::source::github::convert;
 use prsync::source::github::types::PrNode;
 use serde_json::Value;
+
+mod support;
 
 #[test]
 fn graphql_fixtures_match_python_goldens() {
@@ -38,19 +39,10 @@ fn graphql_fixtures_match_python_goldens() {
             &mut people,
         );
 
-        let expected: Value = serde_json::from_str(
-            &fs::read_to_string(root.join(format!("expected/github/{case}.json"))).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(
-            serde_json::to_value(&pr).unwrap(),
-            expected["pull_request"],
-            "{case}"
-        );
-        assert_eq!(
-            serde_json::to_value(&people).unwrap(),
-            expected["people"],
-            "{case} people"
+        support::check_golden(
+            &root.join(format!("expected/github/{case}.json")),
+            &serde_json::to_value(&pr).unwrap(),
+            &serde_json::to_value(&people).unwrap(),
         );
         checked += 1;
     }

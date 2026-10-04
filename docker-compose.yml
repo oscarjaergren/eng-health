@@ -10,10 +10,10 @@ services:
         required: false
     restart: unless-stopped
 
-  # docker compose run --rm cli sync
+  # docker compose run --rm cli sync   (or: sync --full, status)
   cli:
     build: .
-    entrypoint: ["python", "main.py"]
+    entrypoint: ["prsync"]
     volumes:
       - ./data:/app/data
     env_file:

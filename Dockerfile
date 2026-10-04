@@ -1,3 +1,13 @@
+# Build the sync engine. Same Debian release as the runtime image, so glibc matches.
+FROM rust:1-slim-trixie AS prsync
+WORKDIR /src
+COPY sync/Cargo.toml sync/Cargo.lock ./
+# Build dependencies alone first so code changes don't rebuild them.
+RUN mkdir src && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
+    && cargo build --release --locked && rm -rf src
+COPY sync/src ./src
+RUN touch src/main.rs src/lib.rs && cargo build --release --locked
+
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -10,6 +20,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
+COPY --from=prsync /src/target/release/prsync /usr/local/bin/prsync
 COPY pr_analytics ./pr_analytics
 COPY main.py dashboard_main.py ./
 # UID 1000 matches the usual host user, so the ./data bind mount stays writable.

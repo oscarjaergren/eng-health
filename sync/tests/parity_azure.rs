@@ -1,15 +1,16 @@
-//! Azure DevOps payloads must convert to exactly what the Python code produced
-//! (testdata/expected/azure).
+//! Azure DevOps payloads must convert to exactly the expected records in
+//! testdata/expected/azure (`UPDATE_GOLDENS=1` rewrites them).
 
 use std::fs;
 use std::path::PathBuf;
 
-use pretty_assertions::assert_eq;
 use prsync::model::{Platform, Repo};
 use prsync::source::People;
 use prsync::source::azure::convert;
 use prsync::source::azure::types::{PullRequestInfo, Thread};
 use serde_json::Value;
+
+mod support;
 
 #[test]
 fn azure_fixtures_match_python_goldens() {
@@ -33,19 +34,10 @@ fn azure_fixtures_match_python_goldens() {
         let mut people = People::new();
         let got = convert(&pr, threads.as_deref(), &repo, &mut people);
 
-        let expected: Value = serde_json::from_str(
-            &fs::read_to_string(root.join(format!("expected/azure/{case}.json"))).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(
-            serde_json::to_value(&got).unwrap(),
-            expected["pull_request"],
-            "{case}"
-        );
-        assert_eq!(
-            serde_json::to_value(&people).unwrap(),
-            expected["people"],
-            "{case} people"
+        support::check_golden(
+            &root.join(format!("expected/azure/{case}.json")),
+            &serde_json::to_value(&got).unwrap(),
+            &serde_json::to_value(&people).unwrap(),
         );
         checked += 1;
     }

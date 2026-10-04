@@ -19,19 +19,22 @@ With no credentials in `.env` the dashboard shows generated sample data. Open
 2. Start the dashboard with `docker compose up -d dashboard` and press **Sync now**, or
    sync from the command line with `docker compose run --rm cli sync`.
 
-Synced PRs are kept in a SQLite database under `./data`. Later syncs fetch only what
-changed, so they are quick. To sync on a schedule, run the CLI from cron.
+Syncing is done by `prsync`, a Rust program in `sync/` that the image includes. Synced
+PRs are kept in a SQLite database under `./data`. Later syncs fetch only what changed,
+so they are quick. To sync on a schedule, run the CLI from cron.
 
-Without Docker:
+Without Docker you need Python 3.12 and a Rust toolchain:
 
 ```bash
+cargo build --release --manifest-path sync/Cargo.toml   # the dashboard finds it there
+sync/target/release/prsync sync                          # or press Sync now in the dashboard
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python main.py sync
 streamlit run dashboard_main.py
 ```
 
-`python main.py export prs.csv` writes every stored PR to a CSV file.
+`prsync status` shows when each platform last synced. `python main.py export prs.csv`
+writes every stored PR to a CSV file.
 
 ## Configuration
 
@@ -43,6 +46,8 @@ streamlit run dashboard_main.py
 | `MAX_PARALLEL_WORKERS` | Concurrent API requests. Default 8. |
 | `IDENTITY_ALIASES` | Merge one person's identities, e.g. `jdoe=jane.doe@example.com,jd2=jane.doe@example.com`. |
 | `MOCK_MODE` | `true` shows sample data even when credentials are set. |
+| `GITHUB_API_URL`, `AZURE_DEVOPS_URL` | GitHub Enterprise Server or Azure DevOps Server addresses. |
+| `PRSYNC_BIN` | Path to `prsync`, if it is neither on `PATH` nor in `sync/target/release`. |
 
 Setting only half of a platform's pair is reported as an error rather than ignored.
 
@@ -66,32 +71,15 @@ times are shown in your browser's time zone.
 ```bash
 pip install -r requirements-dev.txt
 ruff check . && ruff format --check . && mypy && pytest
-```
-
-`pr_analytics/` is laid out as:
-
-- `clients/`: Azure DevOps and GitHub API access
-- `processing.py`: raw API data to `PullRequest` records
-- `sync.py` and `store.py`: incremental sync into SQLite
-- `metrics.py`: the calculations behind every chart, without Streamlit
-- `dashboard/`: the Streamlit app, one module per tab
-- `mock.py`: sample data, built from fake API payloads so it runs through the real processing
-
-`sync/` is the Rust sync engine (`prsync`) that is replacing the Python sync. It
-writes the same database. `testdata/` holds shared fixtures: raw API payloads and
-the expected records, generated from the Python code with
-`python -m tests.export_goldens`. Both test suites check against them.
-
-```bash
 cd sync && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
-`prsync` syncs both platforms (GitHub over GraphQL, Azure DevOps over REST).
-The Python sync still exists until the dashboard switches over:
-
-```bash
-cd sync && cargo run --release -- sync      # or: sync --full, sync --reset, status
-```
-
-It reads the same `.env`. `GITHUB_API_URL` and `AZURE_DEVOPS_URL` point it at
-GitHub Enterprise Server or Azure DevOps Server.
+- `sync/` is `prsync`: GitHub over GraphQL (a page of PRs arrives with its reviews and
+  comments), Azure DevOps over REST, and the incremental sync into SQLite.
+- `pr_analytics/` is the dashboard: `store.py` reads the database, `metrics.py` holds
+  the calculations behind every chart (without Streamlit), `dashboard/` has one module per
+  tab, `prsync.py` runs the sync engine, and `mock.py` makes the sample data.
+- The two sides share the database schema (versioned with `PRAGMA user_version`) and the
+  PR record format. `testdata/` pins that format: raw API payloads with the records they
+  must produce. After an intended rule change, `UPDATE_GOLDENS=1 cargo test` rewrites
+  the expected files; review the diff.

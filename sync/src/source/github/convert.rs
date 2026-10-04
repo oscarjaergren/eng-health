@@ -1,5 +1,5 @@
-//! GraphQL pull request -> `PullRequest`. Ports `from_github` in
-//! `pr_analytics/processing.py`; `testdata/github/*.graphql.json` pins parity.
+//! GraphQL pull request -> `PullRequest`. `testdata/github` and the expected
+//! records beside it pin the behaviour, which matches what REST reported.
 
 use std::collections::{BTreeMap, BTreeSet};
 

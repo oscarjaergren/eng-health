@@ -1,8 +1,8 @@
 //! Reads changed pull requests from a source into the store.
 //!
-//! Same rules as the Python sync it replaces: start an hour before the last
-//! successful sync, skip PRs whose stored copy is still accurate, save in
-//! batches, and only move the window forward when every repository was read.
+//! Start an hour before the last successful sync, skip PRs whose stored copy
+//! is still accurate, save in batches, and only move the window forward when
+//! every repository was read.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
