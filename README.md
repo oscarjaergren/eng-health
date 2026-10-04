@@ -76,3 +76,21 @@ ruff check . && ruff format --check . && mypy && pytest
 - `metrics.py`: the calculations behind every chart, without Streamlit
 - `dashboard/`: the Streamlit app, one module per tab
 - `mock.py`: sample data, built from fake API payloads so it runs through the real processing
+
+`sync/` is the Rust sync engine (`prsync`) that is replacing the Python sync. It
+writes the same database. `testdata/` holds shared fixtures: raw API payloads and
+the expected records, generated from the Python code with
+`python -m tests.export_goldens`. Both test suites check against them.
+
+```bash
+cd sync && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+```
+
+`prsync` syncs GitHub today, over GraphQL; Azure DevOps still goes through the
+Python sync until it is ported:
+
+```bash
+cd sync && cargo run --release -- sync      # or: sync --full, sync --reset, status
+```
+
+It reads the same `.env`. `GITHUB_API_URL` points it at GitHub Enterprise Server.

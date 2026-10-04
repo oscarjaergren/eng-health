@@ -1,0 +1,47 @@
+{
+  "repo": {
+    "id": "101",
+    "name": "web",
+    "raw": {}
+  },
+  "complete": true,
+  "node": {
+    "number": 5,
+    "title": "Add search",
+    "url": "https://github.com/o/r/pull/5",
+    "isDraft": false,
+    "state": "MERGED",
+    "createdAt": "2026-09-01T09:00:00Z",
+    "updatedAt": "2026-09-02T09:00:00Z",
+    "closedAt": "2026-09-02T09:00:00Z",
+    "mergedAt": "2026-09-02T09:00:00Z",
+    "author": {
+      "__typename": "User",
+      "login": "alice"
+    },
+    "reviewRequests": {
+      "nodes": []
+    },
+    "reviews": {
+      "totalCount": 1,
+      "nodes": [
+        {
+          "state": "COMMENTED",
+          "submittedAt": "2026-09-01T09:05:00Z",
+          "author": {
+            "__typename": "Bot",
+            "login": "copilot-pull-request-reviewer"
+          }
+        }
+      ]
+    },
+    "comments": {
+      "totalCount": 0,
+      "nodes": []
+    },
+    "reviewThreads": {
+      "totalCount": 0,
+      "nodes": []
+    }
+  }
+}

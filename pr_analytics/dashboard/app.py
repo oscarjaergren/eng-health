@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from .. import metrics
 from ..config import ConfigError, Settings
 from ..models import PLATFORM_NAMES
-from ..store import Store
+from ..store import SchemaError, Store
 from .data import load, relative, run_sync
 from .filters import sidebar_filters
 from .tabs import flow, overview, people, table, timing
@@ -70,7 +70,11 @@ def main() -> None:
         st.stop()
 
     live = bool(settings.platforms) and not settings.mock
-    store = Store(settings.db_path) if live else None
+    try:
+        store = Store(settings.db_path) if live else None
+    except SchemaError as e:
+        st.error(str(e))
+        st.stop()
     _data_source(settings, store)
 
     request = st.session_state.pop("sync_request", None)

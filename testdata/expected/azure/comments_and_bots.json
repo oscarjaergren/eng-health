@@ -1,0 +1,33 @@
+{
+  "people": {
+    "alice@example.com": "Alice",
+    "bob@example.com": "Bob",
+    "build\\abc": "Build"
+  },
+  "pull_request": {
+    "approvers": [],
+    "author": "alice@example.com",
+    "closed_at": "2026-09-02T09:00:00+00:00",
+    "comment_counts": {
+      "alice@example.com": 1,
+      "bob@example.com": 2
+    },
+    "created_at": "2026-09-01T09:00:00+00:00",
+    "details_complete": true,
+    "first_responses": {
+      "bob@example.com": "2026-09-01T14:00:00+00:00"
+    },
+    "is_draft": false,
+    "is_infrastructure": false,
+    "number": 1,
+    "platform": "azure_devops",
+    "rejecters": [],
+    "repo_id": "repo-1",
+    "repository": "api",
+    "reviewers": [],
+    "state": "merged",
+    "title": "Add search",
+    "updated_at": null,
+    "url": "https://dev.azure.com/o/p/_git/api/pullrequest/1"
+  }
+}

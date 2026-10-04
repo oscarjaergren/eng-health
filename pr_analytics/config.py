@@ -64,7 +64,7 @@ class Settings:
         azure = pair("AZURE_DEVOPS_ORGANIZATION", "AZURE_DEVOPS_PAT")
         github = pair("GITHUB_OWNER", "GITHUB_TOKEN")
 
-        owner_type = env.get("GITHUB_TYPE", "org").strip().lower()
+        owner_type = env.get("GITHUB_TYPE", "").strip().lower() or "org"
         if owner_type not in ("org", "user"):
             raise ConfigError(f"GITHUB_TYPE must be 'org' or 'user', got {owner_type!r}")
 

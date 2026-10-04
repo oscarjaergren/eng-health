@@ -1,0 +1,107 @@
+{
+  "repo": {
+    "id": "101",
+    "name": "web",
+    "raw": {}
+  },
+  "complete": true,
+  "node": {
+    "number": 1,
+    "title": "Add search",
+    "url": "https://github.com/o/r/pull/1",
+    "isDraft": false,
+    "state": "MERGED",
+    "createdAt": "2026-09-01T09:00:00Z",
+    "updatedAt": "2026-09-02T09:00:00Z",
+    "closedAt": "2026-09-02T09:00:00Z",
+    "mergedAt": "2026-09-02T09:00:00Z",
+    "author": {
+      "__typename": "User",
+      "login": "alice"
+    },
+    "reviewRequests": {
+      "nodes": [
+        {
+          "requestedReviewer": {
+            "login": "dave"
+          }
+        }
+      ]
+    },
+    "reviews": {
+      "totalCount": 4,
+      "nodes": [
+        {
+          "state": "APPROVED",
+          "submittedAt": "2026-09-01T12:00:00Z",
+          "author": {
+            "__typename": "User",
+            "login": "bob"
+          }
+        },
+        {
+          "state": "CHANGES_REQUESTED",
+          "submittedAt": "2026-09-01T10:00:00Z",
+          "author": {
+            "__typename": "User",
+            "login": "carol"
+          }
+        },
+        {
+          "state": "APPROVED",
+          "submittedAt": "2026-09-01T09:30:00Z",
+          "author": {
+            "__typename": "User",
+            "login": "alice"
+          }
+        },
+        {
+          "state": "PENDING",
+          "submittedAt": null,
+          "author": {
+            "__typename": "User",
+            "login": "erin"
+          }
+        }
+      ]
+    },
+    "comments": {
+      "totalCount": 2,
+      "nodes": [
+        {
+          "createdAt": "2026-09-01T09:01:00Z",
+          "author": {
+            "__typename": "Bot",
+            "login": "github-actions"
+          }
+        },
+        {
+          "createdAt": "2026-09-01T13:00:00Z",
+          "author": {
+            "__typename": "User",
+            "login": "Alice"
+          }
+        }
+      ]
+    },
+    "reviewThreads": {
+      "totalCount": 1,
+      "nodes": [
+        {
+          "comments": {
+            "totalCount": 1,
+            "nodes": [
+              {
+                "createdAt": "2026-09-01T11:00:00Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "bob"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "repo": {
+    "id": "repo-1",
+    "name": "api",
+    "raw": {
+      "webUrl": "https://dev.azure.com/o/p/_git/api",
+      "project": {
+        "id": "p1"
+      }
+    }
+  },
+  "pr": {
+    "pullRequestId": 2,
+    "title": "Add search",
+    "status": "completed",
+    "createdBy": {
+      "displayName": "Alice",
+      "uniqueName": "alice@example.com"
+    },
+    "creationDate": "2026-09-01T09:00:00Z",
+    "closedDate": "2026-09-02T09:00:00Z",
+    "reviewers": [
+      {
+        "displayName": "Bob",
+        "uniqueName": "bob@example.com",
+        "vote": 0
+      },
+      {
+        "displayName": "Carol",
+        "uniqueName": "carol@example.com",
+        "vote": -10
+      },
+      {
+        "displayName": "Dave",
+        "uniqueName": "dave@example.com",
+        "vote": 5
+      }
+    ],
+    "threads": [
+      {
+        "publishedDate": "2026-09-01T17:00:00Z",
+        "properties": {
+          "CodeReviewThreadType": {
+            "$value": "VoteUpdate"
+          },
+          "CodeReviewVoteResult": {
+            "$value": "10"
+          },
+          "CodeReviewVotedByIdentity": {
+            "$value": "7"
+          }
+        },
+        "identities": {
+          "7": {
+            "displayName": "Bob",
+            "uniqueName": "bob@example.com"
+          }
+        },
+        "comments": [
+          {
+            "commentType": "system",
+            "author": {
+              "displayName": "Bob",
+              "uniqueName": "bob@example.com"
+            },
+            "publishedDate": "2026-09-01T17:00:00Z"
+          }
+        ]
+      },
+      {
+        "publishedDate": "2026-09-01T18:00:00Z",
+        "properties": {
+          "CodeReviewThreadType": {
+            "$value": "VoteUpdate"
+          },
+          "CodeReviewVoteResult": {
+            "$value": "-10"
+          },
+          "CodeReviewVotedByIdentity": {
+            "$value": "7"
+          }
+        },
+        "identities": {
+          "7": {
+            "displayName": "Erin",
+            "uniqueName": "erin@example.com"
+          }
+        },
+        "comments": [
+          {
+            "commentType": "system",
+            "author": {
+              "displayName": "Erin",
+              "uniqueName": "erin@example.com"
+            },
+            "publishedDate": "2026-09-01T18:00:00Z"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -16,6 +16,10 @@ from pathlib import Path
 
 from .models import PullRequest
 
+# Shared with the Rust sync engine (sync/src/store.rs). Bump both together when
+# the tables or the PR JSON change shape.
+SCHEMA_VERSION = 1
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS pull_requests (
     key TEXT PRIMARY KEY,
@@ -40,6 +44,10 @@ CREATE TABLE IF NOT EXISTS sync_state (
 """
 
 
+class SchemaError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class SyncState:
     platform: str
@@ -53,7 +61,14 @@ class Store:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as c:
+            (version,) = c.execute("PRAGMA user_version").fetchone()
+            if version > SCHEMA_VERSION:
+                raise SchemaError(
+                    f"{self.path} uses schema version {version}, but this dashboard "
+                    f"understands {SCHEMA_VERSION}. Update the dashboard."
+                )
             c.executescript(_SCHEMA)
+            c.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     @contextmanager
     def _conn(self, write: bool = False) -> Iterator[sqlite3.Connection]:

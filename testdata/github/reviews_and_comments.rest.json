@@ -1,0 +1,77 @@
+{
+  "repo": {
+    "id": "101",
+    "name": "web",
+    "raw": {}
+  },
+  "pr": {
+    "number": 1,
+    "title": "Add search",
+    "state": "closed",
+    "user": {
+      "login": "alice"
+    },
+    "created_at": "2026-09-01T09:00:00Z",
+    "updated_at": "2026-09-02T09:00:00Z",
+    "closed_at": "2026-09-02T09:00:00Z",
+    "merged_at": "2026-09-02T09:00:00Z",
+    "html_url": "https://github.com/o/r/pull/1",
+    "requested_reviewers": [
+      {
+        "login": "dave"
+      }
+    ],
+    "reviews": [
+      {
+        "user": {
+          "login": "bob"
+        },
+        "state": "APPROVED",
+        "submitted_at": "2026-09-01T12:00:00Z"
+      },
+      {
+        "user": {
+          "login": "carol"
+        },
+        "state": "CHANGES_REQUESTED",
+        "submitted_at": "2026-09-01T10:00:00Z"
+      },
+      {
+        "user": {
+          "login": "alice"
+        },
+        "state": "APPROVED",
+        "submitted_at": "2026-09-01T09:30:00Z"
+      },
+      {
+        "user": {
+          "login": "erin"
+        },
+        "state": "PENDING",
+        "submitted_at": null
+      }
+    ],
+    "review_comments": [
+      {
+        "user": {
+          "login": "bob"
+        },
+        "created_at": "2026-09-01T11:00:00Z"
+      }
+    ],
+    "issue_comments": [
+      {
+        "user": {
+          "login": "github-actions[bot]"
+        },
+        "created_at": "2026-09-01T09:01:00Z"
+      },
+      {
+        "user": {
+          "login": "Alice"
+        },
+        "created_at": "2026-09-01T13:00:00Z"
+      }
+    ]
+  }
+}

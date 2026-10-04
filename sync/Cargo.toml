@@ -1,0 +1,37 @@
+[package]
+name = "prsync"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Syncs pull requests from Azure DevOps and GitHub into the PR analytics database"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+futures = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "rustls-tls"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+dotenvy = "0.15"
+regex = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+wiremock = "0.6"
+pretty_assertions = "1"
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
