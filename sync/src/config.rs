@@ -34,6 +34,8 @@ pub struct GitHubSettings {
     pub owner: String,
     pub token: String,
     pub owner_type: OwnerType,
+    /// GraphQL endpoint; differs on GitHub Enterprise Server.
+    pub api_url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,10 +85,15 @@ impl Settings {
             "user" => OwnerType::User,
             other => return Err(ConfigError::OwnerType(other.to_owned())),
         };
+        let api_url = match get("GITHUB_API_URL").as_str() {
+            "" => crate::source::github::API.to_owned(),
+            v => v.to_owned(),
+        };
         let github = pair("GITHUB_OWNER", "GITHUB_TOKEN")?.map(|(owner, token)| GitHubSettings {
             owner,
             token,
             owner_type,
+            api_url,
         });
 
         let workers = match get("MAX_PARALLEL_WORKERS").as_str() {

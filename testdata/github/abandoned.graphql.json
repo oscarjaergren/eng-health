@@ -1,0 +1,38 @@
+{
+  "repo": {
+    "id": "101",
+    "name": "web",
+    "raw": {}
+  },
+  "complete": true,
+  "node": {
+    "number": 2,
+    "title": "Fix alarm threshold",
+    "url": "https://github.com/o/r/pull/2",
+    "isDraft": false,
+    "state": "CLOSED",
+    "createdAt": "2026-09-01T09:00:00Z",
+    "updatedAt": "2026-09-02T09:00:00Z",
+    "closedAt": "2026-09-02T09:00:00Z",
+    "mergedAt": null,
+    "author": {
+      "__typename": "User",
+      "login": "alice"
+    },
+    "reviewRequests": {
+      "nodes": []
+    },
+    "reviews": {
+      "totalCount": 0,
+      "nodes": []
+    },
+    "comments": {
+      "totalCount": 0,
+      "nodes": []
+    },
+    "reviewThreads": {
+      "totalCount": 0,
+      "nodes": []
+    }
+  }
+}
