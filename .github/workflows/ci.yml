@@ -23,7 +23,13 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
-      - run: pytest --cov --cov-report=term-missing
+      - run: pytest --cov --cov-report=term-missing --junitxml=test-results/pytest.xml
+      # The Pipelines view reads these to find flaky tests, including in this repo.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-results
+          path: test-results/
 
   rust:
     runs-on: ubuntu-latest

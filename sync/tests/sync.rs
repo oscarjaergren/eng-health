@@ -282,7 +282,7 @@ async fn incremental_sync_starts_before_the_last_success() {
         .store
         .lock()
         .unwrap()
-        .sync_state(Platform::Github)
+        .sync_state("github")
         .unwrap()
         .last_sync
         .unwrap();
@@ -303,17 +303,12 @@ async fn a_failed_repository_does_not_advance_the_window() {
         .store
         .lock()
         .unwrap()
-        .sync_state(Platform::Github)
+        .sync_state("github")
         .unwrap()
         .last_sync;
     fake.failing_repos.lock().unwrap().push("api");
     let report = run(&fake, &env, false).await;
-    let state = env
-        .store
-        .lock()
-        .unwrap()
-        .sync_state(Platform::Github)
-        .unwrap();
+    let state = env.store.lock().unwrap().sync_state("github").unwrap();
     assert!(!report.ok());
     assert_eq!(state.last_sync, before);
     assert!(state.last_error.unwrap().contains("api"));
@@ -325,12 +320,7 @@ async fn rejected_credentials_are_reported_not_raised() {
     fake.auth_broken.store(true, Ordering::Relaxed);
     let report = run(&fake, &env, false).await;
     assert!(!report.ok());
-    let state = env
-        .store
-        .lock()
-        .unwrap()
-        .sync_state(Platform::Github)
-        .unwrap();
+    let state = env.store.lock().unwrap().sync_state("github").unwrap();
     assert!(state.last_error.unwrap().contains("credentials"));
     assert_eq!(state.last_sync, None);
 }
@@ -349,12 +339,7 @@ async fn stopping_keeps_saved_work_but_not_the_window() {
     };
     let report = sync_platform(&fake, &env.store, &opts).await.unwrap();
     assert!(report.interrupted && !report.ok());
-    let state = env
-        .store
-        .lock()
-        .unwrap()
-        .sync_state(Platform::Github)
-        .unwrap();
+    let state = env.store.lock().unwrap().sync_state("github").unwrap();
     assert_eq!(state.last_sync, None);
     assert_eq!(state.last_error.as_deref(), Some("interrupted"));
 }

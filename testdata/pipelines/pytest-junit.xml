@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="1" skipped="1" tests="4" time="0.512" timestamp="2026-10-06T10:00:00.000000+00:00" hostname="runner"><testcase classname="tests.test_store" name="test_reads" time="0.011" /><testcase classname="tests.test_store" name="test_version" time="0.020"><failure message="assert 1 == 2">def test_version() -&gt; None:
+&gt;       assert 1 == 2
+E       assert 1 == 2
+
+tests/test_store.py:12: AssertionError</failure></testcase><testcase classname="tests.test_app" name="test_renders" time="0.104"><error message="failed on setup with &quot;fixture 'x' not found&quot;">file tests/test_app.py, line 3
+E       fixture 'x' not found</error></testcase><testcase classname="tests.test_app" name="test_later" time="0.000"><skipped type="pytest.skip" message="not yet">tests/test_app.py:9: not yet</skipped></testcase></testsuite></testsuites>

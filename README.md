@@ -2,7 +2,8 @@
 
 A Streamlit dashboard for pull request flow and code review across Azure DevOps and GitHub.
 It shows how long PRs take to get reviewed and merged, which PRs are waiting, and who is
-doing the reviewing.
+doing the reviewing. A Pipelines view covers GitHub Actions: failure rate, slow
+workflows, time lost to reruns, and flaky jobs and tests.
 
 ## Try it with sample data
 
@@ -65,6 +66,20 @@ Setting only half of a platform's pair is reported as an error rather than ignor
 
 Filters are kept in the page URL, so a filtered view can be shared as a link. Dates and
 times are shown in your browser's time zone.
+
+Pipelines (GitHub Actions, last 90 days):
+
+- **Failure rate**: finished runs on the default branch whose final attempt failed.
+  Cancelled runs are left out.
+- **Run time**: median and 90th percentile of successful runs, per workflow and job.
+- **Lost to reruns**: time spent in attempts that were then re-run.
+- **Flaky job**: a job that failed, then passed when the same run was re-run.
+- **Flaky test**: a test that failed in a run that then passed on the same commit (a
+  rerun, or another run of the workflow). Test results come from JUnit or TRX files in
+  artifacts whose name contains `test`, `junit`, `trx` or `result`, and are only fetched
+  for runs where a job failed.
+
+`prsync sync --only prs` or `--only pipelines` syncs one of the two.
 
 ## Development
 

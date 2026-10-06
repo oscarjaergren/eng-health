@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="5f1c2b8e-2d47-4a7e-9a55-3b1f6d2c9e10" name="runner@runner 2026-10-06 10:00:00" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-06T10:00:00.0000000+00:00" start="2026-10-06T10:00:00.0000000+00:00" finish="2026-10-06T10:00:03.0000000+00:00" />
+  <Results>
+    <UnitTestResult executionId="a1" testId="t1" testName="Api.Tests.OrderTests.Creates_order" computerName="runner" duration="00:00:00.1230000" startTime="2026-10-06T10:00:01.0000000+00:00" endTime="2026-10-06T10:00:01.1230000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a1" />
+    <UnitTestResult executionId="a2" testId="t2" testName="Api.Tests.OrderTests.Rejects_empty_cart" computerName="runner" duration="00:00:00.0450000" startTime="2026-10-06T10:00:01.2000000+00:00" endTime="2026-10-06T10:00:01.2450000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a2">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ
+Expected: 400
+Actual:   200</Message>
+          <StackTrace>   at Api.Tests.OrderTests.Rejects_empty_cart() in /src/OrderTests.cs:line 42</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="a3" testId="t3" testName="Api.Tests.ParserTests.Parses(input: &quot;a&amp;b&quot;)" computerName="runner" duration="00:00:00.0010000" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a3" />
+    <UnitTestResult executionId="a4" testId="t4" testName="Api.Tests.OrderTests.Slow_path" computerName="runner" duration="00:00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a4" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Creates_order" storage="/src/bin/api.tests.dll" id="t1"><TestMethod codeBase="/src/bin/Api.Tests.dll" className="Api.Tests.OrderTests" name="Creates_order" /></UnitTest>
+  </TestDefinitions>
+  <ResultSummary outcome="Failed"><Counters total="4" executed="3" passed="1" failed="2" error="0" /></ResultSummary>
+</TestRun>

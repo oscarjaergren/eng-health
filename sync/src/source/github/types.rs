@@ -57,6 +57,12 @@ pub struct ReposOwner {
 pub struct RepoNode {
     pub database_id: i64,
     pub name: String,
+    pub default_branch_ref: Option<BranchRef>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BranchRef {
+    pub name: String,
 }
 
 // --- pull requests ---

@@ -64,7 +64,7 @@ async fn json_progress_and_a_populated_database() {
     // Run the blocking child process off the runtime that serves the mock.
     let out = tokio::task::spawn_blocking(move || {
         Command::new(env!("CARGO_BIN_EXE_prsync"))
-            .args(["sync", "--progress", "json"])
+            .args(["sync", "--progress", "json", "--only", "prs"])
             .env_clear()
             .env("DATA_DIR", &data_dir)
             .envs(envs)
