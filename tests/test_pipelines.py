@@ -63,6 +63,20 @@ def test_rerun_cost_and_flaky_jobs(jobs: pd.DataFrame) -> None:
     assert flaky[["name", "flaky_runs", "minutes_lost"]].values.tolist() == [["test", 1, 10.0]]
 
 
+def test_flaky_tests(jobs: pd.DataFrame) -> None:
+    failures = pd.DataFrame(
+        [("1", 1, "Api.Retried"), ("1", 2, "Api.SameCommit")],
+        columns=["repo_id", "run_id", "test_id"],
+    )
+    # Run 1 passed on a rerun; run 2 failed and nothing else ran on its commit.
+    assert pl.flaky_tests(failures, pl.attempts(jobs))["test_id"].tolist() == ["Api.Retried"]
+
+    # Another run of the workflow passing on run 2's commit makes its failure flaky too.
+    later = pl.prepare(pd.DataFrame([job(5, 1, "success", commit_sha="sha2")]))
+    att = pl.attempts(pd.concat([jobs, later]))
+    assert sorted(pl.flaky_tests(failures, att)["test_id"]) == ["Api.Retried", "Api.SameCommit"]
+
+
 def test_durations_use_successful_final_attempts(jobs: pd.DataFrame) -> None:
     d = pl.durations(pl.attempts(jobs))
     assert d.loc["CI", "Runs"] == 2
@@ -83,6 +97,18 @@ def test_pipelines_view_renders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert [t.label for t in at.tabs] == ["Overview", "Slow", "Reruns", "Flaky"]
     assert at.metric[0].value == "4"  # runs
     assert at.metric[1].value == "50%"
+    assert any("No test results found" in i.value for i in at.info)
+
+
+def test_flaky_tests_view(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    live(monkeypatch)
+    db = WritableStore(tmp_path / "pr_analytics.db")
+    db.upsert_jobs(ROWS)
+    db.upsert_test_failures([("1", 1, "Api.Flaky")])
+    at = run()
+    at.sidebar.radio[0].set_value("Pipelines").run()
+    assert not at.exception, at.exception
+    assert at.metric[3].value == "1 / 1"
 
 
 def test_pipelines_view_without_data(monkeypatch: pytest.MonkeyPatch) -> None:

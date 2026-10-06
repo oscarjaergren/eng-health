@@ -205,3 +205,99 @@ fn old_jobs_are_pruned() {
     s.prune_jobs(Utc::now() - Days::days(90)).unwrap();
     assert_eq!(s.run_attempts("7").unwrap()[&99], 2);
 }
+
+fn fixture(name: &str) -> String {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/pipelines");
+    std::fs::read_to_string(root.join(name)).unwrap()
+}
+
+#[test]
+fn junit_failures_and_errors_count_skips_do_not() {
+    assert_eq!(
+        pipelines::failures_in(&fixture("pytest-junit.xml")),
+        [
+            "tests.test_store::test_version",
+            "tests.test_app::test_renders"
+        ]
+    );
+}
+
+#[test]
+fn trx_failed_results_with_escaped_names() {
+    assert_eq!(
+        pipelines::failures_in(&fixture("dotnet.trx")),
+        [
+            "Api.Tests.OrderTests.Rejects_empty_cart",
+            r#"Api.Tests.ParserTests.Parses(input: "a&b")"#
+        ]
+    );
+}
+
+/// A zip with both fixtures and a file that is not test results.
+fn results_zip() -> Vec<u8> {
+    use std::io::Write;
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let opts = zip::write::SimpleFileOptions::default();
+    for (name, body) in [
+        ("TestResults/run.trx", fixture("dotnet.trx")),
+        ("junit/Results.XML", fixture("pytest-junit.xml")),
+        ("coverage/report.html", "<html/>".to_owned()),
+    ] {
+        zip.start_file(name, opts).unwrap();
+        zip.write_all(body.as_bytes()).unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
+#[test]
+fn every_results_file_in_a_zip_is_read() {
+    assert_eq!(pipelines::failed_tests(&results_zip()).len(), 4);
+    assert_eq!(pipelines::failed_tests(b"not a zip").len(), 0);
+}
+
+#[tokio::test]
+async fn failed_runs_get_test_failures_from_their_artifacts() {
+    let server = MockServer::start().await;
+    mount_repo(&server).await;
+    mount_runs(&server, 1).await;
+    mount_jobs(&server, &[job(1, 1, "failure")], 1).await;
+    Mock::given(path("/repos/acme/web/actions/runs/99/artifacts"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"artifacts": [
+                {"id": 5, "name": "test-results", "size_in_bytes": 2048, "expired": false},
+                {"id": 6, "name": "coverage", "size_in_bytes": 10, "expired": false}
+            ]})),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(path("/repos/acme/web/actions/artifacts/5/zip"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .insert_header("location", format!("{}/blob/5", server.uri())),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(path("/blob/5"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(results_zip()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/repos/acme/web/actions/artifacts/6/zip"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let (dir, store) = store();
+    assert!(sync(&client(&server), &store).await.ok());
+    let tests: Vec<String> = rusqlite::Connection::open(dir.path().join("db.sqlite"))
+        .unwrap()
+        .prepare("SELECT test_id FROM test_failures WHERE run_id = 99 ORDER BY 1")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(tests.len(), 4);
+    assert!(tests.contains(&"tests.test_app::test_renders".to_owned()));
+}

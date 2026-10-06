@@ -46,6 +46,12 @@ CREATE TABLE IF NOT EXISTS pipeline_jobs (
     url TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS pipeline_jobs_run ON pipeline_jobs (repo_id, run_id);
+CREATE TABLE IF NOT EXISTS test_failures (
+    repo_id TEXT NOT NULL,
+    run_id INTEGER NOT NULL,
+    test_id TEXT NOT NULL,
+    PRIMARY KEY (repo_id, run_id, test_id)
+);
 CREATE TABLE IF NOT EXISTS sync_state (
     platform TEXT PRIMARY KEY,
     last_sync TEXT,
@@ -213,8 +219,22 @@ impl Store {
 
 impl Store {
     pub fn upsert_jobs(&mut self, jobs: &[Job]) -> Result<usize, StoreError> {
+        self.save_runs(jobs, &[])
+    }
+
+    /// Jobs plus `(repo_id, run_id, test_id)` test failures, in one transaction.
+    pub fn save_runs(
+        &mut self,
+        jobs: &[Job],
+        failures: &[(String, i64, String)],
+    ) -> Result<usize, StoreError> {
         let tx = self.conn.transaction()?;
         {
+            let mut fail =
+                tx.prepare_cached("INSERT OR IGNORE INTO test_failures VALUES (?1, ?2, ?3)")?;
+            for (repo_id, run_id, test_id) in failures {
+                fail.execute(params![repo_id, run_id, test_id])?;
+            }
             let mut put = tx.prepare_cached(
                 "INSERT OR REPLACE INTO pipeline_jobs VALUES \
                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
@@ -257,6 +277,11 @@ impl Store {
         tx.execute(
             "DELETE FROM pipeline_jobs WHERE started_at < ?1",
             [Timestamp::new(before).to_string()],
+        )?;
+        tx.execute(
+            "DELETE FROM test_failures WHERE NOT EXISTS (SELECT 1 FROM pipeline_jobs j \
+             WHERE j.repo_id = test_failures.repo_id AND j.run_id = test_failures.run_id)",
+            [],
         )?;
         bump(&tx)?;
         tx.commit()?;

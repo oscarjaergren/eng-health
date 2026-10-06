@@ -73,3 +73,11 @@ class WritableStore(Store):
                 f"VALUES ({', '.join('?' * len(rows[0]))})",
                 [tuple(r.values()) for r in rows],
             )
+
+    def upsert_test_failures(self, rows: Iterable[tuple[str, int, str]]) -> None:
+        with self._write() as c:
+            c.execute(
+                "CREATE TABLE IF NOT EXISTS test_failures (repo_id TEXT, run_id INTEGER, "
+                "test_id TEXT, PRIMARY KEY (repo_id, run_id, test_id))"
+            )
+            c.executemany("INSERT OR IGNORE INTO test_failures VALUES (?, ?, ?)", list(rows))

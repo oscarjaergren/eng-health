@@ -11,10 +11,12 @@ publish = false
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 futures = "0.3"
+quick-xml = "0.42"
 reqwest = { version = "0.13", default-features = false, features = ["json", "gzip", "query", "http2", "rustls"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 dotenvy = "0.15"
 regex = "1"

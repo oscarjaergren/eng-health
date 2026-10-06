@@ -4,8 +4,14 @@
 //! which is enough for durations, reruns and flaky jobs. Runs and attempts are
 //! derived from jobs by the dashboard, so only jobs are stored.
 
+use std::collections::BTreeSet;
+use std::io::Read;
+use std::sync::LazyLock;
+
 use chrono::{DateTime, Duration, Utc};
 use futures::{StreamExt, stream};
+use quick_xml::events::{BytesStart, Event as Xml};
+use regex::Regex;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -22,6 +28,11 @@ pub const HISTORY_DAYS: i64 = 90;
 const LOOKBACK: Duration = Duration::days(3);
 const BATCH: usize = 50;
 const PER_PAGE: usize = 100;
+const FAILED: [&str; 2] = ["failure", "timed_out"];
+/// Artifacts worth opening for test results, by name.
+static TEST_ARTIFACT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("(?i)test|junit|trx|result").expect("valid regex"));
+const MAX_ARTIFACT_BYTES: u64 = 50 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
@@ -75,8 +86,88 @@ struct JobInfo {
     html_url: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct Artifacts {
+    artifacts: Vec<Artifact>,
+}
+
+#[derive(Deserialize)]
+struct Artifact {
+    id: i64,
+    name: String,
+    size_in_bytes: u64,
+    #[serde(default)]
+    expired: bool,
+}
+
 fn one() -> i64 {
     1
+}
+
+/// Failed test ids in every `JUnit` (`*.xml`) or `VSTest` (`*.trx`) file in a zip.
+#[must_use]
+pub fn failed_tests(zip_bytes: &[u8]) -> Vec<String> {
+    let Ok(mut archive) = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)) else {
+        return Vec::new();
+    };
+    let mut out = BTreeSet::new();
+    for i in 0..archive.len() {
+        let Ok(mut file) = archive.by_index(i) else {
+            continue;
+        };
+        let ext = std::path::Path::new(file.name())
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase());
+        let mut text = String::new();
+        if matches!(ext.as_deref(), Some("xml" | "trx")) && file.read_to_string(&mut text).is_ok() {
+            out.extend(failures_in(&text));
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// `JUnit`: a `testcase` holding a `failure` or `error`. TRX: a `UnitTestResult`
+/// with `outcome="Failed"`. Anything else in the file is ignored.
+#[must_use]
+pub fn failures_in(xml: &str) -> Vec<String> {
+    let mut reader = quick_xml::Reader::from_str(xml);
+    let mut out = Vec::new();
+    let mut case: Option<String> = None;
+    loop {
+        match reader.read_event() {
+            Ok(Xml::Start(e)) if e.local_name().as_ref() == "testcase" => {
+                let name = attr(&e, "name");
+                let class = attr(&e, "classname");
+                case = Some(if class.is_empty() {
+                    name
+                } else {
+                    format!("{class}::{name}")
+                });
+            }
+            Ok(Xml::Start(e) | Xml::Empty(e)) => match e.local_name().as_ref() {
+                "failure" | "error" => out.extend(case.take()),
+                "UnitTestResult" if attr(&e, "outcome") == "Failed" => {
+                    out.push(attr(&e, "testName"));
+                }
+                _ => {}
+            },
+            Ok(Xml::End(e)) if e.local_name().as_ref() == "testcase" => case = None,
+            Ok(Xml::Eof) | Err(_) => return out,
+            _ => {}
+        }
+    }
+}
+
+fn attr(e: &BytesStart<'_>, key: &str) -> String {
+    e.attributes()
+        .flatten()
+        .find(|a| a.key.local_name().as_ref() == key)
+        .and_then(|a| {
+            a.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(std::borrow::Cow::into_owned)
+        })
+        .unwrap_or_default()
 }
 
 impl GitHub {
@@ -171,6 +262,41 @@ impl GitHub {
     }
 }
 
+impl GitHub {
+    /// Failed tests from a run's test-result artifacts. Artifacts belong to the
+    /// run, not an attempt, so failures are recorded per run.
+    pub async fn test_failures(&self, repo: &Repo, run: &Run) -> Result<Vec<String>, SourceError> {
+        let path = format!("{}/actions/runs/{}/artifacts", repo.name, run.id);
+        let artifacts = self
+            .rest_pages(&path, &[], |a: Artifacts| a.artifacts)
+            .await?;
+        let mut out = BTreeSet::new();
+        for a in artifacts {
+            if a.expired || a.size_in_bytes > MAX_ARTIFACT_BYTES || !TEST_ARTIFACT.is_match(&a.name)
+            {
+                continue;
+            }
+            let url = format!(
+                "{}/repos/{}/{}/actions/artifacts/{}/zip",
+                self.rest_base(),
+                self.settings.owner,
+                repo.name,
+                a.id
+            );
+            // GitHub redirects to blob storage; reqwest follows it and drops the token.
+            let bytes = self
+                .http
+                .send(|c| c.get(&url))
+                .await?
+                .bytes()
+                .await
+                .map_err(|e| SourceError::Api(format!("github: artifact {}: {e}", a.name)))?;
+            out.extend(failed_tests(&bytes));
+        }
+        Ok(out.into_iter().collect())
+    }
+}
+
 /// Sync GitHub Actions jobs for the last `HISTORY_DAYS`.
 pub async fn sync(gh: &GitHub, store: &Shared, opts: &Options<'_>) -> Result<Report, SyncError> {
     let mut report = Report {
@@ -240,19 +366,38 @@ async fn run(
     }
     drop(listing);
 
-    // Phase 2: jobs per run, saved in batches so an interrupted sync keeps them.
+    // Phase 2: jobs per run, plus failed tests for runs where a job failed (a
+    // flaky test needs a failure, so green runs cost no extra requests).
+    // Saved in batches so an interrupted sync keeps what it has.
     let total = todo.len().max(1);
     let mut fetching = stream::iter(todo)
-        .map(|(repo, r)| async move { (repo, gh.jobs(repo, &r).await) })
+        .map(|(repo, r)| async move {
+            let jobs = gh.jobs(repo, &r).await;
+            let failed = jobs
+                .as_ref()
+                .is_ok_and(|j| j.iter().any(|j| FAILED.contains(&j.conclusion.as_str())));
+            let tests = if failed {
+                // ponytail: a failed artifact download only loses that run's test
+                // ids (logged); retry per run if that turns out to matter.
+                gh.test_failures(repo, &r).await.unwrap_or_else(|e| {
+                    tracing::warn!("{}: run {}: {e}", repo.name, r.id);
+                    Vec::new()
+                })
+            } else {
+                Vec::new()
+            };
+            (repo, r.id, jobs, tests)
+        })
         .buffer_unordered(opts.workers);
-    let mut batch = Vec::new();
+    let (mut jobs_batch, mut tests_batch) = (Vec::new(), Vec::new());
     let mut done = 0;
-    while let Some((repo, result)) = fetching.next().await {
+    while let Some((repo, run_id, result, tests)) = fetching.next().await {
         done += 1;
         match result {
             Ok(jobs) => {
                 report.saved += 1;
-                batch.extend(jobs);
+                jobs_batch.extend(jobs);
+                tests_batch.extend(tests.into_iter().map(|t| (repo.id.clone(), run_id, t)));
             }
             Err(e @ SourceError::Auth(_)) => return Ok(Err(e)),
             Err(e) => {
@@ -260,9 +405,12 @@ async fn run(
                 report.errors.push(format!("{}: {e}", repo.name));
             }
         }
-        if batch.len() >= BATCH {
-            let jobs = std::mem::take(&mut batch);
-            db(store, move |s| s.upsert_jobs(&jobs)).await?;
+        if jobs_batch.len() >= BATCH {
+            let (jobs, tests) = (
+                std::mem::take(&mut jobs_batch),
+                std::mem::take(&mut tests_batch),
+            );
+            db(store, move |s| s.save_runs(&jobs, &tests)).await?;
         }
         say(
             0.3 + 0.7 * f64_ratio(done, total),
@@ -272,6 +420,6 @@ async fn run(
             break;
         }
     }
-    db(store, move |s| s.upsert_jobs(&batch)).await?;
+    db(store, move |s| s.save_runs(&jobs_batch, &tests_batch)).await?;
     Ok(Ok(()))
 }

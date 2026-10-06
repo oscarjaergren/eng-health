@@ -86,3 +86,21 @@ def flaky_jobs(jobs: pd.DataFrame) -> pd.DataFrame:
         example=("url", "last"),
     )
     return out.sort_values("flaky_runs", ascending=False).reset_index()
+
+
+def flaky_tests(failures: pd.DataFrame, att: pd.DataFrame) -> pd.DataFrame:
+    """Tests that failed in a run that then passed: a later attempt of the same
+    run, or another run of the same workflow on the same commit."""
+    final = att[att["final"]]
+    passed = final.loc[final["conclusion"] == "success", ["pipeline", "commit_sha"]]
+    passed_keys = pd.MultiIndex.from_frame(passed.drop_duplicates())
+    # GitHub run ids are unique across repositories.
+    cols = ["run_id", "repository", "pipeline", "commit_sha", "started"]
+    f = failures.merge(final[cols], on="run_id")
+    retried_ok = f["run_id"].isin(final.loc[final["conclusion"] == "success", "run_id"])
+    same_commit_ok = pd.MultiIndex.from_frame(f[["pipeline", "commit_sha"]]).isin(passed_keys)
+    flaky = f[retried_ok | same_commit_ok]
+    out = flaky.groupby(["repository", "pipeline", "test_id"]).agg(
+        flaky_runs=("run_id", "nunique"), last_seen=("started", "max")
+    )
+    return out.sort_values("flaky_runs", ascending=False).reset_index()

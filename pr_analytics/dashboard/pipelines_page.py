@@ -12,9 +12,10 @@ from .charts import show
 
 
 @st.cache_data(show_spinner=False)
-def _load(db_path: str, version: int) -> pd.DataFrame:
+def _load(db_path: str, version: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     # `version` is only there to change the cache key after a sync.
-    return Store(db_path).pipeline_jobs()
+    store = Store(db_path)
+    return store.pipeline_jobs(), store.test_failures()
 
 
 def _filter(jobs: pd.DataFrame) -> pd.DataFrame:
@@ -39,7 +40,7 @@ def render(store: Store | None, github: bool) -> None:
     if store is None or not github:
         st.info("Pipelines come from GitHub Actions. Connect GitHub to see them.")
         return
-    raw = _load(str(store.path), store.version())
+    raw, failures = _load(str(store.path), store.version())
     if raw.empty:
         st.info("No pipeline data yet. Sync to fetch the last 90 days of GitHub Actions runs.")
         return
@@ -51,6 +52,7 @@ def render(store: Store | None, github: bool) -> None:
     rates = pl.failure_rate(att)
     reruns = pl.rerun_cost(att)
     flaky = pl.flaky_jobs(jobs)
+    tests = pl.flaky_tests(failures, att) if not failures.empty else pd.DataFrame()
 
     overview, slow, rerun_tab, flaky_tab = st.tabs(["Overview", "Slow", "Reruns", "Flaky"])
     with overview:
@@ -65,7 +67,7 @@ def render(store: Store | None, github: bool) -> None:
         )
         lost = reruns["hours"].sum()
         c[2].metric("Lost to reruns", f"{lost:.1f} h" if lost >= 1 else f"{lost * 60:.0f} min")
-        c[3].metric("Flaky jobs", len(flaky))
+        c[3].metric("Flaky jobs / tests", f"{len(flaky)} / {len(tests)}")
         if not rates.empty:
             fig = px.line(
                 rates,
@@ -116,6 +118,29 @@ def render(store: Store | None, github: bool) -> None:
             )
 
     with flaky_tab:
+        st.subheader("Flaky tests")
+        st.caption("Tests that failed in a run that then passed on the same commit.")
+        if failures.empty:
+            st.info(
+                "No test results found. prsync reads JUnit or TRX files from artifacts whose "
+                "name contains test, junit, trx or result. For example, after `dotnet test "
+                "--logger trx`: `uses: actions/upload-artifact@v4` with `name: test-results`, "
+                "`path: '**/*.trx'` and `if: always()`."
+            )
+        elif tests.empty:
+            st.success("No flaky tests in this selection.")
+        else:
+            st.dataframe(
+                tests,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "test_id": "Test",
+                    "flaky_runs": "Flaky runs",
+                    "last_seen": st.column_config.DatetimeColumn("Last seen", format="YYYY-MM-DD"),
+                },
+            )
+        st.subheader("Flaky jobs")
         st.caption("Jobs that failed, then passed when the same run was re-run.")
         if flaky.empty:
             st.success("No flaky jobs in this selection.")
