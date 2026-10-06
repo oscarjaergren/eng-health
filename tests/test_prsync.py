@@ -69,12 +69,20 @@ def test_errors_and_config_problems(
     assert "GITHUB_OWNER" in result.stderr
 
 
-def test_heavy_logging_does_not_block(
-    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+def test_heavy_logging_does_not_block_and_is_forwarded(
+    tmp_path: Path,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setenv("FAKE_PRSYNC", "noisy")
-    result = prsync.run(fake_binary(tmp_path), settings)
+    with caplog.at_level("INFO", logger="prsync"):
+        result = prsync.run(fake_binary(tmp_path), settings)
     assert result.ok and result.stderr.count("log line") == 20000
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages.count("log line") == 20000
+    assert messages[0] == "running sync --progress json"
+    assert messages[-1].startswith("prsync exited with 0 after")
 
 
 def test_stopping_the_page_interrupts_prsync(

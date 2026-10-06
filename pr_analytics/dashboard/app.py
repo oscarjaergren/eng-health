@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import streamlit as st
@@ -16,6 +18,14 @@ from . import pipelines_page
 from .data import load, relative, run_sync
 from .filters import sidebar_filters
 from .tabs import flow, overview, people, table, timing
+
+# Module level, so it runs once per process rather than on every rerun.
+load_dotenv()
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger(__name__)
 
 
 def _browser_timezone() -> str:
@@ -68,7 +78,6 @@ def _sync_status(settings: Settings, store: Store, slot: DeltaGenerator) -> None
 
 
 def main() -> None:
-    load_dotenv()
     st.set_page_config(page_title="PR Analytics", page_icon="📊", layout="wide")
 
     try:
@@ -78,6 +87,10 @@ def main() -> None:
         st.stop()
 
     live = bool(settings.platforms) and not settings.mock
+    if "logged_start" not in st.session_state:
+        st.session_state["logged_start"] = True
+        mode = f"live ({', '.join(settings.platforms)})" if live else "sample data"
+        log.info("session started: %s, database %s", mode, settings.db_path.resolve())
     try:
         store = Store(settings.db_path) if live else None
     except SchemaError as e:

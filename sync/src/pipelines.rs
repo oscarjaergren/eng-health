@@ -365,6 +365,12 @@ async fn run(
         }
     }
     drop(listing);
+    tracing::info!(
+        "pipelines: {} repositories, {} runs since {since}, {} new or re-run to fetch",
+        report.repositories,
+        report.listed,
+        todo.len()
+    );
 
     // Phase 2: jobs per run, plus failed tests for runs where a job failed (a
     // flaky test needs a failure, so green runs cost no extra requests).

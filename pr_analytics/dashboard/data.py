@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 import pandas as pd
@@ -14,18 +15,23 @@ from ..mock import mock_pull_requests
 from ..models import PLATFORM_NAMES
 from ..store import Store
 
+log = logging.getLogger(__name__)
+
 
 @st.cache_data(show_spinner=False)
 def _load_store(
     db_path: str, version: int, aliases: tuple[tuple[str, str], ...]
 ) -> tuple[pd.DataFrame, dict[str, str]]:
     store = Store(db_path)
-    return metrics.to_frame(store.pull_requests(), dict(aliases)), store.people()
+    prs = store.pull_requests()
+    log.info("loaded %d PRs from %s (revision %d)", len(prs), db_path, version)
+    return metrics.to_frame(prs, dict(aliases)), store.people()
 
 
 @st.cache_data(show_spinner=False)
 def _load_mock(day: str) -> tuple[pd.DataFrame, dict[str, str]]:
     prs, people = mock_pull_requests()
+    log.info("generated %d sample PRs", len(prs))
     return metrics.to_frame(prs, MOCK_ALIASES), people
 
 

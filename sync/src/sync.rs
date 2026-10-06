@@ -171,6 +171,10 @@ async fn run<S: Source>(
         Err(e) => return Ok(Err(e)),
     };
     report.repositories = repos.len();
+    tracing::info!(
+        "{platform}: {} repositories, listing PRs since {since:?}",
+        repos.len()
+    );
     let cached: HashMap<String, PullRequest> = db(store, move |s| s.pull_requests(Some(platform)))
         .await?
         .into_iter()
@@ -208,6 +212,11 @@ async fn run<S: Source>(
         }
     }
     drop(listing);
+    tracing::info!(
+        "{platform}: {} PRs listed, {} new or changed to fetch",
+        report.listed,
+        to_complete.len()
+    );
 
     // Phase 2: fill in details for those PRs, saving in batches so an
     // interrupted sync keeps what it already has.

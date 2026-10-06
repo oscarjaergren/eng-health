@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -10,12 +12,16 @@ from .. import pipelines as pl
 from ..store import Store
 from .charts import show
 
+log = logging.getLogger(__name__)
+
 
 @st.cache_data(show_spinner=False)
 def _load(db_path: str, version: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     # `version` is only there to change the cache key after a sync.
     store = Store(db_path)
-    return store.pipeline_jobs(), store.test_failures()
+    jobs, failures = store.pipeline_jobs(), store.test_failures()
+    log.info("loaded %d pipeline jobs and %d test failures", len(jobs), len(failures))
+    return jobs, failures
 
 
 def _filter(jobs: pd.DataFrame) -> pd.DataFrame:
