@@ -23,6 +23,8 @@ const BATCH: usize = 50;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Report {
     pub platform: String,
+    /// `prs` or `pipelines`.
+    pub module: String,
     pub repositories: usize,
     pub listed: usize,
     pub saved: usize,
@@ -67,9 +69,9 @@ pub struct Options<'a> {
     pub on_event: &'a (dyn Fn(Event) + Sync),
 }
 
-type Shared = Arc<Mutex<Store>>;
+pub type Shared = Arc<Mutex<Store>>;
 
-async fn db<T: Send + 'static>(
+pub(crate) async fn db<T: Send + 'static>(
     store: &Shared,
     f: impl FnOnce(&mut Store) -> Result<T, StoreError> + Send + 'static,
 ) -> Result<T, SyncError> {
@@ -94,10 +96,11 @@ pub async fn sync_platform<S: Source>(
     let platform = source.platform();
     let mut report = Report {
         platform: platform.to_string(),
+        module: "prs".to_owned(),
         ..Report::default()
     };
     let started = Utc::now();
-    let state = db(store, move |s| s.sync_state(platform)).await?;
+    let state = db(store, move |s| s.sync_state(platform.as_str())).await?;
     let since = if opts.full {
         None
     } else {
@@ -111,35 +114,37 @@ pub async fn sync_platform<S: Source>(
         });
     };
 
-    let outcome = run(source, store, opts, since, &mut report, &say).await;
-    if let Err(e) = outcome? {
+    let outcome = run(source, store, opts, since, &mut report, &say).await?;
+    report.requests = source.requests();
+    finish(store, platform.as_str(), started, outcome, opts, report).await
+}
+
+/// Record how a sync went. The window (`last_sync`) only moves forward when
+/// everything was read and nothing was interrupted.
+pub(crate) async fn finish(
+    store: &Shared,
+    key: &'static str,
+    started: chrono::DateTime<Utc>,
+    outcome: Result<(), SourceError>,
+    opts: &Options<'_>,
+    mut report: Report,
+) -> Result<Report, SyncError> {
+    if let Err(e) = outcome {
         report.errors.push(e.to_string());
     }
-    if opts.stop.load(Ordering::Relaxed) {
-        report.interrupted = true;
-    }
-    report.requests = source.requests();
-
+    report.interrupted = opts.stop.load(Ordering::Relaxed);
     let error = if report.interrupted {
         Some("interrupted".to_owned())
     } else {
-        (!report.errors.is_empty()).then(|| {
-            report
-                .errors
-                .iter()
-                .take(5)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("; ")
-        })
+        (!report.errors.is_empty()).then(|| report.errors[..report.errors.len().min(5)].join("; "))
     };
     let succeeded = report.ok();
     db(store, move |s| {
-        s.record_sync(platform, started, succeeded, error.as_deref())
+        s.record_sync(key, started, succeeded, error.as_deref())
     })
     .await?;
     tracing::info!(
-        "{platform}: {} repos, {} PRs listed, {} saved, {} missing review data, {} requests, {} errors",
+        "{key}: {} repos, {} listed, {} saved, {} incomplete, {} requests, {} errors",
         report.repositories,
         report.listed,
         report.saved,
@@ -255,6 +260,6 @@ async fn save(
 }
 
 #[allow(clippy::cast_precision_loss)] // progress fractions; counts are far below 2^52
-fn f64_ratio(done: usize, total: usize) -> f64 {
+pub(crate) fn f64_ratio(done: usize, total: usize) -> f64 {
     done as f64 / total as f64
 }

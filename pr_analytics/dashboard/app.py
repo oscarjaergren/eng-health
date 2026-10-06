@@ -12,6 +12,7 @@ from .. import metrics
 from ..config import ConfigError, Settings
 from ..models import PLATFORM_NAMES
 from ..store import SchemaError, Store
+from . import pipelines_page
 from .data import load, relative, run_sync
 from .filters import sidebar_filters
 from .tabs import flow, overview, people, table, timing
@@ -59,12 +60,16 @@ def _sync_status(settings: Settings, store: Store, slot: DeltaGenerator) -> None
         slot.caption(f"Last synced {relative(state.last_sync)}")
         if state.last_error:
             slot.error(f"Last sync failed: {state.last_error}", icon=None)
+    if settings.github_owner:
+        state = store.sync_state("github:pipelines")
+        slot.caption(f"Pipelines synced {relative(state.last_sync)}")
+        if state.last_error:
+            slot.error(f"Last pipelines sync failed: {state.last_error}", icon=None)
 
 
 def main() -> None:
     load_dotenv()
     st.set_page_config(page_title="PR Analytics", page_icon="📊", layout="wide")
-    st.title("Pull request analytics")
 
     try:
         settings = Settings.from_env()
@@ -89,6 +94,11 @@ def main() -> None:
     if store is not None and slot is not None:
         _sync_status(settings, store, slot)
 
+    if st.sidebar.radio("View", ["Pull requests", "Pipelines"], horizontal=True) == "Pipelines":
+        pipelines_page.render(store, github=bool(settings.github_owner))
+        return
+
+    st.title("Pull request analytics")
     df, names = load(settings, store)
     if df.empty:
         st.info(

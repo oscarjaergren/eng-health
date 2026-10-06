@@ -55,12 +55,15 @@ def run_sync(settings: Settings, *, full: bool = False, reset: bool = False) -> 
         result = prsync.run(binary, settings, full=full, reset=reset, on_progress=progress)
         bar.empty()
         for r in result.reports:
+            name = PLATFORM_NAMES.get(r.platform, r.platform)
+            what = "runs" if r.module == "pipelines" else "PRs"
             line = (
-                f"**{PLATFORM_NAMES.get(r.platform, r.platform)}**: {r.repositories} repositories, "
-                f"{r.listed} PRs checked, {r.saved} updated, {r.requests} API requests"
+                f"**{name}{' pipelines' if r.module == 'pipelines' else ''}**: "
+                f"{r.repositories} repositories, {r.listed} {what} checked, {r.saved} updated, "
+                f"{r.requests} API requests"
             )
             if r.incomplete:
-                line += f", {r.incomplete} missing review data (will retry)"
+                line += f", {r.incomplete} incomplete (will retry)"
             st.markdown(line)
             for err in r.errors[:10]:
                 st.error(err)

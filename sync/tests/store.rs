@@ -85,22 +85,14 @@ fn stored_json_is_the_golden_json() {
 fn failed_sync_keeps_previous_window() {
     let (_d, mut s) = store();
     let now = Utc.with_ymd_and_hms(2026, 10, 1, 12, 0, 0).unwrap();
-    s.record_sync(Platform::Github, now, true, None).unwrap();
-    s.record_sync(
-        Platform::Github,
-        now + Duration::hours(1),
-        false,
-        Some("boom"),
-    )
-    .unwrap();
-    let state = s.sync_state(Platform::Github).unwrap();
+    s.record_sync("github", now, true, None).unwrap();
+    s.record_sync("github", now + Duration::hours(1), false, Some("boom"))
+        .unwrap();
+    let state = s.sync_state("github").unwrap();
     assert_eq!(state.last_sync, Some(now));
     assert_eq!(state.last_attempt, Some(now + Duration::hours(1)));
     assert_eq!(state.last_error.as_deref(), Some("boom"));
-    assert_eq!(
-        s.sync_state(Platform::AzureDevops).unwrap(),
-        SyncState::default()
-    );
+    assert_eq!(s.sync_state("azure_devops").unwrap(), SyncState::default());
 }
 
 #[test]
@@ -114,8 +106,7 @@ fn every_write_bumps_the_revision() {
     let v0 = revision();
     s.upsert(&[golden("github/abandoned.json")], &BTreeMap::new())
         .unwrap();
-    s.record_sync(Platform::Github, Utc::now(), true, None)
-        .unwrap();
+    s.record_sync("github", Utc::now(), true, None).unwrap();
     s.clear().unwrap();
     assert_eq!(revision(), v0 + 3);
     assert_eq!(s.pull_requests(None).unwrap().len(), 0);

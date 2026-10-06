@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use prsync::config::Settings;
-use prsync::model::Platform;
 use prsync::source::azure::Azure;
 use prsync::source::github::GitHub;
 use prsync::store::Store;
@@ -35,9 +34,18 @@ enum Command {
         /// How to report progress on stdout.
         #[arg(long, value_enum, default_value_t = ProgressFormat::None)]
         progress: ProgressFormat,
+        /// Sync only one module (default: both).
+        #[arg(long, value_enum)]
+        only: Option<Module>,
     },
     /// Show when each platform last synced.
     Status,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Module {
+    Prs,
+    Pipelines,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -83,13 +91,14 @@ async fn main() -> ExitCode {
             full,
             reset,
             progress,
-        } => sync(settings, store, full || reset, reset, progress).await,
+            only,
+        } => sync(settings, store, full || reset, reset, progress, only).await,
     }
 }
 
 fn status(store: &Store, path: &Path) -> ExitCode {
     println!("{}", path.display());
-    for platform in [Platform::AzureDevops, Platform::Github] {
+    for platform in ["azure_devops", "github", prsync::pipelines::MODULE_KEY] {
         match store.sync_state(platform) {
             Ok(s) => {
                 let when = s
@@ -116,6 +125,7 @@ async fn sync(
     full: bool,
     reset: bool,
     progress: ProgressFormat,
+    only: Option<Module>,
 ) -> ExitCode {
     if settings.azure.is_none() && settings.github.is_none() {
         eprintln!("No platform configured. Copy .env.example to .env and fill it in.");
@@ -150,12 +160,19 @@ async fn sync(
         on_event: &emit,
     };
     let store = Arc::new(Mutex::new(store));
+    let (prs, pipelines) = (only != Some(Module::Pipelines), only != Some(Module::Prs));
     let mut results = Vec::new();
-    if let Some(az) = &settings.azure {
+    if let Some(az) = settings.azure.as_ref().filter(|_| prs) {
         results.push(sync_platform(&Azure::new(az), &store, &opts).await);
     }
     if let Some(gh) = &settings.github {
-        results.push(sync_platform(&GitHub::new(gh.clone()), &store, &opts).await);
+        let gh = GitHub::new(gh.clone());
+        if prs {
+            results.push(sync_platform(&gh, &store, &opts).await);
+        }
+        if pipelines {
+            results.push(prsync::pipelines::sync(&gh, &store, &opts).await);
+        }
     }
     let reports: Vec<Report> = match results.into_iter().collect() {
         Ok(reports) => reports,

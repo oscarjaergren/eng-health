@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
+
 from .models import PullRequest
 
 # Shared with the Rust sync engine (sync/src/store.rs). Bump both together when
@@ -88,6 +90,14 @@ class Store:
             sql, args = sql + " WHERE platform = ?", (platform,)
         with self._conn() as c:
             return [PullRequest.from_dict(json.loads(d)) for (d,) in c.execute(sql, args)]
+
+    def pipeline_jobs(self) -> pd.DataFrame:
+        """Empty until prsync has synced pipelines (it creates the table)."""
+        with self._conn() as c:
+            try:
+                return pd.read_sql_query("SELECT * FROM pipeline_jobs", c)
+            except pd.errors.DatabaseError:
+                return pd.DataFrame()
 
     def people(self) -> dict[str, str]:
         with self._conn() as c:

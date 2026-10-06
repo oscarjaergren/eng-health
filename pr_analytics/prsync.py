@@ -28,6 +28,7 @@ _LOCAL_BUILD = Path(__file__).resolve().parent.parent / "sync" / "target" / "rel
 @dataclass
 class Report:
     platform: str
+    module: str = "prs"
     repositories: int = 0
     listed: int = 0
     saved: int = 0
