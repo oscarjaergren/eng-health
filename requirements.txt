@@ -1,4 +1,4 @@
 pandas>=3.0
 plotly>=7.1
-python-dotenv>=1.2
+python-dotenv>=1.2.4
 streamlit>=1.65
