@@ -7,17 +7,21 @@ runs, then a `report` per platform. Logs go to stderr.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import signal
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .config import Settings
+
+log = logging.getLogger("prsync")
 
 EXIT_CONFIG = 2
 EXIT_INTERRUPTED = 130
@@ -74,7 +78,10 @@ def run(
         args.append("--reset")
     elif full:
         args.append("--full")
-    env = {**os.environ, "DATA_DIR": str(settings.data_dir)}
+    # NO_COLOR keeps terminal colour codes out of the forwarded log lines.
+    env = {**os.environ, "DATA_DIR": str(settings.data_dir), "NO_COLOR": "1"}
+    log.info("running %s", " ".join(args[1:]))
+    started = time.monotonic()
 
     reports: list[Report] = []
     # stderr goes to a file: if it were a pipe nobody reads until the end, a
@@ -102,4 +109,9 @@ def run(
                 except subprocess.TimeoutExpired:
                     proc.kill()
         err.seek(0)
-        return Result(code, reports, err.read())
+        stderr = err.read()
+    for line in stderr.splitlines():
+        log.info("%s", line)
+    level = logging.INFO if code == 0 else logging.WARNING
+    log.log(level, "prsync exited with %d after %.1fs", code, time.monotonic() - started)
+    return Result(code, reports, stderr)

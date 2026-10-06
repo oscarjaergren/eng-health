@@ -67,10 +67,13 @@ impl Http {
         let mut attempt = 0;
         loop {
             self.requests.fetch_add(1, Ordering::Relaxed);
+            let started = std::time::Instant::now();
             let resp = match build(&self.client).send().await {
                 Ok(resp) => resp,
                 Err(e) if attempt < self.retries && (e.is_timeout() || e.is_connect()) => {
-                    tokio::time::sleep(self.backoff * 2u32.pow(attempt)).await;
+                    let wait = self.backoff * 2u32.pow(attempt);
+                    tracing::warn!("{}: {e}; retrying in {}s", self.label, wait.as_secs_f32());
+                    tokio::time::sleep(wait).await;
                     attempt += 1;
                     continue;
                 }
@@ -83,6 +86,12 @@ impl Http {
             };
 
             let status = resp.status();
+            tracing::debug!(
+                "{} {} -> {status} in {}ms",
+                self.label,
+                resp.url(),
+                started.elapsed().as_millis()
+            );
             if let Some(wait) = rate_limit_wait(status, resp.headers()) {
                 self.wait_for_rate_limit(wait).await?;
                 continue;
@@ -99,6 +108,12 @@ impl Http {
             }
             if is_transient(status) && attempt < self.retries {
                 let wait = retry_after(resp.headers()).unwrap_or(self.backoff * 2u32.pow(attempt));
+                tracing::warn!(
+                    "{}: {status} from {}; retrying in {}s",
+                    self.label,
+                    resp.url(),
+                    wait.as_secs_f32()
+                );
                 tokio::time::sleep(wait).await;
                 attempt += 1;
                 continue;

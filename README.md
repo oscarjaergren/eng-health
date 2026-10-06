@@ -48,6 +48,8 @@ writes every stored PR to a CSV file.
 | `IDENTITY_ALIASES` | Merge one person's identities, e.g. `jdoe=jane.doe@example.com,jd2=jane.doe@example.com`. |
 | `MOCK_MODE` | `true` shows sample data even when credentials are set. |
 | `GITHUB_API_URL`, `AZURE_DEVOPS_URL` | GitHub Enterprise Server or Azure DevOps Server addresses. |
+| `LOG_LEVEL` | Dashboard log level (`DEBUG`, `INFO`, `WARNING`). Default `INFO`. The log also includes `prsync`'s output after each sync. |
+| `RUST_LOG` | `prsync` log level, e.g. `prsync=debug` to log every API request with its status and time. Default `info`. |
 | `PRSYNC_BIN` | Path to `prsync`, if it is neither on `PATH` nor in `sync/target/release`. |
 
 Setting only half of a platform's pair is reported as an error rather than ignored.
