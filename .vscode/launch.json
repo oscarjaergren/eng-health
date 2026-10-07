@@ -4,20 +4,13 @@
         {
             "name": "Dashboard",
             "type": "debugpy",
-            "request": "launch",
-            "module": "streamlit",
-            "args": ["run", "dashboard_main.py"],
-            "envFile": "${workspaceFolder}/.env",
-            "justMyCode": false
-        },
-        {
-            "name": "Dashboard (sample data)",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "streamlit",
-            "args": ["run", "dashboard_main.py"],
-            "env": {"MOCK_MODE": "true"},
-            "justMyCode": false
+            "request": "attach",
+            "connect": {
+                "host": "127.0.0.1",
+                "port": 5678
+            },
+            "preLaunchTask": "Dashboard server",
+            "justMyCode": true
         }
     ]
 }
