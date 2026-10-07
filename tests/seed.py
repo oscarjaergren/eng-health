@@ -1,4 +1,4 @@
-"""Writes the database the way prsync does, for tests. The dashboard never writes."""
+"""Writes the database the way eng-health does, for tests. The dashboard never writes."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
 
-from pr_analytics.models import PullRequest
-from pr_analytics.store import Store
+from eng_health.models import PullRequest
+from eng_health.store import Store
 
 
 class WritableStore(Store):
@@ -59,7 +59,7 @@ class WritableStore(Store):
             c.execute("DELETE FROM sync_state")
 
     def upsert_jobs(self, jobs: Iterable[dict]) -> None:
-        """Rows shaped like prsync's `pipeline_jobs` (see sync/src/store.rs)."""
+        """Rows shaped like eng-health's `pipeline_jobs` (see sync/src/store.rs)."""
         rows = list(jobs)
         with self._write() as c:
             c.execute(

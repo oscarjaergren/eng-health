@@ -15,10 +15,10 @@ testpaths = ["tests"]
 addopts = "-q"
 
 [tool.coverage.run]
-source = ["pr_analytics"]
+source = ["eng_health"]
 
 [tool.mypy]
 python_version = "3.14"
-packages = ["pr_analytics"]
+packages = ["eng_health"]
 ignore_missing_imports = true
 check_untyped_defs = true

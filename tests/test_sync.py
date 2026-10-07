@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from pr_analytics import prsync
-from pr_analytics.config import Settings
-from pr_analytics.store import Store
+from eng_health import sync
+from eng_health.config import Settings
+from eng_health.store import Store
 
-FAKE = Path(__file__).parent / "fake_prsync.py"
+FAKE = Path(__file__).parent / "fake_sync.py"
 
 
 def fake_binary(tmp_path: Path) -> str:
-    """A wrapper script, because prsync.run executes a single binary path."""
-    wrapper = tmp_path / "prsync"
+    """A wrapper script, because sync.run executes a single binary path."""
+    wrapper = tmp_path / "eng-health"
     wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" "$@"\n')
     wrapper.chmod(0o755)
     return str(wrapper)
@@ -32,11 +32,9 @@ def test_progress_reports_and_data(
     tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     args_file = tmp_path / "args"
-    monkeypatch.setenv("FAKE_PRSYNC_ARGS_FILE", str(args_file))
+    monkeypatch.setenv("FAKE_SYNC_ARGS_FILE", str(args_file))
     seen: list[tuple[float, str]] = []
-    result = prsync.run(
-        fake_binary(tmp_path), settings, on_progress=lambda f, m: seen.append((f, m))
-    )
+    result = sync.run(fake_binary(tmp_path), settings, on_progress=lambda f, m: seen.append((f, m)))
     assert result.ok
     assert seen == [(0.3, "github: listed web"), (1.0, "github: 2/2 PRs")]
     assert [(r.platform, r.saved, r.requests) for r in result.reports] == [("github", 2, 2)]
@@ -51,21 +49,21 @@ def test_full_and_reset_flags(
     tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch, kwargs: dict, flag: str
 ) -> None:
     args_file = tmp_path / "args"
-    monkeypatch.setenv("FAKE_PRSYNC_ARGS_FILE", str(args_file))
-    prsync.run(fake_binary(tmp_path), settings, **kwargs)
+    monkeypatch.setenv("FAKE_SYNC_ARGS_FILE", str(args_file))
+    sync.run(fake_binary(tmp_path), settings, **kwargs)
     assert args_file.read_text().endswith(flag)
 
 
 def test_errors_and_config_problems(
     tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("FAKE_PRSYNC", "errors")
-    result = prsync.run(fake_binary(tmp_path), settings)
+    monkeypatch.setenv("FAKE_SYNC", "errors")
+    result = sync.run(fake_binary(tmp_path), settings)
     assert result.exit_code == 1 and "502" in result.reports[0].errors[0]
 
-    monkeypatch.setenv("FAKE_PRSYNC", "config")
-    result = prsync.run(fake_binary(tmp_path), settings)
-    assert result.exit_code == prsync.EXIT_CONFIG and result.reports == []
+    monkeypatch.setenv("FAKE_SYNC", "config")
+    result = sync.run(fake_binary(tmp_path), settings)
+    assert result.exit_code == sync.EXIT_CONFIG and result.reports == []
     assert "GITHUB_OWNER" in result.stderr
 
 
@@ -75,37 +73,37 @@ def test_heavy_logging_does_not_block_and_is_forwarded(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    monkeypatch.setenv("FAKE_PRSYNC", "noisy")
-    with caplog.at_level("INFO", logger="prsync"):
-        result = prsync.run(fake_binary(tmp_path), settings)
+    monkeypatch.setenv("FAKE_SYNC", "noisy")
+    with caplog.at_level("INFO", logger="eng-health"):
+        result = sync.run(fake_binary(tmp_path), settings)
     assert result.ok and result.stderr.count("log line") == 20000
     messages = [r.getMessage() for r in caplog.records]
     assert messages.count("log line") == 20000
     assert messages[0] == "running sync --progress json"
-    assert messages[-1].startswith("prsync exited with 0 after")
+    assert messages[-1].startswith("eng-health exited with 0 after")
 
 
-def test_stopping_the_page_interrupts_prsync(
+def test_stopping_the_page_interrupts_the_sync(
     tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Streamlit stops a script by raising inside it; prsync must get SIGINT."""
-    monkeypatch.setenv("FAKE_PRSYNC", "wait_for_interrupt")
+    """Streamlit stops a script by raising inside it; eng-health must get SIGINT."""
+    monkeypatch.setenv("FAKE_SYNC", "wait_for_interrupt")
 
     def stop(_f: float, _m: str) -> None:
         raise KeyboardInterrupt
 
     started = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        prsync.run(fake_binary(tmp_path), settings, on_progress=stop)
+        sync.run(fake_binary(tmp_path), settings, on_progress=stop)
     # Well under the 15 s kill fallback, so SIGINT is what ended it.
     assert time.monotonic() - started < 10
 
 
 def test_find_binary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PRSYNC_BIN", str(tmp_path / "missing"))
-    assert prsync.find_binary() is None
-    monkeypatch.setenv("PRSYNC_BIN", fake_binary(tmp_path))
-    assert prsync.find_binary() == str(tmp_path / "prsync")
-    monkeypatch.delenv("PRSYNC_BIN")
+    monkeypatch.setenv("ENG_HEALTH_BIN", str(tmp_path / "missing"))
+    assert sync.find_binary() is None
+    monkeypatch.setenv("ENG_HEALTH_BIN", fake_binary(tmp_path))
+    assert sync.find_binary() == str(tmp_path / "eng-health")
+    monkeypatch.delenv("ENG_HEALTH_BIN")
     monkeypatch.setenv("PATH", str(tmp_path))
-    assert prsync.find_binary() == str(tmp_path / "prsync")
+    assert sync.find_binary() == str(tmp_path / "eng-health")

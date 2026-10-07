@@ -1,7 +1,7 @@
-"""Stands in for the prsync binary in Python tests.
+"""Stands in for the eng-health binary in Python tests.
 
 Speaks the same protocol (JSON lines on stdout, logs on stderr, the same exit
-codes) and writes real records to the store. FAKE_PRSYNC picks a scenario.
+codes) and writes real records to the store. FAKE_SYNC picks a scenario.
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ def report(**fields: object) -> dict:
 
 
 def main() -> int:
-    scenario = os.environ.get("FAKE_PRSYNC", "ok")
-    Path(os.environ.get("FAKE_PRSYNC_ARGS_FILE", os.devnull)).write_text(" ".join(sys.argv[1:]))
+    scenario = os.environ.get("FAKE_SYNC", "ok")
+    Path(os.environ.get("FAKE_SYNC_ARGS_FILE", os.devnull)).write_text(" ".join(sys.argv[1:]))
 
     if scenario == "config":
         print("Configuration problem: GITHUB_OWNER is not set", file=sys.stderr)
@@ -50,7 +50,7 @@ def main() -> int:
     emit(
         {"type": "progress", "platform": "github", "fraction": 0.3, "message": "github: listed web"}
     )
-    store = WritableStore(Path(os.environ["DATA_DIR"]) / "pr_analytics.db")
+    store = WritableStore(Path(os.environ["DATA_DIR"]) / "eng_health.db")
     if "--reset" in sys.argv:
         store.clear()
     store.upsert(

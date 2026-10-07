@@ -1,4 +1,4 @@
-//! SQLite storage shared with the Python dashboard (`pr_analytics/store.py`).
+//! SQLite storage shared with the Python dashboard (`eng_health/store.py`).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::model::{Platform, PullRequest, Timestamp};
 use crate::pipelines::Job;
 
-/// Shared with `pr_analytics/store.py`. Bump both together when the tables or
+/// Shared with `eng_health/store.py`. Bump both together when the tables or
 /// the PR JSON change shape.
 pub const SCHEMA_VERSION: i64 = 1;
 
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error(
-        "{path} uses schema version {found}, but prsync understands {SCHEMA_VERSION}. Update prsync."
+        "{path} uses schema version {found}, but eng-health understands {SCHEMA_VERSION}. Update eng-health."
     )]
     NewerSchema { path: String, found: i64 },
     #[error(transparent)]

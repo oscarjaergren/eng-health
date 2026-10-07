@@ -1,12 +1,12 @@
 import pytest
 
-from pr_analytics.config import ConfigError, Settings
+from eng_health.config import ConfigError, Settings
 
 
 def test_no_credentials_means_no_platforms() -> None:
     s = Settings.from_env({})
     assert s.platforms == [] and not s.mock
-    assert str(s.db_path) == "data/pr_analytics.db"
+    assert str(s.db_path) == "data/eng_health.db"
 
 
 def test_both_platforms() -> None:

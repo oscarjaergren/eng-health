@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import pandas as pd
 import streamlit as st
 
-from .. import metrics, prsync
+from .. import metrics, sync
 from ..config import Settings
 from ..mock import ALIASES as MOCK_ALIASES
 from ..mock import mock_pull_requests
@@ -44,11 +44,11 @@ def load(settings: Settings, store: Store | None) -> tuple[pd.DataFrame, dict[st
 
 
 def run_sync(settings: Settings, *, full: bool = False, reset: bool = False) -> None:
-    binary = prsync.find_binary()
+    binary = sync.find_binary()
     if binary is None:
         st.error(
-            "The `prsync` sync engine was not found. The Docker image includes it; "
-            "otherwise build it with `cargo build --release` in `sync/`, or set PRSYNC_BIN."
+            "The `eng-health` sync engine was not found. The Docker image includes it; "
+            "otherwise build it with `cargo build --release` in `sync/`, or set ENG_HEALTH_BIN."
         )
         return
 
@@ -58,7 +58,7 @@ def run_sync(settings: Settings, *, full: bool = False, reset: bool = False) -> 
         def progress(frac: float, msg: str) -> None:
             bar.progress(min(frac, 1.0), text=msg)
 
-        result = prsync.run(binary, settings, full=full, reset=reset, on_progress=progress)
+        result = sync.run(binary, settings, full=full, reset=reset, on_progress=progress)
         bar.empty()
         for r in result.reports:
             name = PLATFORM_NAMES.get(r.platform, r.platform)
@@ -73,12 +73,12 @@ def run_sync(settings: Settings, *, full: bool = False, reset: bool = False) -> 
             st.markdown(line)
             for err in r.errors[:10]:
                 st.error(err)
-        if result.exit_code == prsync.EXIT_INTERRUPTED:
+        if result.exit_code == sync.EXIT_INTERRUPTED:
             label = "Sync stopped; what was fetched so far is saved"
         elif not result.ok and not any(r.errors for r in result.reports):
             # Nothing structured to show (bad configuration, crash): show its output.
             lines = result.stderr.strip().splitlines()
-            st.error(lines[-1] if lines else "prsync failed")
+            st.error(lines[-1] if lines else "eng-health failed")
             label = "Sync failed"
         else:
             label = "Sync finished" if result.ok else "Sync finished with errors"

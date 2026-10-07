@@ -13,7 +13,7 @@ services:
   # docker compose run --rm cli sync   (or: sync --full, status)
   cli:
     build: .
-    entrypoint: ["prsync"]
+    entrypoint: ["eng-health"]
     volumes:
       - ./data:/app/data
     env_file:

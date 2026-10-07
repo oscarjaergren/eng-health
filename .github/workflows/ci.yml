@@ -60,17 +60,17 @@ jobs:
           python-version: "3.14"
       - run: pip install pip-audit bandit
       - run: pip-audit -r requirements.txt
-      - run: bandit -r pr_analytics -ll
+      - run: bandit -r eng_health -ll
 
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: docker build -t pr-analytics .
-      - run: docker run --rm pr-analytics prsync --version
+      - run: docker build -t eng-health .
+      - run: docker run --rm eng-health eng-health --version
       - name: Dashboard starts and answers its health check
         run: |
-          docker run -d --name app -e MOCK_MODE=true -p 8501:8501 pr-analytics
+          docker run -d --name app -e MOCK_MODE=true -p 8501:8501 eng-health
           for i in $(seq 30); do
             curl -fs http://localhost:8501/_stcore/health && exit 0
             sleep 2

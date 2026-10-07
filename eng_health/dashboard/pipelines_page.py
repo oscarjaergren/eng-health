@@ -140,7 +140,7 @@ def render(store: Store | None, github: bool) -> None:
         st.caption("Tests that failed in a run that then passed on the same commit.")
         if failures.empty:
             st.info(
-                "No test results found. prsync reads JUnit or TRX files from artifacts whose "
+                "No test results found. eng-health reads JUnit or TRX files from artifacts whose "
                 "name contains test, junit, trx or result. For example, after `dotnet test "
                 "--logger trx`: `uses: actions/upload-artifact@v4` with `name: test-results`, "
                 "`path: '**/*.trx'` and `if: always()`."

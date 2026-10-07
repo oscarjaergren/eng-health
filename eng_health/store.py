@@ -1,6 +1,6 @@
-"""Reads the SQLite database that prsync (sync/) writes.
+"""Reads the SQLite database that eng-health (sync/) writes.
 
-One row per PR keyed by platform, repository and number. prsync is the only
+One row per PR keyed by platform, repository and number. eng-health is the only
 writer; the schema here must match sync/src/store.rs.
 """
 
@@ -98,7 +98,7 @@ class Store:
         return self._query("SELECT * FROM test_failures")
 
     def _query(self, sql: str) -> pd.DataFrame:
-        """Empty until prsync has synced pipelines (it creates the tables)."""
+        """Empty until eng-health has synced pipelines (it creates the tables)."""
         with self._conn() as c:
             try:
                 return pd.read_sql_query(sql, c)

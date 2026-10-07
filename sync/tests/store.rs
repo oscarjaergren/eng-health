@@ -3,8 +3,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use chrono::{Duration, TimeZone, Utc};
-use prsync::model::{Platform, PullRequest};
-use prsync::store::{SCHEMA_VERSION, Store, StoreError, SyncState};
+use eng_health::model::{Platform, PullRequest};
+use eng_health::store::{SCHEMA_VERSION, Store, StoreError, SyncState};
 use rusqlite::Connection;
 use tempfile::TempDir;
 

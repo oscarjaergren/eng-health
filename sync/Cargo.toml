@@ -1,9 +1,9 @@
 [package]
-name = "prsync"
+name = "eng-health"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Syncs pull requests from Azure DevOps and GitHub into the PR analytics database"
+description = "Syncs pull requests and GitHub Actions runs from Azure DevOps and GitHub into the eng-health database"
 license = "MIT"
 publish = false
 

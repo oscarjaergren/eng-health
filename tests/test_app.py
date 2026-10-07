@@ -8,11 +8,11 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from pr_analytics.cli import main as cli
-from pr_analytics.mock import mock_pull_requests
+from eng_health.cli import main as cli
+from eng_health.mock import mock_pull_requests
 
 from .seed import WritableStore
-from .test_prsync import fake_binary
+from .test_sync import fake_binary
 
 APP = str(Path(__file__).parent.parent / "dashboard_main.py")
 
@@ -49,11 +49,11 @@ def test_live_mode_with_empty_store_offers_first_sync(monkeypatch: pytest.Monkey
 def live_github(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, scenario: str = "ok") -> None:
     monkeypatch.setenv("GITHUB_OWNER", "acme")
     monkeypatch.setenv("GITHUB_TOKEN", "tok")
-    monkeypatch.setenv("PRSYNC_BIN", fake_binary(tmp_path))
-    monkeypatch.setenv("FAKE_PRSYNC", scenario)
+    monkeypatch.setenv("ENG_HEALTH_BIN", fake_binary(tmp_path))
+    monkeypatch.setenv("FAKE_SYNC", scenario)
 
 
-def test_sync_button_runs_prsync_and_shows_the_data(
+def test_sync_button_runs_the_sync_and_shows_the_data(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     live_github(monkeypatch, tmp_path)
@@ -77,7 +77,7 @@ def test_sync_errors_are_shown(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     assert any("502" in e.value for e in at.error)
 
 
-def test_prsync_config_problem_is_shown(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_sync_config_problem_is_shown(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     live_github(monkeypatch, tmp_path, "config")
     at = run()
     at.sidebar.button[0].click().run()
@@ -85,17 +85,17 @@ def test_prsync_config_problem_is_shown(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert any("GITHUB_OWNER" in e.value for e in at.error)
 
 
-def test_missing_prsync_is_explained(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_missing_sync_engine_is_explained(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     live_github(monkeypatch, tmp_path)
-    monkeypatch.setenv("PRSYNC_BIN", str(tmp_path / "nope"))
+    monkeypatch.setenv("ENG_HEALTH_BIN", str(tmp_path / "nope"))
     at = run()
     at.sidebar.button[0].click().run()
-    assert any("prsync" in e.value and "cargo build" in e.value for e in at.error)
+    assert any("eng-health" in e.value and "cargo build" in e.value for e in at.error)
 
 
 def test_live_mode_reads_the_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     prs, people = mock_pull_requests(count=60)
-    WritableStore(tmp_path / "pr_analytics.db").upsert(prs, people)
+    WritableStore(tmp_path / "eng_health.db").upsert(prs, people)
     monkeypatch.setenv("AZURE_DEVOPS_ORGANIZATION", "org")
     monkeypatch.setenv("AZURE_DEVOPS_PAT", "pat")
     at = run()
@@ -110,7 +110,7 @@ def test_bad_config_is_shown_not_raised(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_cli_export(tmp_path: Path) -> None:
     prs, people = mock_pull_requests(count=20)
-    WritableStore(tmp_path / "pr_analytics.db").upsert(prs, people)
+    WritableStore(tmp_path / "eng_health.db").upsert(prs, people)
     out = tmp_path / "prs.csv"
     assert cli(["export", str(out)]) == 0
     assert len(pd.read_csv(out)) == 20

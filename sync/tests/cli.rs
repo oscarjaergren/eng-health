@@ -7,8 +7,8 @@ use tempfile::TempDir;
 use wiremock::matchers::body_string_contains;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-fn prsync(dir: &TempDir, envs: &[(&str, &str)], args: &[&str]) -> std::process::Output {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_prsync"));
+fn cli(dir: &TempDir, envs: &[(&str, &str)], args: &[&str]) -> std::process::Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eng-health"));
     cmd.args(args)
         .current_dir(dir.path())
         .env_clear()
@@ -22,11 +22,11 @@ fn prsync(dir: &TempDir, envs: &[(&str, &str)], args: &[&str]) -> std::process::
 #[test]
 fn missing_configuration_exits_with_code_2() {
     let dir = TempDir::new().unwrap();
-    let out = prsync(&dir, &[], &["sync"]);
+    let out = cli(&dir, &[], &["sync"]);
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("No platform configured"));
 
-    let out = prsync(&dir, &[("GITHUB_TOKEN", "tok")], &["sync"]);
+    let out = cli(&dir, &[("GITHUB_TOKEN", "tok")], &["sync"]);
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("GITHUB_OWNER is not set"));
 }
@@ -63,7 +63,7 @@ async fn json_progress_and_a_populated_database() {
     let data_dir = dir.path().to_owned();
     // Run the blocking child process off the runtime that serves the mock.
     let out = tokio::task::spawn_blocking(move || {
-        Command::new(env!("CARGO_BIN_EXE_prsync"))
+        Command::new(env!("CARGO_BIN_EXE_eng-health"))
             .args(["sync", "--progress", "json", "--only", "prs"])
             .env_clear()
             .env("DATA_DIR", &data_dir)
@@ -97,9 +97,9 @@ async fn json_progress_and_a_populated_database() {
             .all(|e| e["type"] == "progress")
     );
 
-    let status = prsync(&dir, &[], &["status"]);
+    let status = cli(&dir, &[], &["status"]);
     assert!(String::from_utf8_lossy(&status.stdout).contains("github: last synced 20"));
-    let store = prsync::store::Store::open(&dir.path().join("pr_analytics.db")).unwrap();
+    let store = eng_health::store::Store::open(&dir.path().join("eng_health.db")).unwrap();
     let prs = store.pull_requests(None).unwrap();
     assert_eq!(prs[0].key(), "github:101:1");
 }

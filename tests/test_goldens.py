@@ -1,10 +1,10 @@
-"""testdata/expected holds the records prsync writes for the shared fixtures
+"""testdata/expected holds the records eng-health writes for the shared fixtures
 (checked by the Rust parity tests). The dashboard must load every one."""
 
 import json
 from pathlib import Path
 
-from pr_analytics.models import PullRequest
+from eng_health.models import PullRequest
 
 EXPECTED = Path(__file__).parent.parent / "testdata" / "expected"
 

@@ -4,10 +4,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use prsync::model::{Platform, Repo};
-use prsync::source::People;
-use prsync::source::azure::convert;
-use prsync::source::azure::types::{PullRequestInfo, Thread};
+use eng_health::model::{Platform, Repo};
+use eng_health::source::People;
+use eng_health::source::azure::convert;
+use eng_health::source::azure::types::{PullRequestInfo, Thread};
 use serde_json::Value;
 
 mod support;

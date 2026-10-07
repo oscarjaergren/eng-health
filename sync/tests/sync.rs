@@ -9,11 +9,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
-use prsync::model::{Platform, PullRequest, Repo, State, Timestamp};
-use prsync::rules::parse_time;
-use prsync::source::{People, Source, SourceError};
-use prsync::store::Store;
-use prsync::sync::{Event, OVERLAP, Options, sync_platform};
+use eng_health::model::{Platform, PullRequest, Repo, State, Timestamp};
+use eng_health::rules::parse_time;
+use eng_health::source::{People, Source, SourceError};
+use eng_health::store::Store;
+use eng_health::sync::{Event, OVERLAP, Options, sync_platform};
 use tempfile::TempDir;
 
 #[derive(Clone)]
@@ -175,7 +175,7 @@ fn env() -> Env {
     }
 }
 
-async fn run(fake: &Fake, env: &Env, full: bool) -> prsync::sync::Report {
+async fn run(fake: &Fake, env: &Env, full: bool) -> eng_health::sync::Report {
     let quiet = |_: Event| {};
     let opts = Options {
         full,
