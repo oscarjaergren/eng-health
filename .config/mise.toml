@@ -4,6 +4,9 @@
 #
 # Setup: mise run setup. Updates: `mise outdated`.
 
+# CI runs the same mise (its version is set in .github/workflows/ci.yml).
+min_version = "2026.8.9"
+
 [tools]
 uv = "0.12.23"                    # Python packages and the virtualenv
 prek = "0.5.5"                    # git hook manager
@@ -11,6 +14,7 @@ gitleaks = "8.30.1"               # secret scanning
 typos = "1.51.1"                  # spelling
 editorconfig-checker = "3.11.3"   # whitespace and line endings; 4.x assets are unknown to mise yet
 actionlint = "1.7.12"             # GitHub Actions workflows
+shellcheck = "0.11.0"             # shell scripts, and the inline scripts actionlint checks
 hadolint = "2.15.1"               # Dockerfile
 dprint = "0.60.1"                 # markdown and json formatting
 lychee = "0.24.2"                 # link checking (pre-push: network-bound)

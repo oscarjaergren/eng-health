@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
+        with:
+          version: 2026.8.9  # the same mise as min_version in .config/mise.toml
       - run: mise run lint
 
   check:
@@ -23,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
+        with:
+          version: 2026.8.9  # the same mise as min_version in .config/mise.toml
       - run: uv sync --locked
       - run: uv run --locked mypy
       - run: uv run --locked pytest --cov --cov-report=term-missing --junitxml=test-results/pytest.xml
@@ -57,6 +61,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
+        with:
+          version: 2026.8.9  # the same mise as min_version in .config/mise.toml
       # The exported requirements are fully resolved and hashed, so pip-audit needs no resolver.
       - run: |
           uv export --locked --no-dev --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/req.txt"
@@ -72,7 +78,7 @@ jobs:
       - name: Dashboard starts and answers its health check
         run: |
           docker run -d --name app -e MOCK_MODE=true -p 8501:8501 eng-health
-          for i in $(seq 30); do
+          for _ in $(seq 30); do
             curl -fs http://localhost:8501/_stcore/health && exit 0
             sleep 2
           done
