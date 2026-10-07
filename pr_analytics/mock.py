@@ -152,3 +152,59 @@ def _record(s: dict[str, Any], platform: str, repo: str) -> PullRequest:
         comment_counts=comment_counts,
         first_responses={who(e["who"]): e["at"] for e in s["events"]},
     )
+
+
+# --- Pipelines -------------------------------------------------------------
+
+WORKFLOWS = {"CI": ["build", "test", "lint"], "Deploy": ["deploy"], "Nightly": ["e2e"]}
+FLAKY_TESTS = ["tests.test_api::test_timeout_retry", "OrderTests.Concurrent_checkout"]
+BROKEN_TESTS = ["tests.test_store::test_migration", "ParserTests.Parses_unicode"]
+
+
+def mock_pipelines(
+    seed: int = 7, runs: int = 300, now: datetime | None = None
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Rows shaped like prsync's `pipeline_jobs` and `test_failures` tables."""
+    rng = random.Random(seed)
+    now = now or datetime.now(UTC)
+    jobs: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for run_id in range(1, runs + 1):
+        repo = rng.choice(GITHUB_REPOS)
+        workflow = rng.choices(list(WORKFLOWS), [6, 2, 1])[0]
+        age = rng.uniform(0, 90)
+        start = now - timedelta(days=age)
+        default = workflow != "CI" or rng.random() < 0.5
+        test_fails = workflow in ("CI", "Nightly") and rng.random() < 0.18
+        # Most failures pass on a rerun (flaky); the rest are real breakages.
+        flaky = test_fails and rng.random() < 0.65
+        attempts = 2 if flaky else 1
+        for attempt in range(1, attempts + 1):
+            for i, name in enumerate(WORKFLOWS[workflow]):
+                # Nightly e2e gets slower over the window, so the trend shows.
+                base = 25 + (90 - age) / 6 if workflow == "Nightly" else 3 + 2 * i
+                minutes = rng.lognormvariate(0, 0.25) * base
+                failed = test_fails and name in ("test", "e2e") and attempt == 1
+                jobs.append(
+                    {
+                        "key": f"github:{repo}:{run_id}:{attempt}:{name}",
+                        "repo_id": repo,
+                        "repository": repo,
+                        "pipeline": workflow,
+                        "run_id": run_id,
+                        "attempt": attempt,
+                        "branch": "main" if default else f"feature/{run_id}",
+                        "is_default_branch": int(default),
+                        "commit_sha": f"{run_id:07x}",
+                        "name": name,
+                        "conclusion": "failure" if failed else "success",
+                        "started_at": start.isoformat(),
+                        "finished_at": (start + timedelta(minutes=minutes)).isoformat(),
+                        "url": f"https://github.com/demo/{repo}/actions/runs/{run_id}",
+                    }
+                )
+            start += timedelta(minutes=30)
+        if test_fails:
+            pool = FLAKY_TESTS if flaky else BROKEN_TESTS
+            failures.append({"repo_id": repo, "run_id": run_id, "test_id": rng.choice(pool)})
+    return jobs, failures

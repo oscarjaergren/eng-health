@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from .. import pipelines as pl
+from ..mock import mock_pipelines
 from ..store import Store
 from .charts import show
 
@@ -22,6 +24,13 @@ def _load(db_path: str, version: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     jobs, failures = store.pipeline_jobs(), store.test_failures()
     log.info("loaded %d pipeline jobs and %d test failures", len(jobs), len(failures))
     return jobs, failures
+
+
+@st.cache_data(show_spinner=False)
+def _sample(day: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    # Keyed by day so the sample data stays anchored to "now".
+    jobs, failures = mock_pipelines()
+    return pd.DataFrame(jobs), pd.DataFrame(failures)
 
 
 def _filter(jobs: pd.DataFrame) -> pd.DataFrame:
@@ -43,10 +52,13 @@ def _filter(jobs: pd.DataFrame) -> pd.DataFrame:
 
 def render(store: Store | None, github: bool) -> None:
     st.title("Pipelines")
-    if store is None or not github:
+    if store is None:
+        raw, failures = _sample(datetime.now(UTC).date().isoformat())
+    elif not github:
         st.info("Pipelines come from GitHub Actions. Connect GitHub to see them.")
         return
-    raw, failures = _load(str(store.path), store.version())
+    else:
+        raw, failures = _load(str(store.path), store.version())
     if raw.empty:
         st.info("No pipeline data yet. Sync to fetch the last 90 days of GitHub Actions runs.")
         return
