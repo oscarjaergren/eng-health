@@ -2,7 +2,8 @@
 # Python's version is in .python-version and Rust's in rust-toolchain.toml, which uv, rustup and
 # the Dockerfile read too. Python packages, including ruff and mypy, are pinned by uv.lock.
 #
-# Setup: mise run setup. Updates: `mise outdated`.
+# Setup: mise run setup. Updates: `mise outdated`. After changing [tools], run
+# `mise lock --platform linux-x64`: CI installs with --locked and needs every download URL.
 
 # CI runs the same mise (its version is set in .github/workflows/ci.yml).
 min_version = "2026.8.9"
