@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from pr_analytics import pipelines as pl
+from pr_analytics.mock import FLAKY_TESTS, mock_pipelines
 
 from .seed import WritableStore
 from .test_app import run
@@ -121,5 +122,17 @@ def test_pipelines_view_without_data(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_pipelines_view_in_sample_mode() -> None:
     at = run()
     at.sidebar.radio[0].set_value("Pipelines").run()
-    assert not at.exception
-    assert any("GitHub Actions" in i.value for i in at.info)
+    assert not at.exception, at.exception
+    assert [t.label for t in at.tabs] == ["Overview", "Slow", "Reruns", "Flaky"]
+    flaky_jobs, flaky_tests = at.metric[3].value.split(" / ")
+    assert int(flaky_jobs) > 0 and int(flaky_tests) > 0
+
+
+def test_sample_pipelines_cover_every_view() -> None:
+    rows, failure_rows = mock_pipelines()
+    jobs, failures = pl.prepare(pd.DataFrame(rows)), pd.DataFrame(failure_rows)
+    att = pl.attempts(jobs)
+    tests = pl.flaky_tests(failures, att)
+    assert set(tests["test_id"]) == set(FLAKY_TESTS)  # broken tests never pass, so never flaky
+    assert not pl.rerun_cost(att).empty and not pl.flaky_jobs(jobs).empty
+    assert 0 < pl.failure_rate(att)["failed"].mean() < 0.5
