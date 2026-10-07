@@ -1,5 +1,0 @@
-[server]
-# Streamlit opening a browser itself crashes the process inside sandboxed
-# editors (Flatpak VS Code segfaults). Open http://localhost:8501 yourself;
-# the VS Code launch configs do it for you.
-headless = true

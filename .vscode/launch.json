@@ -4,40 +4,13 @@
         {
             "name": "Dashboard",
             "type": "debugpy",
-            "request": "launch",
-            "module": "streamlit",
-            "args": [
-                "run",
-                "dashboard_main.py"
-            ],
-            "envFile": "${workspaceFolder}/.env",
-            "justMyCode": true,
-            "console": "internalConsole",
-            "serverReadyAction": {
-                "pattern": "Local URL: (https?://\\S+)",
-                "uriFormat": "%s",
-                "action": "openExternally"
-            }
-        },
-        {
-            "name": "Dashboard (sample data)",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "streamlit",
-            "args": [
-                "run",
-                "dashboard_main.py"
-            ],
-            "env": {
-                "MOCK_MODE": "true"
+            "request": "attach",
+            "connect": {
+                "host": "127.0.0.1",
+                "port": 5678
             },
-            "justMyCode": true,
-            "console": "internalConsole",
-            "serverReadyAction": {
-                "pattern": "Local URL: (https?://\\S+)",
-                "uriFormat": "%s",
-                "action": "openExternally"
-            }
+            "preLaunchTask": "Dashboard server",
+            "justMyCode": true
         }
     ]
 }

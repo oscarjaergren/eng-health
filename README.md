@@ -91,6 +91,9 @@ ruff check . && ruff format --check . && mypy && pytest
 cd sync && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
+In VS Code, F5 starts the dashboard with the debugger attached. With Flatpak VS Code it
+runs on the host, because pyarrow crashes inside the Flatpak sandbox.
+
 - `sync/` is `prsync`: GitHub over GraphQL (a page of PRs arrives with its reviews and
   comments), Azure DevOps over REST, and the incremental sync into SQLite.
 - `pr_analytics/` is the dashboard: `store.py` reads the database, `metrics.py` holds
