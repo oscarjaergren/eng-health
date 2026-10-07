@@ -4,8 +4,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+use eng_health::model::PullRequest;
 use pretty_assertions::assert_eq;
-use prsync::model::PullRequest;
 use serde_json::Value;
 
 fn expected_files() -> Vec<PathBuf> {

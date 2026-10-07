@@ -29,7 +29,7 @@ impl Http {
     /// Only if the TLS backend cannot initialise, which is a build problem.
     #[must_use]
     pub fn new(label: &'static str, mut headers: HeaderMap, forbidden_is_auth: bool) -> Self {
-        headers.insert(USER_AGENT, HeaderValue::from_static("prsync"));
+        headers.insert(USER_AGENT, HeaderValue::from_static("eng-health"));
         let client = Client::builder()
             .default_headers(headers)
             .gzip(true)

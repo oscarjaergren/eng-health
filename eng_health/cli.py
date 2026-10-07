@@ -1,4 +1,4 @@
-"""Command line: export stored PRs to CSV. Syncing is done by `prsync` (see sync/)."""
+"""Command line: export stored PRs to CSV. Syncing is done by `eng-health` (see sync/)."""
 
 from __future__ import annotations
 

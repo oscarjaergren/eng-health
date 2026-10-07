@@ -1,6 +1,6 @@
 *
 !requirements.txt
-!pr_analytics/
+!eng_health/
 !main.py
 !dashboard_main.py
 !sync/Cargo.toml

@@ -1,6 +1,7 @@
 """Settings the dashboard needs, from environment variables (and `.env`).
 
-prsync reads the same variables and validates the ones only it uses.
+The sync engine (`eng-health`, in sync/) reads the same variables and validates the
+ones only it uses.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ class Settings:
 
     @property
     def db_path(self) -> Path:
-        return self.data_dir / "pr_analytics.db"
+        return self.data_dir / "eng_health.db"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:

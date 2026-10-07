@@ -164,7 +164,7 @@ BROKEN_TESTS = ["tests.test_store::test_migration", "ParserTests.Parses_unicode"
 def mock_pipelines(
     seed: int = 7, runs: int = 300, now: datetime | None = None
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Rows shaped like prsync's `pipeline_jobs` and `test_failures` tables."""
+    """Rows shaped like eng-health's `pipeline_jobs` and `test_failures` tables."""
     rng = random.Random(seed)
     now = now or datetime.now(UTC)
     jobs: list[dict[str, Any]] = []

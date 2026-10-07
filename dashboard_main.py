@@ -5,7 +5,7 @@ import sys
 
 from streamlit import runtime
 
-from pr_analytics.dashboard.app import main
+from eng_health.dashboard.app import main
 
 if runtime.exists():
     main()

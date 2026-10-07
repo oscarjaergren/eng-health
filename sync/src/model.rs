@@ -1,7 +1,7 @@
 //! The pull request record shared with the Python dashboard.
 //!
 //! Serialises to exactly the JSON that `PullRequest.to_dict()` in
-//! `pr_analytics/models.py` produces; `testdata/expected` holds the reference.
+//! `eng_health/models.py` produces; `testdata/expected` holds the reference.
 
 use std::collections::BTreeMap;
 use std::fmt;

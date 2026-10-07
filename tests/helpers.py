@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from pr_analytics.models import PullRequest, State
+from eng_health.models import PullRequest, State
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 

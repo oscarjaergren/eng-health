@@ -41,7 +41,7 @@ impl Report {
     }
 }
 
-/// Emitted as the sync runs; `prsync --progress json` prints one per line.
+/// Emitted as the sync runs; `eng-health --progress json` prints one per line.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Event {

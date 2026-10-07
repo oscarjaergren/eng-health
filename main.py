@@ -2,6 +2,6 @@
 
 import sys
 
-from pr_analytics.cli import main
+from eng_health.cli import main
 
 sys.exit(main())

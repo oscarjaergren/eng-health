@@ -1,5 +1,5 @@
 # Build the sync engine. Same Debian release as the runtime image, so glibc matches.
-FROM rust:1-slim-trixie AS prsync
+FROM rust:1-slim-trixie AS engine
 WORKDIR /src
 COPY sync/Cargo.toml sync/Cargo.lock ./
 # Build dependencies alone first so code changes don't rebuild them.
@@ -20,8 +20,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY --from=prsync /src/target/release/prsync /usr/local/bin/prsync
-COPY pr_analytics ./pr_analytics
+COPY --from=engine /src/target/release/eng-health /usr/local/bin/eng-health
+COPY eng_health ./eng_health
 COPY main.py dashboard_main.py ./
 # UID 1000 matches the usual host user, so the ./data bind mount stays writable.
 RUN useradd --create-home --uid 1000 app && mkdir -p /app/data && chown app /app/data

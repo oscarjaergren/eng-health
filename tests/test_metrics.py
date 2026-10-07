@@ -4,8 +4,8 @@ from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 
-from pr_analytics import metrics
-from pr_analytics.models import PullRequest, State
+from eng_health import metrics
+from eng_health.models import PullRequest, State
 
 T0 = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
 

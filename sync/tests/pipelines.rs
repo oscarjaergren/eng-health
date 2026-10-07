@@ -5,12 +5,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{Duration as Days, Utc};
-use prsync::config::{GitHubSettings, OwnerType};
-use prsync::pipelines::{self, Job};
-use prsync::rules::parse_time;
-use prsync::source::github::GitHub;
-use prsync::store::Store;
-use prsync::sync::{Event, Options};
+use eng_health::config::{GitHubSettings, OwnerType};
+use eng_health::pipelines::{self, Job};
+use eng_health::rules::parse_time;
+use eng_health::source::github::GitHub;
+use eng_health::store::Store;
+use eng_health::sync::{Event, Options};
 use serde_json::{Value, json};
 use wiremock::matchers::{body_string_contains, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -85,7 +85,7 @@ fn store() -> (tempfile::TempDir, Arc<Mutex<Store>>) {
     (dir, Arc::new(Mutex::new(store)))
 }
 
-async fn sync(gh: &GitHub, store: &Arc<Mutex<Store>>) -> prsync::sync::Report {
+async fn sync(gh: &GitHub, store: &Arc<Mutex<Store>>) -> eng_health::sync::Report {
     let quiet = |_: Event| {};
     let opts = Options {
         full: false,
@@ -166,8 +166,8 @@ async fn enterprise_rest_base_is_derived_from_graphql_url() {
         api_url: url.clone(),
     };
     let gh = GitHub::with_endpoint(settings, &url, Duration::from_millis(1));
-    let repo = prsync::model::Repo {
-        platform: prsync::model::Platform::Github,
+    let repo = eng_health::model::Repo {
+        platform: eng_health::model::Platform::Github,
         id: "7".into(),
         name: "web".into(),
         raw: Value::Null,

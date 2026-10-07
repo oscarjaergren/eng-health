@@ -1,11 +1,11 @@
-"""The dashboard's reads. Write rules belong to prsync and are tested in sync/tests."""
+"""The dashboard's reads. Write rules belong to eng-health and are tested in sync/tests."""
 
 import sqlite3
 from pathlib import Path
 
 import pytest
 
-from pr_analytics.store import SCHEMA_VERSION, SchemaError, Store
+from eng_health.store import SCHEMA_VERSION, SchemaError, Store
 
 from .helpers import NOW, make_pr
 from .seed import WritableStore

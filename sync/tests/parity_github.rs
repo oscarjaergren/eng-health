@@ -4,10 +4,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use prsync::model::{Platform, Repo};
-use prsync::source::People;
-use prsync::source::github::convert;
-use prsync::source::github::types::PrNode;
+use eng_health::model::{Platform, Repo};
+use eng_health::source::People;
+use eng_health::source::github::convert;
+use eng_health::source::github::types::PrNode;
 use serde_json::Value;
 
 mod support;

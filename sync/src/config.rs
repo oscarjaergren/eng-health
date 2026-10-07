@@ -1,5 +1,5 @@
 //! Settings from environment variables. Same names and rules as
-//! `pr_analytics/config.py`, so one `.env` serves both.
+//! `eng_health/config.py`, so one `.env` serves both.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -137,7 +137,7 @@ impl Settings {
 
     #[must_use]
     pub fn db_path(&self) -> PathBuf {
-        self.data_dir.join("pr_analytics.db")
+        self.data_dir.join("eng_health.db")
     }
 }
 
@@ -156,7 +156,7 @@ mod tests {
     fn defaults() {
         let s = Settings::from_env(&env(&[])).unwrap();
         assert!(s.azure.is_none() && s.github.is_none());
-        assert_eq!(s.db_path(), PathBuf::from("data/pr_analytics.db"));
+        assert_eq!(s.db_path(), PathBuf::from("data/eng_health.db"));
         assert_eq!(s.max_workers, 8);
     }
 

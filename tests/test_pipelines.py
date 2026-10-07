@@ -7,8 +7,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pr_analytics import pipelines as pl
-from pr_analytics.mock import FLAKY_TESTS, mock_pipelines
+from eng_health import pipelines as pl
+from eng_health.mock import FLAKY_TESTS, mock_pipelines
 
 from .seed import WritableStore
 from .test_app import run
@@ -91,7 +91,7 @@ def live(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_pipelines_view_renders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     live(monkeypatch)
-    WritableStore(tmp_path / "pr_analytics.db").upsert_jobs(ROWS)
+    WritableStore(tmp_path / "eng_health.db").upsert_jobs(ROWS)
     at = run()
     at.sidebar.radio[0].set_value("Pipelines").run()
     assert not at.exception, at.exception
@@ -103,7 +103,7 @@ def test_pipelines_view_renders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 
 def test_flaky_tests_view(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     live(monkeypatch)
-    db = WritableStore(tmp_path / "pr_analytics.db")
+    db = WritableStore(tmp_path / "eng_health.db")
     db.upsert_jobs(ROWS)
     db.upsert_test_failures([("1", 1, "Api.Flaky")])
     at = run()

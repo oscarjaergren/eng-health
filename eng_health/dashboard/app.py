@@ -78,7 +78,7 @@ def _sync_status(settings: Settings, store: Store, slot: DeltaGenerator) -> None
 
 
 def main() -> None:
-    st.set_page_config(page_title="PR Analytics", page_icon="📊", layout="wide")
+    st.set_page_config(page_title="Engineering health", page_icon="📊", layout="wide")
 
     try:
         settings = Settings.from_env()
