@@ -1,0 +1,11 @@
+style = "conventional"
+
+# Types are lowercase (feat:), so the capitalisation rule is off.
+subject_capitalized = false
+
+# Generous, but catches a subject line that should have been a body.
+subject_length = 90
+line_length = 100
+
+# The defaults leave out build and ci, which toolchain and workflow changes need.
+allowed_types = ["feat", "fix", "refactor", "perf", "test", "docs", "build", "ci", "chore", "style", "revert"]

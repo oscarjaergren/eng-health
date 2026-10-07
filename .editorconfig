@@ -1,0 +1,24 @@
+# Whitespace rules for every file type; ruff and rustfmt own the rest of Python and Rust style.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{py,rs}]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false
+
+# Captured API payloads and test reports, kept exactly as the services produce them.
+[testdata/**]
+charset = unset
+end_of_line = unset
+indent_style = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
