@@ -1,53 +1,53 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "Dashboard server",
-            "detail": "Streamlit with the debugger listening on 5678. Runs on the host when VS Code is a Flatpak, where pyarrow crashes inside the sandbox.",
-            "type": "process",
-            "command": "sh",
-            "args": [
-                "-c",
-                "if [ -n \"$FLATPAK_ID\" ]; then exec flatpak-spawn --host --watch-bus --directory=\"$PWD\" \"$@\"; else exec \"$@\"; fi",
-                "sh",
-                ".venv/bin/python",
-                "-m",
-                "debugpy",
-                "--listen",
-                "127.0.0.1:5678",
-                "-m",
-                "streamlit",
-                "run",
-                "dashboard_main.py"
-            ],
-            "isBackground": true,
-            "problemMatcher": {
-                "owner": "streamlit",
-                "pattern": {
-                    "regexp": "^never-matches$"
-                },
-                "background": {
-                    "activeBegin": true,
-                    "beginsPattern": "^never-matches$",
-                    "endsPattern": "You can now view your Streamlit app"
-                }
-            }
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Dashboard server",
+      "detail": "Streamlit with the debugger listening on 5678. Runs on the host when VS Code is a Flatpak, where pyarrow crashes inside the sandbox.",
+      "type": "process",
+      "command": "sh",
+      "args": [
+        "-c",
+        "if [ -n \"$FLATPAK_ID\" ]; then exec flatpak-spawn --host --watch-bus --directory=\"$PWD\" \"$@\"; else exec \"$@\"; fi",
+        "sh",
+        ".venv/bin/python",
+        "-m",
+        "debugpy",
+        "--listen",
+        "127.0.0.1:5678",
+        "-m",
+        "streamlit",
+        "run",
+        "dashboard_main.py"
+      ],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "streamlit",
+        "pattern": {
+          "regexp": "^never-matches$"
         },
-        {
-            "label": "Check",
-            "type": "shell",
-            "command": "ruff check . && ruff format --check . && mypy && pytest && cd sync && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
-            "group": {
-                "kind": "test",
-                "isDefault": true
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Sync",
-            "type": "shell",
-            "command": "cargo run --release --manifest-path sync/Cargo.toml -- sync",
-            "problemMatcher": []
+        "background": {
+          "activeBegin": true,
+          "beginsPattern": "^never-matches$",
+          "endsPattern": "You can now view your Streamlit app"
         }
-    ]
+      }
+    },
+    {
+      "label": "Check",
+      "type": "shell",
+      "command": "ruff check . && ruff format --check . && mypy && pytest && cd sync && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Sync",
+      "type": "shell",
+      "command": "cargo run --release --manifest-path sync/Cargo.toml -- sync",
+      "problemMatcher": []
+    }
+  ]
 }

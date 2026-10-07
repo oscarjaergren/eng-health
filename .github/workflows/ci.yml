@@ -10,20 +10,22 @@ permissions:
   contents: read
 
 jobs:
+  # The commit-stage git hooks, so a commit made with --no-verify still can't land.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - run: mise run lint
+
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: requirements*.txt
-      - run: pip install -r requirements-dev.txt
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: mypy
-      - run: pytest --cov --cov-report=term-missing --junitxml=test-results/pytest.xml
+      - uses: jdx/mise-action@v5
+      - run: uv sync --locked
+      - run: uv run --locked mypy
+      - run: uv run --locked pytest --cov --cov-report=term-missing --junitxml=test-results/pytest.xml
       # The Pipelines view reads these to find flaky tests, including in this repo.
       - uses: actions/upload-artifact@v7
         if: always()
@@ -38,9 +40,8 @@ jobs:
         working-directory: sync
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      # The version, clippy and rustfmt come from rust-toolchain.toml.
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: sync
@@ -55,12 +56,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.14"
-      - run: pip install pip-audit bandit
-      - run: pip-audit -r requirements.txt
-      - run: bandit -r eng_health -ll
+      - uses: jdx/mise-action@v5
+      # The exported requirements are fully resolved and hashed, so pip-audit needs no resolver.
+      - run: |
+          uv export --locked --no-dev --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/req.txt"
+          uv run --locked pip-audit --strict --disable-pip -r "$RUNNER_TEMP/req.txt"
+      - run: uv run --locked bandit -r eng_health -ll
 
   docker:
     runs-on: ubuntu-latest

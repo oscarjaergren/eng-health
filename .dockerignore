@@ -1,5 +1,8 @@
 *
-!requirements.txt
+!.python-version
+!pyproject.toml
+!uv.lock
+!rust-toolchain.toml
 !eng_health/
 !main.py
 !dashboard_main.py

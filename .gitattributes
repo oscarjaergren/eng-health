@@ -1,0 +1,2 @@
+# LF everywhere, so formatters and checks behave the same on every OS.
+* text=auto eol=lf

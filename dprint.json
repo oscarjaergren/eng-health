@@ -1,0 +1,14 @@
+{
+  "markdown": {
+    "emphasisKind": "asterisks"
+  },
+  "excludes": [
+    "testdata/**",
+    "sync/target/**",
+    ".venv/**"
+  ],
+  "plugins": [
+    "npm:@dprint/json@0.23.0",
+    "npm:@dprint/markdown@0.22.1"
+  ]
+}

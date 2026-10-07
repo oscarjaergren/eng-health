@@ -1,15 +1,167 @@
+# Git hooks, run by prek (https://prek.j178.dev). Setup: mise run setup.
+# CI runs `mise run lint`, which is `prek run --all-files`, so every commit-stage hook is enforced
+# there too.
+#
+# Hooks verify and never rewrite files; formatting happens at edit time (scripts/format.sh).
+# fail_fast is off, so one run reports everything. Tools run through `mise exec` or
+# `uv run --locked`, so a missing tool fails instead of falling back to PATH.
+
+minimum_pre_commit_version: "3.2.0"
+fail_fast: false
+
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_stages: [pre-commit]
+
+exclude: ^testdata/
+
 repos:
+  # --- hygiene: built into prek, nearly free -----------------------------------------------------
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
       - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-merge-conflict
+        # By default it only fires mid-merge, and misses markers left after a resolve.
+        args: [--assume-in-merge]
+      - id: check-case-conflict
+      - id: check-json
+        # VS Code's files are JSONC, with comments; dprint checks them instead.
+        exclude: ^\.vscode/
+      - id: check-yaml
+      - id: check-toml
+      - id: forbid-submodules
+      - id: mixed-line-ending
+        args: [--fix=no]
+      - id: detect-private-key
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.10
+  # --- local tools, pinned by .config/mise.toml and uv.lock --------------------------------------
+  - repo: local
     hooks:
+      - id: gitleaks
+        name: gitleaks (secret scan)
+        description: Scans staged changes. Once a secret is pushed, rotation is the only fix.
+        entry: mise exec -- gitleaks git --staged --redact --no-banner --verbose
+        language: system
+        pass_filenames: false
+
+      - id: typos
+        name: typos (spelling)
+        entry: mise exec -- typos --force-exclude
+        language: system
+
+      - id: editorconfig-checker
+        name: editorconfig-checker
+        # IndentSize rejects aligned continuation lines that the formatters accept.
+        entry: mise exec -- ec -disable-indent-size
+        language: system
+
+      - id: actionlint
+        name: actionlint (workflows)
+        entry: mise exec -- actionlint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+
+      - id: hadolint
+        name: hadolint (Dockerfile)
+        entry: mise exec -- hadolint
+        language: system
+        files: (^|/)Dockerfile$
+
+      - id: dprint-check
+        name: dprint (markdown, json)
+        description: Verifies only. Fix with scripts/format.sh
+        entry: mise exec -- dprint check
+        language: system
+        files: \.(md|json)$
+
       - id: ruff-check
-        args: [--fix]
+        name: ruff check
+        entry: mise exec -- uv run --locked ruff check --no-fix
+        language: system
+        types: [python]
+
       - id: ruff-format
+        name: ruff format
+        description: Verifies only. Fix with scripts/format.sh
+        entry: mise exec -- uv run --locked ruff format --check
+        language: system
+        types: [python]
+
+      - id: cargo-fmt
+        name: cargo fmt
+        description: Verifies only. Fix with scripts/format.sh
+        entry: mise exec -- cargo fmt --manifest-path sync/Cargo.toml --check
+        language: system
+        files: ^sync/.*\.rs$
+        pass_filenames: false
+
+      - id: uv-lock
+        name: uv.lock matches pyproject.toml
+        entry: mise exec -- uv lock --check
+        language: system
+        files: ^(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+
+      # Without the import, a CLAUDE.md silently replaces AGENTS.md for Claude Code.
+      - id: claude-md-imports-agents
+        name: CLAUDE.md imports AGENTS.md
+        entry: '@AGENTS\.md'
+        language: pygrep
+        args: [--negate]
+        files: (^|/)CLAUDE(\.local)?\.md$
+
+      - id: doc-tasks
+        name: docs name only tasks that exist
+        entry: mise exec -- scripts/check-doc-tasks.sh
+        language: system
+        files: (\.md|mise\.toml)$
+        pass_filenames: false
+
+  # --- commit-msg --------------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: committed
+        name: committed (conventional commits)
+        # Merge commits pass: git writes their message, and squash merging keeps them off main.
+        entry: >-
+          sh -c 'git rev-parse -q --verify MERGE_HEAD >/dev/null
+          || exec mise exec -- committed --commit-file "$1"' --
+        language: system
+        stages: [commit-msg]
+        always_run: true
+
+  # --- pre-push: slower, whole repo --------------------------------------------------------------
+  # Each has a CI counterpart, because `git push --no-verify` skips them.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: mise exec -- uv run --locked mypy
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
+      - id: clippy
+        name: cargo clippy (warnings are errors)
+        entry: mise exec -- cargo clippy --manifest-path sync/Cargo.toml --all-targets -- -D warnings
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
+      - id: test
+        name: tests (Python and Rust)
+        entry: mise run test
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
+      - id: lychee
+        name: lychee (link check)
+        entry: mise exec -- lychee --no-progress
+        language: system
+        stages: [pre-push]
+        files: \.md$

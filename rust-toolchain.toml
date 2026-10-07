@@ -1,0 +1,5 @@
+# The Rust version for every build: rustup, mise, CI and the Dockerfile all read this file.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
