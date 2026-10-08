@@ -6,34 +6,48 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege; a job that needs more asks for it.
 permissions:
   contents: read
+
+# A newer push to the same branch makes the running one irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # The commit-stage git hooks, so a commit made with --no-verify still can't land.
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          version: 2026.8.9  # the same mise as min_version in .config/mise.toml
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.8.9 # the same mise as min_version in .config/mise.toml
       - run: mise run lint
+      # A pre-push hook, which `mise run lint` skips; without this, --no-verify could ship it.
+      - run: prek run lychee --all-files --hook-stage pre-push
 
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          version: 2026.8.9  # the same mise as min_version in .config/mise.toml
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.8.9 # the same mise as min_version in .config/mise.toml
       - run: uv sync --locked
       - run: uv run --locked mypy
       - run: uv run --locked vulture
       - run: uv run --locked deptry .
       - run: uv run --locked pytest --cov --cov-report=term-missing --junitxml=test-results/pytest.xml
+      # Reported, not gated: a line a test runs without checking still counts as covered.
+      - run: uv run --locked coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
       # The Pipelines view reads these to find flaky tests, including in this repo.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: test-results
@@ -45,10 +59,12 @@ jobs:
       run:
         working-directory: sync
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The version, clippy and rustfmt come from rust-toolchain.toml.
       - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: sync
       - run: cargo fmt --check
@@ -58,9 +74,9 @@ jobs:
       - run: cargo doc --no-deps --document-private-items
         env:
           RUSTDOCFLAGS: -D warnings
-      - uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: 2026.8.9  # the same mise as min_version in .config/mise.toml
+          version: 2026.8.9 # the same mise as min_version in .config/mise.toml
           install_args: github:Boshen/cargo-shear github:EmbarkStudios/cargo-deny
       - run: cargo-shear
       - run: cargo-deny check
@@ -68,19 +84,38 @@ jobs:
   security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          version: 2026.8.9  # the same mise as min_version in .config/mise.toml
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.8.9 # the same mise as min_version in .config/mise.toml
       # The exported requirements are fully resolved and hashed, so pip-audit needs no resolver.
       - run: |
           uv export --locked --no-dev --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/req.txt"
           uv run --locked pip-audit --strict --disable-pip -r "$RUNNER_TEMP/req.txt"
 
+  # The commit hook only scans staged changes. A secret committed and later deleted still needs
+  # rotating, so the whole history is scanned too. .gitleaksignore lists reviewed false positives.
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.8.9 # the same mise as min_version in .config/mise.toml
+          install_args: gitleaks
+      - run: gitleaks git --redact --no-banner --verbose
+
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: docker build -t eng-health .
       - run: docker run --rm eng-health eng-health --version
       - name: Dashboard starts and answers its health check

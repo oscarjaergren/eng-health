@@ -62,6 +62,12 @@ repos:
         language: system
         files: ^\.github/workflows/.*\.ya?ml$
 
+      - id: zizmor
+        name: zizmor (workflow security)
+        entry: mise exec -- zizmor --offline
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+
       - id: shellcheck
         name: shellcheck
         entry: mise exec -- shellcheck
