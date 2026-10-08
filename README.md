@@ -90,7 +90,8 @@ mise run format   # fix formatting; the git hooks only verify it
 ```
 
 `mise tasks` lists every command. Commit messages are conventional commits (`feat:`,
-`fix:`), checked by a git hook.
+`fix:`), checked by a git hook. [AGENTS.md](AGENTS.md) has the rules and the traps, for
+people and coding agents alike; [docs/](docs/build-gates.md) explains the gates.
 
 In VS Code, F5 starts the dashboard with the debugger attached. With Flatpak VS Code it
 runs on the host, because pyarrow crashes inside the Flatpak sandbox.
