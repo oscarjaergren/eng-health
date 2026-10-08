@@ -69,7 +69,7 @@ def job_durations(jobs: pd.DataFrame) -> pd.DataFrame:
 def rerun_cost(att: pd.DataFrame) -> pd.DataFrame:
     """Hours spent in attempts that were later re-run, per workflow and week."""
     redone = att[~att["final"]]
-    out = redone.groupby(["week", "pipeline"], as_index=False)["minutes"].sum()
+    out = redone.groupby(["week", "pipeline"], as_index=False).agg(minutes=("minutes", "sum"))
     return out.assign(hours=out["minutes"] / 60).drop(columns="minutes")
 
 

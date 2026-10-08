@@ -7,6 +7,7 @@ import sqlite3
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
+from typing import Any
 
 from eng_health.models import PullRequest
 from eng_health.store import Store
@@ -58,7 +59,7 @@ class WritableStore(Store):
             c.execute("DELETE FROM people")
             c.execute("DELETE FROM sync_state")
 
-    def upsert_jobs(self, jobs: Iterable[dict]) -> None:
+    def upsert_jobs(self, jobs: Iterable[dict[str, Any]]) -> None:
         """Rows shaped like eng-health's `pipeline_jobs` (see sync/src/store.rs)."""
         rows = list(jobs)
         with self._write() as c:

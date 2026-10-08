@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 import pandas as pd
 import plotly.express as px
@@ -19,10 +20,15 @@ log = logging.getLogger(__name__)
 
 @st.cache_data(show_spinner=False)
 def _load(db_path: str, version: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    # `version` is only there to change the cache key after a sync.
+    # `version` changes the cache key after a sync.
     store = Store(db_path)
     jobs, failures = store.pipeline_jobs(), store.test_failures()
-    log.info("loaded %d pipeline jobs and %d test failures", len(jobs), len(failures))
+    log.info(
+        "loaded %d pipeline jobs and %d test failures (data version %d)",
+        len(jobs),
+        len(failures),
+        version,
+    )
     return jobs, failures
 
 
@@ -30,6 +36,7 @@ def _load(db_path: str, version: int) -> tuple[pd.DataFrame, pd.DataFrame]:
 def _sample(day: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     # Keyed by day so the sample data stays anchored to "now".
     jobs, failures = mock_pipelines()
+    log.info("generated %d sample pipeline jobs for %s", len(jobs), day)
     return pd.DataFrame(jobs), pd.DataFrame(failures)
 
 
@@ -176,6 +183,6 @@ def render(store: Store | None, github: bool) -> None:
             )
 
 
-def _minutes_cols() -> dict:
+def _minutes_cols() -> dict[str, Any]:
     fmt = st.column_config.NumberColumn(format="%.1f")
     return {"Median (min)": fmt, "90th pct (min)": fmt}

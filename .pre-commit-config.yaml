@@ -149,6 +149,22 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: vulture
+        name: vulture (unused code)
+        entry: mise exec -- uv run --locked vulture
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
+      - id: deptry
+        name: deptry (unused and undeclared dependencies)
+        entry: mise exec -- uv run --locked deptry .
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
       - id: clippy
         name: cargo clippy (warnings are errors)
         entry: mise exec -- cargo clippy --manifest-path sync/Cargo.toml --all-targets -- -D warnings

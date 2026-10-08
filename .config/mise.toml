@@ -51,6 +51,8 @@ description = "What CI checks: lint, types, clippy and every test"
 run = [
   "mise run lint",
   "uv run --locked mypy",
+  "uv run --locked vulture",
+  "uv run --locked deptry .",
   "cargo clippy --manifest-path sync/Cargo.toml --all-targets -- -D warnings",
   "mise run test",
 ]

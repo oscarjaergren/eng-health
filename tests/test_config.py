@@ -5,7 +5,8 @@ from eng_health.config import ConfigError, Settings
 
 def test_no_credentials_means_no_platforms() -> None:
     s = Settings.from_env({})
-    assert s.platforms == [] and not s.mock
+    assert s.platforms == []
+    assert not s.mock
     assert str(s.db_path) == "data/eng_health.db"
 
 

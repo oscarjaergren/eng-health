@@ -86,11 +86,14 @@ def run(
     reports: list[Report] = []
     # stderr goes to a file: if it were a pipe nobody reads until the end, a
     # chatty run could fill it and block eng-health.
-    with tempfile.TemporaryFile("w+") as err:
-        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=err, text=True, env=env)
+    with (
+        tempfile.TemporaryFile("w+") as err,
+        # The context closes the stdout pipe; without it the descriptor leaks until GC.
+        subprocess.Popen(args, stdout=subprocess.PIPE, stderr=err, text=True, env=env) as proc,
+    ):
         try:
-            assert proc.stdout is not None
-            for line in proc.stdout:
+            # Never empty: stdout=PIPE always gives a stream; `or ()` only narrows the type.
+            for line in proc.stdout or ():
                 try:
                     event = json.loads(line)
                 except json.JSONDecodeError:

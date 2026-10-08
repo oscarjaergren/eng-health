@@ -138,7 +138,8 @@ def repo_summary(df: pd.DataFrame) -> pd.DataFrame:
 
 def monthly_flow(df: pd.DataFrame, tz: str = "UTC") -> pd.DataFrame:
     def month(col: str) -> pd.Series:
-        return df[col].dt.tz_convert(tz).dt.tz_localize(None).dt.to_period("M")
+        period: pd.Series = df[col].dt.tz_convert(tz).dt.tz_localize(None).dt.to_period("M")
+        return period
 
     opened = df.groupby(month("created_at")).size().rename("Opened")
     merged = df[df["state"] == State.MERGED.value]
