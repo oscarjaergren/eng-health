@@ -3,7 +3,7 @@
 !pyproject.toml
 !uv.lock
 !rust-toolchain.toml
-!schema.sql
+!sync/schema.sql
 !eng_health/
 !main.py
 !dashboard_main.py

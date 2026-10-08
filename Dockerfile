@@ -1,10 +1,10 @@
 # Build the sync engine. Same Debian release as the runtime image, so glibc matches.
 # rustup installs the version in rust-toolchain.toml if the image's differs.
 FROM rust:1.99-slim-trixie AS engine
-# The repo's layout, because sync/ includes ../schema.sql and rustup reads ../rust-toolchain.toml.
+# The repo's layout, because rustup reads ../rust-toolchain.toml.
 WORKDIR /repo/sync
-COPY rust-toolchain.toml schema.sql /repo/
-COPY sync/Cargo.toml sync/Cargo.lock ./
+COPY rust-toolchain.toml /repo/
+COPY sync/Cargo.toml sync/Cargo.lock sync/schema.sql ./
 # Build dependencies alone first so code changes don't rebuild them.
 RUN mkdir src && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
     && cargo build --release --locked && rm -rf src
@@ -12,8 +12,6 @@ COPY sync/src ./src
 RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 
 FROM python:3.14.8-slim-trixie
-
-COPY --from=ghcr.io/astral-sh/uv:0.12.23 /uv /usr/local/bin/uv
 
 # UV_PYTHON_DOWNLOADS=never: if this image's Python stops matching .python-version, the
 # build fails instead of quietly downloading another one.
@@ -26,10 +24,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 COPY .python-version pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev
+# uv is mounted for this step only: the image doesn't need it to run.
+RUN --mount=from=ghcr.io/astral-sh/uv:0.12.23,source=/uv,target=/bin/uv \
+    uv sync --locked --no-dev
 
 COPY --from=engine /repo/sync/target/release/eng-health /usr/local/bin/eng-health
-COPY schema.sql ./
+COPY sync/schema.sql ./sync/
 COPY eng_health ./eng_health
 COPY main.py dashboard_main.py ./
 # UID 1000 matches the usual host user, so the ./data bind mount stays writable.

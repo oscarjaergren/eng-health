@@ -1,7 +1,7 @@
 """Reads the SQLite database that eng-health (sync/) writes.
 
 One row per PR keyed by platform, repository and number. eng-health is the only
-writer; the schema is schema.sql, which both sides run on open.
+writer; the schema is sync/schema.sql, which both sides run on open.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import pandas as pd
 from .models import PullRequest
 
 # The schema shared with the sync engine; it ends by setting user_version.
-_SCHEMA = (Path(__file__).resolve().parent.parent / "schema.sql").read_text()
+_SCHEMA = (Path(__file__).resolve().parent.parent / "sync" / "schema.sql").read_text()
 SCHEMA_VERSION = int(re.findall(r"PRAGMA user_version = (\d+);", _SCHEMA)[-1])
 
 

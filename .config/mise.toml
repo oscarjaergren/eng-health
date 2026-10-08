@@ -24,6 +24,7 @@ committed = "1.1.11"              # conventional commit messages
 jq = "1.8.2"                      # reads the agent hook's JSON payload
 "github:Boshen/cargo-shear" = "1.14.0"         # unused Rust dependencies
 "github:EmbarkStudios/cargo-deny" = "0.20.2"   # Rust advisories, licences and sources
+"github:sourcefrog/cargo-mutants" = "27.1.0"   # Rust mutation testing
 
 [settings]
 # Fail rather than silently using whatever happens to be on PATH.
@@ -65,6 +66,18 @@ run = [
 [tasks.dev]
 description = "Start the dashboard on http://localhost:8501"
 run = "uv run --locked streamlit run dashboard_main.py"
+
+[tasks.image]
+description = "Build the Docker image eng-health:latest"
+run = "docker build -t eng-health ."
+
+[tasks.image-check]
+description = "Run eng-health:latest and check health, user, contents and size (needs Docker)"
+run = "scripts/image-check.sh"
+
+[tasks.mutate]
+description = "Mutation test the Rust changed since origin/main, or the branch given"
+run = "scripts/mutate.sh"
 
 [tasks.sync]
 description = "Build the sync engine and sync; extra arguments go to it, e.g. '--only pipelines'"

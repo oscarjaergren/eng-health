@@ -67,6 +67,11 @@ def test_rerun_cost_and_flaky_jobs(jobs: pd.DataFrame) -> None:
     assert flaky[["name", "flaky_runs", "minutes_lost"]].values.tolist() == [["test", 1, 10.0]]
 
 
+def test_a_selection_without_failures_has_no_flaky_jobs() -> None:
+    # Used to crash: the join on an empty frame left "repository" as an index level too.
+    assert pl.flaky_jobs(pl.prepare(pd.DataFrame([job(1, 1, "success")]))).empty
+
+
 def test_flaky_tests(jobs: pd.DataFrame) -> None:
     failures = pd.DataFrame(
         [("1", 1, "Api.Retried"), ("1", 2, "Api.SameCommit")],

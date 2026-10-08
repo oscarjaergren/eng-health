@@ -76,8 +76,11 @@ def rerun_cost(att: pd.DataFrame) -> pd.DataFrame:
 def flaky_jobs(jobs: pd.DataFrame) -> pd.DataFrame:
     """Jobs that failed and then succeeded in a later attempt of the same run."""
     keys = [*RUN, "name"]
-    last_ok = jobs[jobs["conclusion"] == "success"].groupby(keys)["attempt"].max().rename("ok")
-    fails = jobs[jobs["conclusion"].isin(FAILED)].join(last_ok, on=keys, how="inner")
+    ok = jobs[jobs["conclusion"] == "success"]
+    last_ok = ok.groupby(keys, as_index=False).agg(ok=("attempt", "max"))
+    # merge, not join: an inner join on an empty frame takes the other side's index, and the
+    # groupby below then finds "repository" as both a column and an index level.
+    fails = jobs[jobs["conclusion"].isin(FAILED)].merge(last_ok, on=keys)
     fails = fails[fails["attempt"] < fails["ok"]]
     out = fails.groupby(["repository", "pipeline", "name"]).agg(
         flaky_runs=("run_id", "nunique"),
