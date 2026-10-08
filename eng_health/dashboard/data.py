@@ -31,7 +31,7 @@ def _load_store(
 @st.cache_data(show_spinner=False)
 def _load_mock(day: str) -> tuple[pd.DataFrame, dict[str, str]]:
     prs, people = mock_pull_requests()
-    log.info("generated %d sample PRs", len(prs))
+    log.info("generated %d sample PRs for %s", len(prs), day)
     return metrics.to_frame(prs, MOCK_ALIASES), people
 
 

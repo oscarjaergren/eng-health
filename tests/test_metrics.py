@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pandas as pd
 
@@ -10,8 +11,8 @@ from eng_health.models import PullRequest, State
 T0 = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
 
 
-def pr(number: int, **kw) -> PullRequest:
-    base = {
+def pr(number: int, **kw: Any) -> PullRequest:
+    base: dict[str, Any] = {
         "platform": "github",
         "repo_id": "1",
         "repository": "web",

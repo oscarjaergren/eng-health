@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pandas as pd
 import streamlit as st
@@ -72,7 +72,7 @@ def sidebar_filters(df: pd.DataFrame, people: dict[str, str], tz: str) -> Filter
         "Created between",
         value=(max(lo, _url_date("from", lo)), min(hi, _url_date("to", hi))),
         min_value=lo,
-        max_value=max(hi, date.today()),
+        max_value=max(hi, datetime.now(UTC).date()),
     )
     # While the user is mid-way through picking a range, only one date is set.
     start, end = picked if isinstance(picked, tuple) and len(picked) == 2 else (lo, hi)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -14,7 +15,9 @@ from .seed import WritableStore
 from .test_app import run
 
 
-def job(run_id: int, attempt: int, conclusion: str, name: str = "test", **kw: object) -> dict:
+def job(
+    run_id: int, attempt: int, conclusion: str, name: str = "test", **kw: object
+) -> dict[str, Any]:
     start = pd.Timestamp("2026-09-07T10:00:00Z") + pd.Timedelta(days=run_id, hours=attempt)
     row = {
         "key": f"github:1:{run_id}:{attempt}:{name}",
@@ -125,7 +128,8 @@ def test_pipelines_view_in_sample_mode() -> None:
     assert not at.exception, at.exception
     assert [t.label for t in at.tabs] == ["Overview", "Slow", "Reruns", "Flaky"]
     flaky_jobs, flaky_tests = at.metric[3].value.split(" / ")
-    assert int(flaky_jobs) > 0 and int(flaky_tests) > 0
+    assert int(flaky_jobs) > 0
+    assert int(flaky_tests) > 0
 
 
 def test_sample_pipelines_cover_every_view() -> None:
@@ -134,5 +138,6 @@ def test_sample_pipelines_cover_every_view() -> None:
     att = pl.attempts(jobs)
     tests = pl.flaky_tests(failures, att)
     assert set(tests["test_id"]) == set(FLAKY_TESTS)  # broken tests never pass, so never flaky
-    assert not pl.rerun_cost(att).empty and not pl.flaky_jobs(jobs).empty
+    assert not pl.rerun_cost(att).empty
+    assert not pl.flaky_jobs(jobs).empty
     assert 0 < pl.failure_rate(att)["failed"].mean() < 0.5

@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -46,7 +47,11 @@ def test_progress_reports_and_data(
     ("kwargs", "flag"), [({"full": True}, "--full"), ({"reset": True}, "--reset")]
 )
 def test_full_and_reset_flags(
-    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch, kwargs: dict, flag: str
+    tmp_path: Path,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    kwargs: dict[str, Any],
+    flag: str,
 ) -> None:
     args_file = tmp_path / "args"
     monkeypatch.setenv("FAKE_SYNC_ARGS_FILE", str(args_file))
@@ -59,11 +64,13 @@ def test_errors_and_config_problems(
 ) -> None:
     monkeypatch.setenv("FAKE_SYNC", "errors")
     result = sync.run(fake_binary(tmp_path), settings)
-    assert result.exit_code == 1 and "502" in result.reports[0].errors[0]
+    assert result.exit_code == 1
+    assert "502" in result.reports[0].errors[0]
 
     monkeypatch.setenv("FAKE_SYNC", "config")
     result = sync.run(fake_binary(tmp_path), settings)
-    assert result.exit_code == sync.EXIT_CONFIG and result.reports == []
+    assert result.exit_code == sync.EXIT_CONFIG
+    assert result.reports == []
     assert "GITHUB_OWNER" in result.stderr
 
 
@@ -76,7 +83,8 @@ def test_heavy_logging_does_not_block_and_is_forwarded(
     monkeypatch.setenv("FAKE_SYNC", "noisy")
     with caplog.at_level("INFO", logger="eng-health"):
         result = sync.run(fake_binary(tmp_path), settings)
-    assert result.ok and result.stderr.count("log line") == 20000
+    assert result.ok
+    assert result.stderr.count("log line") == 20000
     messages = [r.getMessage() for r in caplog.records]
     assert messages.count("log line") == 20000
     assert messages[0] == "running sync --progress json"

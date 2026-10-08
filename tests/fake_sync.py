@@ -13,6 +13,7 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -20,11 +21,11 @@ from tests.helpers import make_pr
 from tests.seed import WritableStore
 
 
-def emit(event: dict) -> None:
+def emit(event: dict[str, Any]) -> None:
     print(json.dumps(event), flush=True)
 
 
-def report(**fields: object) -> dict:
+def report(**fields: object) -> dict[str, Any]:
     base = {"type": "report", "platform": "github", "repositories": 1, "listed": 2, "saved": 2}
     return {**base, "incomplete": 0, "requests": 2, "interrupted": False, "errors": [], **fields}
 
@@ -38,7 +39,12 @@ def main() -> int:
         return 2
 
     if scenario == "wait_for_interrupt":
-        signal.signal(signal.SIGINT, lambda *_: (emit(report(interrupted=True)), sys.exit(130)))
+
+        def interrupted(*_: object) -> None:
+            emit(report(interrupted=True))
+            sys.exit(130)
+
+        signal.signal(signal.SIGINT, interrupted)
         emit({"type": "progress", "platform": "github", "fraction": 0.1, "message": "listing"})
         time.sleep(30)
         return 1

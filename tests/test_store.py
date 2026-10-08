@@ -1,6 +1,7 @@
 """The dashboard's reads. Write rules belong to eng-health and are tested in sync/tests."""
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -35,7 +36,8 @@ def test_version_follows_writes(tmp_path: Path) -> None:
 def test_newer_schema_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "db.sqlite"
     Store(path)
-    with sqlite3.connect(path) as c:
+    # closing(): a connection's own context manager commits but never closes.
+    with closing(sqlite3.connect(path)) as c:
         assert c.execute("PRAGMA user_version").fetchone() == (SCHEMA_VERSION,)
         c.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
     with pytest.raises(SchemaError):

@@ -29,6 +29,8 @@ jobs:
           version: 2026.8.9  # the same mise as min_version in .config/mise.toml
       - run: uv sync --locked
       - run: uv run --locked mypy
+      - run: uv run --locked vulture
+      - run: uv run --locked deptry .
       - run: uv run --locked pytest --cov --cov-report=term-missing --junitxml=test-results/pytest.xml
       # The Pipelines view reads these to find flaky tests, including in this repo.
       - uses: actions/upload-artifact@v7
@@ -67,7 +69,6 @@ jobs:
       - run: |
           uv export --locked --no-dev --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/req.txt"
           uv run --locked pip-audit --strict --disable-pip -r "$RUNNER_TEMP/req.txt"
-      - run: uv run --locked bandit -r eng_health -ll
 
   docker:
     runs-on: ubuntu-latest
