@@ -100,7 +100,7 @@ runs on the host, because pyarrow crashes inside the Flatpak sandbox.
 - `eng_health/` is the dashboard: `store.py` reads the database, `metrics.py` holds
   the calculations behind every chart (without Streamlit), `dashboard/` has one module per
   tab, `sync.py` runs the sync engine, and `mock.py` makes the sample data.
-- The two sides share the database schema (versioned with `PRAGMA user_version`) and the
-  PR record format. `testdata/` pins that format: raw API payloads with the records they
-  must produce. After an intended rule change, `UPDATE_GOLDENS=1 cargo test` rewrites
+- The two sides share the database schema, `schema.sql`, which both run on open (versioned
+  with `PRAGMA user_version`), and the PR record format. `testdata/` pins that format: raw
+  API payloads with the records they must produce. After an intended rule change, `UPDATE_GOLDENS=1 cargo test` rewrites
   the expected files; review the diff.

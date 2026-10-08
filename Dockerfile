@@ -1,8 +1,10 @@
 # Build the sync engine. Same Debian release as the runtime image, so glibc matches.
 # rustup installs the version in rust-toolchain.toml if the image's differs.
 FROM rust:1.99-slim-trixie AS engine
-WORKDIR /src
-COPY rust-toolchain.toml sync/Cargo.toml sync/Cargo.lock ./
+# The repo's layout, because sync/ includes ../schema.sql and rustup reads ../rust-toolchain.toml.
+WORKDIR /repo/sync
+COPY rust-toolchain.toml schema.sql /repo/
+COPY sync/Cargo.toml sync/Cargo.lock ./
 # Build dependencies alone first so code changes don't rebuild them.
 RUN mkdir src && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
     && cargo build --release --locked && rm -rf src
@@ -26,7 +28,8 @@ WORKDIR /app
 COPY .python-version pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev
 
-COPY --from=engine /src/target/release/eng-health /usr/local/bin/eng-health
+COPY --from=engine /repo/sync/target/release/eng-health /usr/local/bin/eng-health
+COPY schema.sql ./
 COPY eng_health ./eng_health
 COPY main.py dashboard_main.py ./
 # UID 1000 matches the usual host user, so the ./data bind mount stays writable.
