@@ -2,7 +2,7 @@
 //! one request per PR; incremental sync keeps that to new and changed PRs.
 
 mod convert;
-pub mod types;
+pub(crate) mod types;
 
 use std::time::Duration;
 
@@ -19,7 +19,7 @@ use crate::source::{People, Source, SourceError};
 pub use convert::convert;
 use types::{List, PullRequestInfo, RepoInfo, Thread};
 
-pub const API: &str = "https://dev.azure.com";
+pub(crate) const API: &str = "https://dev.azure.com";
 const API_VERSION: &str = "7.1";
 const PAGE_SIZE: usize = 100;
 

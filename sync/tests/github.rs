@@ -3,10 +3,10 @@
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
-use eng_health::config::{GitHubSettings, OwnerType};
-use eng_health::model::{Platform, Repo};
-use eng_health::source::github::GitHub;
-use eng_health::source::{Source, SourceError};
+use eng_health::github::GitHub;
+use eng_health::{GitHubSettings, OwnerType};
+use eng_health::{Platform, Repo};
+use eng_health::{Source, SourceError};
 use serde_json::{Value, json};
 use wiremock::matchers::{body_partial_json, body_string_contains, header, method};
 use wiremock::{Mock, MockServer, ResponseTemplate};

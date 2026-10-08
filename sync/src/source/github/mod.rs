@@ -2,7 +2,7 @@
 //! so a sync costs dozens of requests where REST needed several per PR.
 
 mod convert;
-pub mod types;
+pub(crate) mod types;
 
 use std::time::Duration;
 
@@ -20,7 +20,7 @@ use crate::source::{People, Source, SourceError};
 pub use convert::convert;
 use types::{PrNode, PullData, PullsData, RateLimit, ReposData, Response};
 
-pub const API: &str = "https://api.github.com/graphql";
+pub(crate) const API: &str = "https://api.github.com/graphql";
 
 /// PRs per page and items per nested list. Kept modest so each query stays
 /// cheap against GitHub's points budget; larger lists get a follow-up query.
@@ -120,7 +120,7 @@ impl GitHub {
     pub fn with_endpoint(settings: GitHubSettings, endpoint: &str, backoff: Duration) -> Self {
         let mut headers = HeaderMap::new();
         let mut auth = HeaderValue::from_str(&format!("Bearer {}", settings.token))
-            .expect("token is a valid header value");
+            .expect("config rejects tokens a header can't carry");
         auth.set_sensitive(true);
         headers.insert(AUTHORIZATION, auth);
         Self {

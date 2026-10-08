@@ -1,19 +1,25 @@
 //! Sync rules against an in-memory source, including the regressions where
 //! re-syncing erased review data.
 
-// The fake answers from memory, so its async methods have nothing to await.
-#![allow(clippy::unused_async_trait_impl)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "test helpers panic, like the tests that call them"
+)]
+#![expect(
+    clippy::unused_async_trait_impl,
+    reason = "the fake answers from memory, so its async methods have nothing to await"
+)]
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
-use eng_health::model::{Platform, PullRequest, Repo, State, Timestamp};
-use eng_health::rules::parse_time;
-use eng_health::source::{People, Source, SourceError};
-use eng_health::store::Store;
-use eng_health::sync::{Event, OVERLAP, Options, sync_platform};
+use eng_health::Store;
+use eng_health::parse_time;
+use eng_health::{Event, OVERLAP, Options, sync_platform};
+use eng_health::{People, Source, SourceError};
+use eng_health::{Platform, PullRequest, Repo, State, Timestamp};
 use tempfile::TempDir;
 
 #[derive(Clone)]
@@ -175,7 +181,7 @@ fn env() -> Env {
     }
 }
 
-async fn run(fake: &Fake, env: &Env, full: bool) -> eng_health::sync::Report {
+async fn run(fake: &Fake, env: &Env, full: bool) -> eng_health::Report {
     let quiet = |_: Event| {};
     let opts = Options {
         full,

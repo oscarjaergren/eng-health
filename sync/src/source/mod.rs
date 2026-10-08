@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 
 use crate::model::{Platform, PullRequest, Repo, Timestamp};
 
-pub mod azure;
-pub mod github;
+pub(crate) mod azure;
+pub(crate) mod github;
 
 /// Identity -> display name, filled in while converting.
 pub type People = BTreeMap<String, String>;
@@ -22,7 +22,7 @@ pub(crate) struct Responses {
 }
 
 impl Responses {
-    pub fn note(&mut self, who: &str, when: Option<Timestamp>) {
+    pub(crate) fn note(&mut self, who: &str, when: Option<Timestamp>) {
         let Some(when) = when else { return };
         if !self.times.contains_key(who) {
             self.order.push(who.to_owned());

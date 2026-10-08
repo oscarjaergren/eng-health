@@ -54,9 +54,16 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      # Broken links between doc comments, private items included.
+      - run: cargo doc --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - uses: jdx/mise-action@v5
         with:
-          manifest-path: sync/Cargo.toml
+          version: 2026.8.9  # the same mise as min_version in .config/mise.toml
+          install_args: github:Boshen/cargo-shear github:EmbarkStudios/cargo-deny
+      - run: cargo-shear
+      - run: cargo-deny check
 
   security:
     runs-on: ubuntu-latest

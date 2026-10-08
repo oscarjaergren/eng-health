@@ -8,7 +8,6 @@ license = "MIT"
 publish = false
 
 [dependencies]
-anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 futures = "0.3"
 quick-xml = "0.42"
@@ -32,8 +31,18 @@ tempfile = "3"
 
 [lints.rust]
 unsafe_code = "forbid"
+# Only what lib.rs re-exports may be pub; everything else is pub(crate), so visibility says
+# what the surface is.
+unreachable_pub = "warn"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
+# Expected failures are returned as errors. A panic is for a broken invariant and says which:
+# expect("why this can't fail"), never a bare unwrap. Tests may unwrap (clippy.toml).
+unwrap_used = "warn"
+# Suppress with #[expect(lint, reason = "...")]: it fails once the lint no longer fires,
+# so a stale suppression can't linger.
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"

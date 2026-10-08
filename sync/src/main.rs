@@ -4,11 +4,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use clap::{Parser, Subcommand, ValueEnum};
-use eng_health::config::Settings;
-use eng_health::source::azure::Azure;
-use eng_health::source::github::GitHub;
-use eng_health::store::Store;
-use eng_health::sync::{Event, Options, Report, sync_platform};
+use eng_health::Settings;
+use eng_health::Store;
+use eng_health::azure::Azure;
+use eng_health::github::GitHub;
+use eng_health::{Event, Options, Report, sync_platform};
 use tracing_subscriber::EnvFilter;
 
 /// Sync pull requests and GitHub Actions runs into the eng-health database.
@@ -98,7 +98,7 @@ async fn main() -> ExitCode {
 
 fn status(store: &Store, path: &Path) -> ExitCode {
     println!("{}", path.display());
-    for platform in ["azure_devops", "github", eng_health::pipelines::MODULE_KEY] {
+    for platform in ["azure_devops", "github", eng_health::PIPELINES_KEY] {
         match store.sync_state(platform) {
             Ok(s) => {
                 let when = s
@@ -171,7 +171,7 @@ async fn sync(
             results.push(sync_platform(&gh, &store, &opts).await);
         }
         if pipelines {
-            results.push(eng_health::pipelines::sync(&gh, &store, &opts).await);
+            results.push(eng_health::sync_pipelines(&gh, &store, &opts).await);
         }
     }
     let reports: Vec<Report> = match results.into_iter().collect() {

@@ -13,6 +13,8 @@ allow = [
 
 [bans]
 multiple-versions = "warn"
+# A "*" version requirement accepts any future major release.
+wildcards = "deny"
 
 [sources]
 unknown-registry = "deny"

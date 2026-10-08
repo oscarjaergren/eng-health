@@ -5,14 +5,14 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 #[derive(Debug, Deserialize)]
-pub struct List<T> {
+pub(crate) struct List<T> {
     #[serde(default = "Vec::new")]
     pub value: Vec<T>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RepoInfo {
+pub(crate) struct RepoInfo {
     pub id: String,
     pub name: String,
     #[serde(default)]
@@ -24,7 +24,7 @@ pub struct RepoInfo {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ProjectRef {
+pub(crate) struct ProjectRef {
     pub id: String,
 }
 
@@ -90,6 +90,10 @@ impl Thread {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[expect(
+    clippy::struct_field_names,
+    reason = "named as in the Azure DevOps API"
+)]
 pub struct Comment {
     #[serde(default)]
     pub comment_type: String,

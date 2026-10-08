@@ -23,7 +23,7 @@ use crate::sync::{Event, Options, Report, Shared, SyncError, db, f64_ratio, fini
 
 /// Sync state key, next to the PR module's `github`.
 pub const MODULE_KEY: &str = "github:pipelines";
-pub const HISTORY_DAYS: i64 = 90;
+pub(crate) const HISTORY_DAYS: i64 = 90;
 /// A rerun keeps its run's creation date, so look back further than the PR sync does.
 const LOOKBACK: Duration = Duration::days(3);
 const BATCH: usize = 50;
@@ -53,6 +53,7 @@ pub struct Job {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[expect(clippy::struct_field_names, reason = "named as in the GitHub API")]
 pub struct Run {
     pub id: i64,
     pub name: Option<String>,

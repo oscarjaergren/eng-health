@@ -1,10 +1,14 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "test helpers panic, like the tests that call them"
+)]
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
 use chrono::{Duration, TimeZone, Utc};
-use eng_health::model::{Platform, PullRequest};
-use eng_health::store::{SCHEMA_VERSION, Store, StoreError, SyncState};
+use eng_health::{Platform, PullRequest};
+use eng_health::{SCHEMA_VERSION, Store, StoreError, SyncState};
 use rusqlite::Connection;
 use tempfile::TempDir;
 

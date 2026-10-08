@@ -10,10 +10,10 @@ use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use crate::source::SourceError;
 
 /// Longest we will sleep for a rate limit before giving up for this run.
-pub const MAX_RATE_LIMIT_WAIT: Duration = Duration::from_secs(15 * 60);
+pub(crate) const MAX_RATE_LIMIT_WAIT: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Clone)]
-pub struct Http {
+pub(crate) struct Http {
     client: Client,
     label: &'static str,
     requests: Arc<AtomicU64>,
@@ -28,7 +28,11 @@ impl Http {
     /// # Panics
     /// Only if the TLS backend cannot initialise, which is a build problem.
     #[must_use]
-    pub fn new(label: &'static str, mut headers: HeaderMap, forbidden_is_auth: bool) -> Self {
+    pub(crate) fn new(
+        label: &'static str,
+        mut headers: HeaderMap,
+        forbidden_is_auth: bool,
+    ) -> Self {
         headers.insert(USER_AGENT, HeaderValue::from_static("eng-health"));
         let client = Client::builder()
             .default_headers(headers)
@@ -48,19 +52,19 @@ impl Http {
 
     /// Shorter retry delays, for tests.
     #[must_use]
-    pub fn with_backoff(mut self, backoff: Duration) -> Self {
+    pub(crate) fn with_backoff(mut self, backoff: Duration) -> Self {
         self.backoff = backoff;
         self
     }
 
     #[must_use]
-    pub fn requests(&self) -> u64 {
+    pub(crate) fn requests(&self) -> u64 {
         self.requests.load(Ordering::Relaxed)
     }
 
     /// Send a request built by `build`, retrying transient failures. Returns
     /// only successful responses; everything else becomes a `SourceError`.
-    pub async fn send(
+    pub(crate) async fn send(
         &self,
         build: impl Fn(&Client) -> RequestBuilder,
     ) -> Result<Response, SourceError> {
@@ -129,7 +133,7 @@ impl Http {
         }
     }
 
-    pub async fn wait_for_rate_limit(&self, wait: Duration) -> Result<(), SourceError> {
+    pub(crate) async fn wait_for_rate_limit(&self, wait: Duration) -> Result<(), SourceError> {
         if wait > MAX_RATE_LIMIT_WAIT {
             return Err(SourceError::Api(format!(
                 "{}: rate limit resets in {} minutes; try later",
@@ -188,7 +192,7 @@ fn rate_limit_wait(status: StatusCode, headers: &HeaderMap) -> Option<Duration> 
 
 /// Time from now until a Unix timestamp, plus a second of margin.
 #[must_use]
-pub fn until(unix_seconds: i64) -> Duration {
+pub(crate) fn until(unix_seconds: i64) -> Duration {
     let secs = unix_seconds - chrono::Utc::now().timestamp() + 1;
     Duration::from_secs(u64::try_from(secs).unwrap_or(1).max(1))
 }

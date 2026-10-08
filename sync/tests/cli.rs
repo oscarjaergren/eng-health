@@ -1,5 +1,10 @@
 //! The real binary against a mock GitHub, the way the dashboard runs it.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "test helpers panic, like the tests that call them"
+)]
+
 use std::process::Command;
 
 use serde_json::{Value, json};
@@ -99,7 +104,7 @@ async fn json_progress_and_a_populated_database() {
 
     let status = cli(&dir, &[], &["status"]);
     assert!(String::from_utf8_lossy(&status.stdout).contains("github: last synced 20"));
-    let store = eng_health::store::Store::open(&dir.path().join("eng_health.db")).unwrap();
+    let store = eng_health::Store::open(&dir.path().join("eng_health.db")).unwrap();
     let prs = store.pull_requests(None).unwrap();
     assert_eq!(prs[0].key(), "github:101:1");
 }
