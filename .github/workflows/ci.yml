@@ -81,6 +81,25 @@ jobs:
       - run: cargo-shear
       - run: cargo-deny check
 
+  # Mutation tests the Rust a PR changes: fails if the tests miss a mutant in it.
+  mutation:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the diff against origin/main
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: sync
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.8.9 # the same mise as min_version in .config/mise.toml
+          install_args: github:sourcefrog/cargo-mutants
+      - run: mise run mutate
+
   security:
     runs-on: ubuntu-latest
     steps:
@@ -116,14 +135,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: docker build -t eng-health .
-      - run: docker run --rm eng-health eng-health --version
-      - name: Dashboard starts and answers its health check
-        run: |
-          docker run -d --name app -e MOCK_MODE=true -p 8501:8501 eng-health
-          for _ in $(seq 30); do
-            curl -fs http://localhost:8501/_stcore/health && exit 0
-            sleep 2
-          done
-          docker logs app
-          exit 1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.8.9 # the same mise as min_version in .config/mise.toml
+          install: false # the tasks only need docker
+      - run: mise run image
+      # Health, non-root user, sync engine, schema.sql, no dev dependencies, size ceiling.
+      - run: mise run image-check

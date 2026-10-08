@@ -306,3 +306,74 @@ async fn failed_runs_get_test_failures_from_their_artifacts() {
     assert_eq!(tests.len(), 4);
     assert!(tests.contains(&"tests.test_app::test_renders".to_owned()));
 }
+
+fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    use std::io::Write;
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for (name, body) in entries {
+        zip.start_file(*name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(body).unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
+#[test]
+fn a_results_file_is_read_up_to_the_cap_and_skipped_past_it() {
+    // A failing test, padded past 20 MB: it compresses to a few kilobytes, the way a zip bomb
+    // does, so only the cap on decompressed size stops it.
+    let failing = r#"<testsuite><testcase name="t"><failure/></testcase></testsuite>"#;
+    let padded = |name: &str, len: usize| {
+        let mut body = failing
+            .replace(r#"name="t""#, &format!(r#"name="{name}""#))
+            .into_bytes();
+        body.resize(len, b' ');
+        body
+    };
+    let cap = 20 * 1024 * 1024;
+    let zip = zip_of(&[
+        ("over.xml", &padded("bomb", cap + 1)),
+        ("at_cap.xml", &padded("fits", cap)),
+        ("small.xml", failing.as_bytes()),
+    ]);
+    assert!(zip.len() < 200_000);
+    assert_eq!(failed_tests(&zip), vec!["fits".to_owned(), "t".to_owned()]);
+}
+
+proptest::proptest! {
+    // Artifacts are untrusted: a fork's PR run can upload anything.
+
+    #[test]
+    fn failures_in_never_panics(xml in ".*") {
+        let _ = failures_in(&xml);
+    }
+
+    #[test]
+    fn failures_in_never_panics_on_report_shaped_input(
+        parts in proptest::collection::vec(
+            proptest::prop_oneof![
+                proptest::strategy::Just("<testcase name=\"a\" classname=\"C\">".to_owned()),
+                proptest::strategy::Just("</testcase>".to_owned()),
+                proptest::strategy::Just("<failure/>".to_owned()),
+                proptest::strategy::Just("<error>".to_owned()),
+                proptest::strategy::Just("<UnitTestResult outcome=\"Failed\" testName=\"x\"/>".to_owned()),
+                "[<>/=\"a-z &;]{0,12}",
+            ],
+            0..40,
+        )
+    ) {
+        let _ = failures_in(&parts.concat());
+    }
+
+    #[test]
+    fn failed_tests_never_panics(bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..2048)) {
+        let _ = failed_tests(&bytes);
+    }
+
+    #[test]
+    fn failed_tests_never_panics_on_any_entry_in_a_real_zip(
+        body in proptest::collection::vec(proptest::num::u8::ANY, 0..2048)
+    ) {
+        let _ = failed_tests(&zip_of(&[("r.xml", &body), ("r.trx", &body)]));
+    }
+}

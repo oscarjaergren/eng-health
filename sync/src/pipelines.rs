@@ -33,6 +33,9 @@ const FAILED: [&str; 2] = ["failure", "timed_out"];
 static TEST_ARTIFACT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new("(?i)test|junit|trx|result").expect("valid regex"));
 const MAX_ARTIFACT_BYTES: u64 = 50 * 1024 * 1024;
+/// Per results file, decompressed. Real reports are far smaller; the cap stops a zip bomb (a fork's
+/// PR run can upload artifacts) from exhausting memory, since the download cap is on compressed size.
+const MAX_RESULTS_FILE_BYTES: u64 = 20 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
@@ -119,9 +122,17 @@ pub fn failed_tests(zip_bytes: &[u8]) -> Vec<String> {
         let ext = std::path::Path::new(file.name())
             .extension()
             .map(|e| e.to_string_lossy().to_lowercase());
+        if !matches!(ext.as_deref(), Some("xml" | "trx")) {
+            continue;
+        }
         let mut text = String::new();
-        if matches!(ext.as_deref(), Some("xml" | "trx")) && file.read_to_string(&mut text).is_ok() {
-            out.extend(failures_in(&text));
+        let read = (&mut file)
+            .take(MAX_RESULTS_FILE_BYTES + 1)
+            .read_to_string(&mut text);
+        match read {
+            Ok(n) if n as u64 <= MAX_RESULTS_FILE_BYTES => out.extend(failures_in(&text)),
+            Ok(_) => tracing::warn!(file = file.name(), "skipped a test results file over 20 MB"),
+            Err(_) => {} // not UTF-8, so not a report
         }
     }
     out.into_iter().collect()

@@ -185,3 +185,4 @@ sync/target/
 
 # Local test output
 test-results/
+sync/mutants.out*/

@@ -13,7 +13,7 @@ use crate::pipelines::Job;
 /// The version at the end of `schema.sql`; a test checks they agree.
 pub const SCHEMA_VERSION: i64 = 1;
 
-const SCHEMA: &str = include_str!("../../schema.sql");
+const SCHEMA: &str = include_str!("../schema.sql");
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
