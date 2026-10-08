@@ -1,10 +1,15 @@
 //! Every expected record in testdata/ must survive a round trip through the
 //! Rust model unchanged, which pins the JSON the dashboard reads.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "test helpers panic, like the tests that call them"
+)]
+
 use std::fs;
 use std::path::PathBuf;
 
-use eng_health::model::PullRequest;
+use eng_health::PullRequest;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 

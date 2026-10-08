@@ -1,16 +1,21 @@
 //! GitHub Actions jobs against a mock server.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "test helpers panic, like the tests that call them"
+)]
+
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{Duration as Days, Utc};
-use eng_health::config::{GitHubSettings, OwnerType};
-use eng_health::pipelines::{self, Job};
-use eng_health::rules::parse_time;
-use eng_health::source::github::GitHub;
-use eng_health::store::Store;
-use eng_health::sync::{Event, Options};
+use eng_health::Store;
+use eng_health::github::GitHub;
+use eng_health::parse_time;
+use eng_health::{Event, Options};
+use eng_health::{GitHubSettings, OwnerType};
+use eng_health::{Job, failed_tests, failures_in, sync_pipelines};
 use serde_json::{Value, json};
 use wiremock::matchers::{body_string_contains, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -85,7 +90,7 @@ fn store() -> (tempfile::TempDir, Arc<Mutex<Store>>) {
     (dir, Arc::new(Mutex::new(store)))
 }
 
-async fn sync(gh: &GitHub, store: &Arc<Mutex<Store>>) -> eng_health::sync::Report {
+async fn sync(gh: &GitHub, store: &Arc<Mutex<Store>>) -> eng_health::Report {
     let quiet = |_: Event| {};
     let opts = Options {
         full: false,
@@ -93,7 +98,7 @@ async fn sync(gh: &GitHub, store: &Arc<Mutex<Store>>) -> eng_health::sync::Repor
         stop: Arc::new(AtomicBool::new(false)),
         on_event: &quiet,
     };
-    pipelines::sync(gh, store, &opts).await.unwrap()
+    sync_pipelines(gh, store, &opts).await.unwrap()
 }
 
 #[tokio::test]
@@ -166,8 +171,8 @@ async fn enterprise_rest_base_is_derived_from_graphql_url() {
         api_url: url.clone(),
     };
     let gh = GitHub::with_endpoint(settings, &url, Duration::from_millis(1));
-    let repo = eng_health::model::Repo {
-        platform: eng_health::model::Platform::Github,
+    let repo = eng_health::Repo {
+        platform: eng_health::Platform::Github,
         id: "7".into(),
         name: "web".into(),
         raw: Value::Null,
@@ -214,7 +219,7 @@ fn fixture(name: &str) -> String {
 #[test]
 fn junit_failures_and_errors_count_skips_do_not() {
     assert_eq!(
-        pipelines::failures_in(&fixture("pytest-junit.xml")),
+        failures_in(&fixture("pytest-junit.xml")),
         [
             "tests.test_store::test_version",
             "tests.test_app::test_renders"
@@ -225,7 +230,7 @@ fn junit_failures_and_errors_count_skips_do_not() {
 #[test]
 fn trx_failed_results_with_escaped_names() {
     assert_eq!(
-        pipelines::failures_in(&fixture("dotnet.trx")),
+        failures_in(&fixture("dotnet.trx")),
         [
             "Api.Tests.OrderTests.Rejects_empty_cart",
             r#"Api.Tests.ParserTests.Parses(input: "a&b")"#
@@ -251,8 +256,8 @@ fn results_zip() -> Vec<u8> {
 
 #[test]
 fn every_results_file_in_a_zip_is_read() {
-    assert_eq!(pipelines::failed_tests(&results_zip()).len(), 4);
-    assert_eq!(pipelines::failed_tests(b"not a zip").len(), 0);
+    assert_eq!(failed_tests(&results_zip()).len(), 4);
+    assert_eq!(failed_tests(b"not a zip").len(), 0);
 }
 
 #[tokio::test]

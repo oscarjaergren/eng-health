@@ -69,7 +69,7 @@ pub struct Options<'a> {
     pub on_event: &'a (dyn Fn(Event) + Sync),
 }
 
-pub type Shared = Arc<Mutex<Store>>;
+pub(crate) type Shared = Arc<Mutex<Store>>;
 
 pub(crate) async fn db<T: Send + 'static>(
     store: &Shared,
@@ -268,7 +268,10 @@ async fn save(
     db(store, move |s| s.upsert(&prs, &people)).await
 }
 
-#[allow(clippy::cast_precision_loss)] // progress fractions; counts are far below 2^52
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "progress fractions; counts are far below 2^52"
+)]
 pub(crate) fn f64_ratio(done: usize, total: usize) -> f64 {
     done as f64 / total as f64
 }

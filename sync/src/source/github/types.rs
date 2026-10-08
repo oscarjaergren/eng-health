@@ -3,14 +3,14 @@
 use serde::{Deserialize, Deserializer};
 
 #[derive(Debug, Deserialize)]
-pub struct Response<T> {
+pub(crate) struct Response<T> {
     pub data: Option<T>,
     #[serde(default)]
     pub errors: Vec<GqlError>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct GqlError {
+pub(crate) struct GqlError {
     pub message: String,
     #[serde(rename = "type")]
     pub kind: Option<String>,
@@ -18,7 +18,7 @@ pub struct GqlError {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RateLimit {
+pub(crate) struct RateLimit {
     pub cost: i64,
     pub remaining: i64,
     pub reset_at: String,
@@ -26,14 +26,14 @@ pub struct RateLimit {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PageInfo {
+pub(crate) struct PageInfo {
     pub has_next_page: bool,
     pub end_cursor: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", bound(deserialize = "T: Deserialize<'de>"))]
-pub struct Page<T> {
+pub(crate) struct Page<T> {
     pub page_info: PageInfo,
     #[serde(deserialize_with = "nodes")]
     pub nodes: Vec<T>,
@@ -42,26 +42,26 @@ pub struct Page<T> {
 // --- repositories ---
 
 #[derive(Debug, Deserialize)]
-pub struct ReposData {
+pub(crate) struct ReposData {
     #[serde(alias = "organization", alias = "user")]
     pub owner: Option<ReposOwner>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ReposOwner {
+pub(crate) struct ReposOwner {
     pub repositories: Page<RepoNode>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RepoNode {
+pub(crate) struct RepoNode {
     pub database_id: i64,
     pub name: String,
     pub default_branch_ref: Option<BranchRef>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct BranchRef {
+pub(crate) struct BranchRef {
     pub name: String,
 }
 
@@ -69,26 +69,26 @@ pub struct BranchRef {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PullsData {
+pub(crate) struct PullsData {
     pub rate_limit: Option<RateLimit>,
     pub repository: Option<PullsRepo>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PullsRepo {
+pub(crate) struct PullsRepo {
     pub pull_requests: Page<PrNode>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PullData {
+pub(crate) struct PullData {
     pub repository: Option<PullRepo>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PullRepo {
+pub(crate) struct PullRepo {
     pub pull_request: Option<PrNode>,
 }
 

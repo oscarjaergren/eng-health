@@ -17,6 +17,8 @@ pub enum ConfigError {
     Workers,
     #[error("{name} is not a valid http(s) URL: {value:?}")]
     Url { name: &'static str, value: String },
+    #[error("GITHUB_TOKEN contains characters an HTTP header can't carry")]
+    Token,
 }
 
 fn url(name: &'static str, value: &str, default: &str) -> Result<String, ConfigError> {
@@ -117,6 +119,13 @@ impl Settings {
             owner_type,
             api_url,
         });
+        // The token goes into a header. Values are trimmed, but a character inside the token,
+        // such as a line break from a bad paste, would otherwise panic when the client is built.
+        if github.as_ref().is_some_and(|g| {
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", g.token)).is_err()
+        }) {
+            return Err(ConfigError::Token);
+        }
 
         let workers = match get("MAX_PARALLEL_WORKERS").as_str() {
             "" => 8,
@@ -183,6 +192,7 @@ mod tests {
             env(&[("MAX_PARALLEL_WORKERS", "many")]),
             env(&[("AZURE_DEVOPS_URL", "dev.azure.com")]),
             env(&[("GITHUB_API_URL", "ftp://example.com")]),
+            env(&[("GITHUB_OWNER", "o"), ("GITHUB_TOKEN", "to\nken")]),
         ] {
             assert!(Settings::from_env(&case).is_err(), "{case:?}");
         }

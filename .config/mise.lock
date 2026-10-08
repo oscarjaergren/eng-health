@@ -153,6 +153,92 @@ checksum = "sha256:0d6739507ac0b57099f0339fce1de0856584c71dd878c89cbc07845884f42
 url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.11.3/ec-windows-amd64.zip"
 url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/543324056"
 
+[[tools."github:Boshen/cargo-shear"]]
+version = "1.14.0"
+backend = "github:Boshen/cargo-shear"
+
+[tools."github:Boshen/cargo-shear"."platforms.linux-arm64"]
+checksum = "sha256:947d69177d812048452866d90b05d1bf95550f487522b922ebf0c0677a5698f8"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851818"
+provenance = "github-attestations"
+
+[tools."github:Boshen/cargo-shear"."platforms.linux-arm64-musl"]
+checksum = "sha256:d83f7c5b02c4c237d0454697c12df041df0bd83ffecc1aba46c6e06315fd47e1"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851819"
+provenance = "github-attestations"
+
+[tools."github:Boshen/cargo-shear"."platforms.linux-x64"]
+checksum = "sha256:1d7d860fdbd0d95857ff1f2643cc70d20c5d31236159ad51be7ce436eb3e5bf4"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851856"
+provenance = "github-attestations"
+provenance_verified = true
+
+[tools."github:Boshen/cargo-shear"."platforms.linux-x64-musl"]
+checksum = "sha256:9004df4eb031a456026c4326ae0d0ce545321527a67be90f4524c1be729dc40e"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851857"
+provenance = "github-attestations"
+
+[tools."github:Boshen/cargo-shear"."platforms.macos-arm64"]
+checksum = "sha256:e50b9375b1e93d2293c803819c118337f1e8fce519e4188a93bb0f5e08041ca3"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851820"
+provenance = "github-attestations"
+
+[tools."github:Boshen/cargo-shear"."platforms.macos-x64"]
+checksum = "sha256:ea0df899fecd1ae8116d588c97ebdeef8c1ed487ac7df2701ab39d05063a7930"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851834"
+provenance = "github-attestations"
+
+[tools."github:Boshen/cargo-shear"."platforms.windows-x64"]
+checksum = "sha256:1f81bdb905cb2cfbc95cb412ab4c1506136686b8d20b90b9ca1aa1ceded46760"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851837"
+provenance = "github-attestations"
+
+[[tools."github:EmbarkStudios/cargo-deny"]]
+version = "0.20.2"
+backend = "github:EmbarkStudios/cargo-deny"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.linux-arm64"]
+checksum = "sha256:995c82be0defc7a025cae49a2aa2644ce8245c9a3318fc4103907c6a285e8c7d"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471598345"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.linux-arm64-musl"]
+checksum = "sha256:995c82be0defc7a025cae49a2aa2644ce8245c9a3318fc4103907c6a285e8c7d"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471598345"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.linux-x64"]
+checksum = "sha256:9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471598214"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.linux-x64-musl"]
+checksum = "sha256:9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471598214"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.macos-arm64"]
+checksum = "sha256:fe67d82a10d8597a3549364cb733a3f9cc1bfff9031b7ae46384a9f2a72090c3"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471597689"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.macos-x64"]
+checksum = "sha256:248da7f581724e470071990c088ffc55c811981715f4cbdb258621fb79f8b7a6"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471598357"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.windows-x64"]
+checksum = "sha256:975a22143262fd27476d19ee00c7af67978426e40e1dee94eed6bbade1cf87dc"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-pc-windows-msvc.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471599057"
+
 [[tools.gitleaks]]
 version = "8.30.1"
 backend = "aqua:gitleaks/gitleaks"
@@ -420,10 +506,40 @@ profile = "minimal"
 version = "0.11.0"
 backend = "aqua:koalaman/shellcheck"
 
+[tools.shellcheck."platforms.linux-arm64"]
+checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056934"
+
+[tools.shellcheck."platforms.linux-arm64-musl"]
+checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056934"
+
 [tools.shellcheck."platforms.linux-x64"]
 checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056942"
+
+[tools.shellcheck."platforms.linux-x64-musl"]
+checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056942"
+
+[tools.shellcheck."platforms.macos-arm64"]
+checksum = "sha256:56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056932"
+
+[tools.shellcheck."platforms.macos-x64"]
+checksum = "sha256:3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056930"
+
+[tools.shellcheck."platforms.windows-x64"]
+checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
 
 [[tools.typos]]
 version = "1.51.1"

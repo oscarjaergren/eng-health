@@ -173,6 +173,22 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: cargo-doc
+        name: cargo doc (broken doc links)
+        entry: mise exec -- env RUSTDOCFLAGS=-D\ warnings cargo doc --manifest-path sync/Cargo.toml --no-deps --document-private-items --quiet
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
+      - id: cargo-shear
+        name: cargo-shear (unused Rust dependencies)
+        entry: mise exec -- sh -c 'cd sync && cargo-shear'
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
       - id: test
         name: tests (Python and Rust)
         entry: mise run test

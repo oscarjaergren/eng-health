@@ -21,6 +21,8 @@ dprint = "0.60.1"                 # markdown and json formatting
 lychee = "0.24.2"                 # link checking (pre-push: network-bound)
 committed = "1.1.11"              # conventional commit messages
 jq = "1.8.2"                      # reads the agent hook's JSON payload
+"github:Boshen/cargo-shear" = "1.14.0"         # unused Rust dependencies
+"github:EmbarkStudios/cargo-deny" = "0.20.2"   # Rust advisories, licences and sources
 
 [settings]
 # Fail rather than silently using whatever happens to be on PATH.
@@ -54,6 +56,8 @@ run = [
   "uv run --locked vulture",
   "uv run --locked deptry .",
   "cargo clippy --manifest-path sync/Cargo.toml --all-targets -- -D warnings",
+  "RUSTDOCFLAGS='-D warnings' cargo doc --manifest-path sync/Cargo.toml --no-deps --document-private-items",
+  "cd sync && cargo-shear && cargo-deny check",
   "mise run test",
 ]
 

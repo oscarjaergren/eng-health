@@ -19,17 +19,17 @@ static INFRA: LazyLock<Regex> = LazyLock::new(|| {
 const KNOWN_BOTS: [&str; 4] = ["github-actions", "dependabot", "renovate", "copilot"];
 
 #[must_use]
-pub fn is_infrastructure(title: &str) -> bool {
+pub(crate) fn is_infrastructure(title: &str) -> bool {
     INFRA.is_match(title)
 }
 
 #[must_use]
-pub fn identity(value: Option<&str>) -> String {
+pub(crate) fn identity(value: Option<&str>) -> String {
     value.unwrap_or_default().trim().to_lowercase()
 }
 
 #[must_use]
-pub fn is_bot(ident: &str, is_group: bool) -> bool {
+pub(crate) fn is_bot(ident: &str, is_group: bool) -> bool {
     is_group
         || ident.is_empty()
         || ident.starts_with("vstfs:")

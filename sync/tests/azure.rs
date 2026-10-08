@@ -5,12 +5,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
-use eng_health::config::AzureSettings;
-use eng_health::model::{Platform, Repo, State};
-use eng_health::source::azure::{Azure, Threads};
-use eng_health::source::{Source, SourceError};
-use eng_health::store::Store;
-use eng_health::sync::{Event, Options, sync_platform};
+use eng_health::AzureSettings;
+use eng_health::Store;
+use eng_health::azure::{Azure, Threads};
+use eng_health::{Event, Options, sync_platform};
+use eng_health::{Platform, Repo, State};
+use eng_health::{Source, SourceError};
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -141,21 +141,21 @@ async fn completing_fetches_threads_or_marks_failure() {
     .mount(&server)
     .await;
     let az = client(&server);
-    let item = |id| eng_health::source::azure::Item {
+    let item = |id| eng_health::azure::Item {
         pr: serde_json::from_value(pr(id, "completed")).unwrap(),
         threads: Threads::NotFetched,
     };
 
     let ok = az.complete(&repo(), item(1)).await.unwrap();
     assert!(matches!(&ok.threads, Threads::Fetched(t) if t.len() == 1));
-    let pr1 = az.convert(&repo(), &ok, &mut eng_health::source::People::new());
+    let pr1 = az.convert(&repo(), &ok, &mut eng_health::People::new());
     assert!(pr1.details_complete);
     assert_eq!(pr1.comment_counts["bob@example.com"], 1);
 
     let failed = az.complete(&repo(), item(2)).await.unwrap();
     assert!(matches!(failed.threads, Threads::Failed));
     assert!(
-        !az.convert(&repo(), &failed, &mut eng_health::source::People::new())
+        !az.convert(&repo(), &failed, &mut eng_health::People::new())
             .details_complete
     );
 }
@@ -173,7 +173,7 @@ async fn rejected_credentials_are_auth_errors() {
             matches!(az.repositories().await, Err(SourceError::Auth(_))),
             "{status}"
         );
-        let item = eng_health::source::azure::Item {
+        let item = eng_health::azure::Item {
             pr: serde_json::from_value(pr(1, "active")).unwrap(),
             threads: Threads::NotFetched,
         };
