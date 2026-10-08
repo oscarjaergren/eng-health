@@ -205,7 +205,8 @@ repos:
 
       - id: lychee
         name: lychee (link check)
-        entry: mise exec -- lychee --no-progress
+        # Loopback links (the local dashboard) only answer while it runs.
+        entry: mise exec -- lychee --no-progress --exclude-loopback
         language: system
         stages: [pre-push]
         files: \.md$
