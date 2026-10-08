@@ -62,6 +62,12 @@ repos:
         language: system
         files: ^\.github/workflows/.*\.ya?ml$
 
+      - id: zizmor
+        name: zizmor (workflow security)
+        entry: mise exec -- zizmor --offline
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+
       - id: shellcheck
         name: shellcheck
         entry: mise exec -- shellcheck
@@ -199,7 +205,8 @@ repos:
 
       - id: lychee
         name: lychee (link check)
-        entry: mise exec -- lychee --no-progress
+        # Loopback links (the local dashboard) only answer while it runs.
+        entry: mise exec -- lychee --no-progress --exclude-loopback
         language: system
         stages: [pre-push]
         files: \.md$

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests",
+    ":enablePreCommit"
+  ],
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "labels": ["dependencies"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "schedule": ["at any time"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Rust's version; the Dockerfile's rust image moves with it (group below).",
+      "managerFilePatterns": ["/^rust-toolchain\\.toml$/"],
+      "matchStrings": ["channel = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "depNameTemplate": "rust",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Tools pinned by mise move together; mise.lock must be refreshed with them (see .config/mise.toml).",
+      "matchManagers": ["mise"],
+      "groupName": "lint toolchain"
+    },
+    {
+      "description": "Python's version is in .python-version and the Dockerfile; a mismatch fails the image build.",
+      "matchPackageNames": ["python"],
+      "groupName": "Python"
+    },
+    {
+      "description": "Rust's version is in rust-toolchain.toml and the Dockerfile.",
+      "matchPackageNames": ["rust"],
+      "groupName": "Rust"
+    },
+    {
+      "description": "uv is pinned in mise and copied into the image.",
+      "matchPackageNames": ["uv", "ghcr.io/astral-sh/uv"],
+      "groupName": "uv"
+    },
+    {
+      "description": "pandas-stubs follows pandas.",
+      "matchPackageNames": ["pandas", "pandas-stubs"],
+      "groupName": "pandas"
+    },
+    {
+      "description": "Actions are pinned by digest; one PR for the digest bumps.",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Minor and patch crate updates in one PR; majors stay separate.",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Rust crates"
+    }
+  ]
+}

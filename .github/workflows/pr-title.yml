@@ -1,0 +1,32 @@
+name: PR title
+
+# Squash merging makes the PR title the commit on main, and the commit-msg hook never sees it,
+# so it is checked here with the same committed.toml. `edited` reruns this on a title change.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conventional:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.8.9 # the same mise as min_version in .config/mise.toml
+          install_args: committed
+      # The title arrives through env, never interpolated into the script, so it can't inject.
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          printf '%s\n' "$TITLE" > "$RUNNER_TEMP/title"
+          committed --commit-file "$RUNNER_TEMP/title"

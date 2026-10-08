@@ -1,0 +1,3 @@
+# Reviewed false positives for the full-history scan (fingerprint: commit:file:rule:line).
+# A placeholder "ghp_1234567890" in a test deleted in Dec 2025.
+2622230fb3a72a9b8de5e7015fc42cadcb0154cc:tests/test_input_validator.py:generic-api-key:184
