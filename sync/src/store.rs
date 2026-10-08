@@ -10,55 +10,10 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::model::{Platform, PullRequest, Timestamp};
 use crate::pipelines::Job;
 
-/// Shared with `eng_health/store.py`. Bump both together when the tables or
-/// the PR JSON change shape.
+/// The version at the end of `schema.sql`; a test checks they agree.
 pub const SCHEMA_VERSION: i64 = 1;
 
-const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS pull_requests (
-    key TEXT PRIMARY KEY,
-    platform TEXT NOT NULL,
-    data TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS people (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS meta (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    revision INTEGER NOT NULL
-);
-INSERT OR IGNORE INTO meta (id, revision) VALUES (1, 0);
-CREATE TABLE IF NOT EXISTS pipeline_jobs (
-    key TEXT PRIMARY KEY,
-    repo_id TEXT NOT NULL,
-    repository TEXT NOT NULL,
-    pipeline TEXT NOT NULL,
-    run_id INTEGER NOT NULL,
-    attempt INTEGER NOT NULL,
-    branch TEXT NOT NULL,
-    is_default_branch INTEGER NOT NULL,
-    commit_sha TEXT NOT NULL,
-    name TEXT NOT NULL,
-    conclusion TEXT NOT NULL,
-    started_at TEXT,
-    finished_at TEXT,
-    url TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS pipeline_jobs_run ON pipeline_jobs (repo_id, run_id);
-CREATE TABLE IF NOT EXISTS test_failures (
-    repo_id TEXT NOT NULL,
-    run_id INTEGER NOT NULL,
-    test_id TEXT NOT NULL,
-    PRIMARY KEY (repo_id, run_id, test_id)
-);
-CREATE TABLE IF NOT EXISTS sync_state (
-    platform TEXT PRIMARY KEY,
-    last_sync TEXT,
-    last_attempt TEXT,
-    last_error TEXT
-);
-";
+const SCHEMA: &str = include_str!("../../schema.sql");
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -109,7 +64,6 @@ impl Store {
             });
         }
         conn.execute_batch(SCHEMA)?;
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { conn })
     }
 
@@ -292,4 +246,15 @@ impl Store {
 fn bump(tx: &rusqlite::Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute("UPDATE meta SET revision = revision + 1", [])
         .map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SCHEMA, SCHEMA_VERSION};
+
+    #[test]
+    fn schema_sql_ends_by_setting_schema_version() {
+        let last = SCHEMA.trim_end().lines().last().unwrap();
+        assert_eq!(last, format!("PRAGMA user_version = {SCHEMA_VERSION};"));
+    }
 }

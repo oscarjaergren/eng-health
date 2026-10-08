@@ -60,15 +60,9 @@ class WritableStore(Store):
             c.execute("DELETE FROM sync_state")
 
     def upsert_jobs(self, jobs: Iterable[dict[str, Any]]) -> None:
-        """Rows shaped like eng-health's `pipeline_jobs` (see sync/src/store.rs)."""
+        """Rows shaped like the `pipeline_jobs` table in schema.sql."""
         rows = list(jobs)
         with self._write() as c:
-            c.execute(
-                "CREATE TABLE IF NOT EXISTS pipeline_jobs (key TEXT PRIMARY KEY, repo_id TEXT, "
-                "repository TEXT, pipeline TEXT, run_id INTEGER, attempt INTEGER, branch TEXT, "
-                "is_default_branch INTEGER, commit_sha TEXT, name TEXT, conclusion TEXT, "
-                "started_at TEXT, finished_at TEXT, url TEXT)"
-            )
             c.executemany(
                 f"INSERT OR REPLACE INTO pipeline_jobs ({', '.join(rows[0])}) "
                 f"VALUES ({', '.join('?' * len(rows[0]))})",
@@ -77,8 +71,4 @@ class WritableStore(Store):
 
     def upsert_test_failures(self, rows: Iterable[tuple[str, int, str]]) -> None:
         with self._write() as c:
-            c.execute(
-                "CREATE TABLE IF NOT EXISTS test_failures (repo_id TEXT, run_id INTEGER, "
-                "test_id TEXT, PRIMARY KEY (repo_id, run_id, test_id))"
-            )
             c.executemany("INSERT OR IGNORE INTO test_failures VALUES (?, ?, ?)", list(rows))

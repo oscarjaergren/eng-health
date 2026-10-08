@@ -1,12 +1,13 @@
 """Reads the SQLite database that eng-health (sync/) writes.
 
 One row per PR keyed by platform, repository and number. eng-health is the only
-writer; the schema here must match sync/src/store.rs.
+writer; the schema is schema.sql, which both sides run on open.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -18,32 +19,9 @@ import pandas as pd
 
 from .models import PullRequest
 
-# Shared with the Rust sync engine (sync/src/store.rs). Bump both together when
-# the tables or the PR JSON change shape.
-SCHEMA_VERSION = 1
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS pull_requests (
-    key TEXT PRIMARY KEY,
-    platform TEXT NOT NULL,
-    data TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS people (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS meta (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    revision INTEGER NOT NULL
-);
-INSERT OR IGNORE INTO meta (id, revision) VALUES (1, 0);
-CREATE TABLE IF NOT EXISTS sync_state (
-    platform TEXT PRIMARY KEY,
-    last_sync TEXT,
-    last_attempt TEXT,
-    last_error TEXT
-);
-"""
+# The schema shared with the sync engine; it ends by setting user_version.
+_SCHEMA = (Path(__file__).resolve().parent.parent / "schema.sql").read_text()
+SCHEMA_VERSION = int(re.findall(r"PRAGMA user_version = (\d+);", _SCHEMA)[-1])
 
 
 class SchemaError(RuntimeError):
@@ -70,7 +48,6 @@ class Store:
                     f"understands {SCHEMA_VERSION}. Update the dashboard."
                 )
             c.executescript(_SCHEMA)
-            c.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -98,12 +75,8 @@ class Store:
         return self._query("SELECT * FROM test_failures")
 
     def _query(self, sql: str) -> pd.DataFrame:
-        """Empty until eng-health has synced pipelines (it creates the tables)."""
         with self._conn() as c:
-            try:
-                return pd.read_sql_query(sql, c)
-            except pd.errors.DatabaseError:
-                return pd.DataFrame()
+            return pd.read_sql_query(sql, c)
 
     def people(self) -> dict[str, str]:
         with self._conn() as c:

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from eng_health.mock import mock_pipelines, mock_pull_requests
 from eng_health.store import SCHEMA_VERSION, SchemaError, Store
 
 from .helpers import NOW, make_pr
@@ -42,3 +43,19 @@ def test_newer_schema_is_refused(tmp_path: Path) -> None:
         c.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
     with pytest.raises(SchemaError):
         Store(path)
+
+
+def test_sample_data_fits_the_schema(tmp_path: Path) -> None:
+    """mock.py stands in for synced data, so it must fit the tables in schema.sql."""
+    db = WritableStore(tmp_path / "db.sqlite")
+    prs, people = mock_pull_requests()
+    jobs, failures = mock_pipelines()
+    db.upsert(prs, people)
+    db.upsert_jobs(jobs)
+    db.upsert_test_failures((f["repo_id"], f["run_id"], f["test_id"]) for f in failures)
+
+    assert len(db.pull_requests()) == len(prs)
+    stored = db.pipeline_jobs()
+    assert len(stored) == len(jobs)  # keys are unique
+    assert set(stored.columns) == set(jobs[0])  # no column missing or extra
+    assert not db.test_failures().empty
