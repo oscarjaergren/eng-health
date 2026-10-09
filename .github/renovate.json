@@ -36,12 +36,12 @@
     },
     {
       "description": "Python's version is in .python-version and the Dockerfile; a mismatch fails the image build.",
-      "matchPackageNames": ["python"],
+      "matchPackageNames": ["python", "public.ecr.aws/docker/library/python"],
       "groupName": "Python"
     },
     {
       "description": "Rust's version is in rust-toolchain.toml and the Dockerfile.",
-      "matchPackageNames": ["rust"],
+      "matchPackageNames": ["rust", "public.ecr.aws/docker/library/rust"],
       "groupName": "Rust"
     },
     {
