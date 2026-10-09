@@ -62,6 +62,10 @@ def render(
         _row(digest.ci_changes(jobs, failures, prices, now))
         moved = digest.movers(jobs, failures, prices, now)
 
+    if prs.empty and raw.empty:
+        st.info("Nothing synced yet. Press **Sync now** in the sidebar.")
+        return
+
     st.subheader("What moved")
     if moved:
         st.markdown("\n".join(f"- {line}" for line in moved[:10]))

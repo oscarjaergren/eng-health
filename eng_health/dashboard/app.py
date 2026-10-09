@@ -14,7 +14,7 @@ from .. import metrics
 from ..config import ConfigError, Settings
 from ..models import PLATFORM_NAMES
 from ..store import SchemaError, Store
-from . import digest_page, pipelines_page
+from . import connect, digest_page, pipelines_page
 from .data import load, relative, run_sync
 from .filters import sidebar_filters
 from .tabs import flow, overview, people, size, table, timing
@@ -44,8 +44,7 @@ def _data_source(settings: Settings, store: Store | None) -> DeltaGenerator | No
     if store is None:
         why = "MOCK_MODE is on" if settings.mock else "no credentials are configured"
         st.sidebar.info(
-            f"Showing generated sample data because {why}. "
-            "See the README to connect Azure DevOps or GitHub."
+            f"Showing generated sample data because {why}. Connect GitHub or Azure DevOps below."
         )
         return None
 
@@ -97,6 +96,7 @@ def main() -> None:
         st.error(str(e))
         st.stop()
     slot = _data_source(settings, store)
+    connect.render(settings)
 
     request = st.session_state.pop("sync_request", None)
     if store is not None and request:

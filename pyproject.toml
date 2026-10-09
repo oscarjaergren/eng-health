@@ -61,6 +61,7 @@ ignore = [
 "eng_health/dashboard/**" = ["TID251"]
 "dashboard_main.py" = ["TID251"]
 "tests/test_app.py" = ["TID251"]
+"tests/test_connect.py" = ["TID251"]  # clears the Connect panel's Streamlit cache
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "streamlit".msg = "Only eng_health/dashboard uses Streamlit; keep metrics free of it."

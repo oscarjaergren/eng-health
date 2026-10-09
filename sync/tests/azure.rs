@@ -21,6 +21,7 @@ fn client(server: &MockServer) -> Azure {
     let settings = AzureSettings {
         organization: "org".into(),
         token: "pat".into(),
+        bearer: false,
         api_url: server.uri(),
     };
     Azure::with_backoff(&settings, Duration::from_millis(1))
@@ -65,6 +66,25 @@ async fn repositories_skip_disabled_ones_and_keep_project_and_url() {
     assert_eq!(repos.len(), 1);
     assert_eq!(repos[0].raw["project"]["id"], "p1");
     assert_eq!(repos[0].raw["webUrl"], "https://x/_git/api");
+}
+
+#[tokio::test]
+async fn an_azure_cli_token_is_sent_as_a_bearer_token() {
+    let server = MockServer::start().await;
+    Mock::given(path("/org/_apis/git/repositories"))
+        .and(header("authorization", "Bearer entra-token"))
+        .respond_with(list(&[]))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let settings = AzureSettings {
+        organization: "org".into(),
+        token: "entra-token".into(),
+        bearer: true,
+        api_url: server.uri(),
+    };
+    let az = Azure::with_backoff(&settings, Duration::from_millis(1));
+    assert_eq!(az.repositories().await.unwrap().len(), 0);
 }
 
 #[tokio::test]

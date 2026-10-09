@@ -43,6 +43,7 @@ pub struct Azure {
     /// `https://dev.azure.com/{organization}` or a server's collection URL.
     base: Url,
     token: String,
+    bearer: bool,
 }
 
 impl Azure {
@@ -67,6 +68,7 @@ impl Azure {
                 .with_backoff(backoff),
             base,
             token: settings.token.clone(),
+            bearer: settings.bearer,
         }
     }
 
@@ -83,13 +85,17 @@ impl Azure {
         url: &Url,
         query: &[(&str, String)],
     ) -> impl Fn(&reqwest::Client) -> RequestBuilder {
-        let (url, token) = (url.clone(), self.token.clone());
+        let (url, token, bearer) = (url.clone(), self.token.clone(), self.bearer);
         let mut query = query.to_vec();
         query.push(("api-version", API_VERSION.to_owned()));
         move |c| {
-            c.get(url.clone())
-                .basic_auth("", Some(&token))
-                .query(&query)
+            let request = c.get(url.clone());
+            let request = if bearer {
+                request.bearer_auth(&token)
+            } else {
+                request.basic_auth("", Some(&token))
+            };
+            request.query(&query)
         }
     }
 
