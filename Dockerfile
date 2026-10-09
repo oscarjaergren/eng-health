@@ -1,6 +1,9 @@
+# Docker's official images, from AWS's public mirror of them: Docker Hub limits anonymous pulls
+# per IP address, and CI runners share theirs, so builds there failed at random with 429.
+#
 # Build the sync engine. Same Debian release as the runtime image, so glibc matches.
 # rustup installs the version in rust-toolchain.toml if the image's differs.
-FROM rust:1.99-slim-trixie AS engine
+FROM public.ecr.aws/docker/library/rust:1.99-slim-trixie AS engine
 # The repo's layout, because rustup reads ../rust-toolchain.toml.
 WORKDIR /repo/sync
 COPY rust-toolchain.toml /repo/
@@ -11,7 +14,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
 COPY sync/src ./src
 RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 
-FROM python:3.14.8-slim-trixie
+FROM public.ecr.aws/docker/library/python:3.14.8-slim-trixie
 
 # UV_PYTHON_DOWNLOADS=never: if this image's Python stops matching .python-version, the
 # build fails instead of quietly downloading another one.

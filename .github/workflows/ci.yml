@@ -34,6 +34,8 @@ jobs:
       - run: mise run lint
       # A pre-push hook, which `mise run lint` skips; without this, --no-verify could ship it.
       - run: prek run lychee --all-files --hook-stage pre-push
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # github.com links, past the anonymous rate limit
 
   check:
     runs-on: ubuntu-latest
