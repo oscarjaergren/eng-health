@@ -40,6 +40,9 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
                 "state": pr.state.value,
                 "is_draft": pr.is_draft,
                 "is_infrastructure": pr.is_infrastructure,
+                "additions": pr.additions,
+                "deletions": pr.deletions,
+                "changed_files": pr.changed_files,
                 "details_complete": pr.details_complete,
                 "created_at": pr.created_at,
                 "closed_at": pr.closed_at,
@@ -60,12 +63,22 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
         merged
     )
     df["first_review_hours"] = (df["first_review_at"] - df["created_at"]).dt.total_seconds() / 3600
+    for col in ("additions", "deletions", "changed_files"):
+        df[col] = pd.to_numeric(df[col]).astype("Float64")
+    df["lines"] = df["additions"] + df["deletions"]
+    df["size"] = pd.cut(df["lines"], SIZE_EDGES, labels=SIZE_LABELS)
     return df
+
+
+# Common review-size thresholds: past a few hundred lines, reviews get shallower and slower.
+SIZE_EDGES = [-1, 10, 100, 400, 1000, float("inf")]
+SIZE_LABELS = ["XS (≤10)", "S (≤100)", "M (≤400)", "L (≤1000)", "XL (>1000)"]
 
 
 _COLUMNS = [
     "key", "platform", "repository", "number", "title", "author", "state", "is_draft",
-    "is_infrastructure", "details_complete", "created_at", "closed_at", "first_review_at",
+    "is_infrastructure", "additions", "deletions", "changed_files", "details_complete",
+    "created_at", "closed_at", "first_review_at",
     "url", "reviewers", "approvers", "rejecters", "comment_counts", "first_responses",
 ]  # fmt: skip
 
@@ -269,3 +282,45 @@ def export_table(df: pd.DataFrame, people: Mapping[str, str]) -> pd.DataFrame:
     for col in ("reviewers", "approvers", "rejecters"):
         out[col] = out[col].map(names)
     return out.rename(columns=EXPORT_COLUMNS).sort_values("Created", ascending=False)
+
+
+def by_size(df: pd.DataFrame) -> pd.DataFrame:
+    """Per size bucket: how long PRs wait for review and merge, and how closely they are read."""
+    sized = df[df["lines"].notna()]
+    others = comment_rows(sized).groupby("key")["comments"].sum()
+    sized = sized.assign(comments=sized["key"].map(others).fillna(0))
+    g = sized.groupby("size", observed=False)
+    out = pd.DataFrame(
+        {
+            "PRs": g.size(),
+            "Median first review (h)": g["first_review_hours"].median(),
+            "Median to merge (h)": g["cycle_hours"].median(),
+            # Comments from people other than the author, per 100 changed lines.
+            "Comments per 100 lines": 100 * g["comments"].sum() / g["lines"].sum(),
+        }
+    )
+    return out[out["PRs"] > 0]
+
+
+def size_trend(df: pd.DataFrame, tz: str = "UTC") -> pd.DataFrame:
+    """Median lines changed per PR, by the month PRs were opened (weeks are too few PRs)."""
+    sized = df[df["lines"].notna()]
+    month = sized["created_at"].dt.tz_convert(tz).dt.tz_localize(None).dt.to_period("M")
+    out = sized.groupby(month.dt.start_time)["lines"].agg(["median", "size"])
+    return out.rename(columns={"median": "Median lines", "size": "PRs"}).rename_axis("month")
+
+
+def author_volume(df: pd.DataFrame) -> pd.DataFrame:
+    """Per author: lines written in the selection's PRs, and how big their PRs usually are."""
+    sized = df[df["lines"].notna()]
+    g = sized.groupby("author")
+    out = pd.DataFrame(
+        {
+            "PRs": g.size(),
+            "Lines added": g["additions"].sum(),
+            "Lines deleted": g["deletions"].sum(),
+            "Median PR (lines)": g["lines"].median(),
+            "Largest PR (lines)": g["lines"].max(),
+        }
+    ).rename_axis("person")
+    return out.sort_values("Lines added", ascending=False)

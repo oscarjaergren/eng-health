@@ -11,7 +11,7 @@ use crate::model::{Platform, PullRequest, Timestamp};
 use crate::pipelines::Job;
 
 /// The version at the end of `schema.sql`; a test checks they agree.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA: &str = include_str!("../schema.sql");
 
@@ -64,6 +64,11 @@ impl Store {
             });
         }
         conn.execute_batch(SCHEMA)?;
+        if found > 0 && found < SCHEMA_VERSION {
+            // Records changed shape. Forgetting the sync windows makes the next sync list every
+            // PR again, and sources refetch any record missing the new fields.
+            conn.execute("UPDATE sync_state SET last_sync = NULL", [])?;
+        }
         Ok(Self { conn })
     }
 

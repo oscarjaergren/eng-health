@@ -3,11 +3,14 @@
     "alice": "alice"
   },
   "pull_request": {
+    "additions": 5000,
     "approvers": [],
     "author": "alice",
+    "changed_files": 150,
     "closed_at": null,
     "comment_counts": {},
     "created_at": "2026-09-01T09:00:00+00:00",
+    "deletions": 4000,
     "details_complete": true,
     "first_responses": {},
     "is_draft": true,

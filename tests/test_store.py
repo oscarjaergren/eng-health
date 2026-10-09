@@ -39,7 +39,8 @@ def test_newer_schema_is_refused(tmp_path: Path) -> None:
     Store(path)
     # closing(): a connection's own context manager commits but never closes.
     with closing(sqlite3.connect(path)) as c:
-        assert c.execute("PRAGMA user_version").fetchone() == (SCHEMA_VERSION,)
+        # The dashboard creates the tables but leaves the version to the engine.
+        assert c.execute("PRAGMA user_version").fetchone() == (0,)
         c.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
     with pytest.raises(SchemaError):
         Store(path)

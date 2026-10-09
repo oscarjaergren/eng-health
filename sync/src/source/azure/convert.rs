@@ -129,6 +129,9 @@ pub fn convert(
             format!("{web_url}/pullrequest/{}", pr.pull_request_id)
         },
         is_infrastructure: is_infrastructure(&pr.title),
+        additions: None,
+        deletions: None,
+        changed_files: None,
         updated_at: None,
         reviewers,
         approvers: approvers.into_iter().collect(),

@@ -113,6 +113,11 @@ pub struct PullRequest {
     pub closed_at: Option<Timestamp>,
     pub url: String,
     pub is_infrastructure: bool,
+    /// Lines added and deleted and files changed, without lock files and generated code
+    /// (`rules::is_noise`). None where the platform doesn't report them: Azure DevOps, for now.
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_files: Option<i64>,
     /// GitHub exposes this and we use it to skip unchanged PRs; Azure DevOps does not.
     pub updated_at: Option<Timestamp>,
     pub reviewers: Vec<String>,

@@ -117,6 +117,18 @@ pub struct PrNode {
     pub reviews: Connection<Review>,
     pub comments: Connection<Comment>,
     pub review_threads: Connection<Thread>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_files: Option<i64>,
+    #[serde(default)]
+    pub files: Option<Connection<FileChange>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct FileChange {
+    pub path: String,
+    pub additions: i64,
+    pub deletions: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

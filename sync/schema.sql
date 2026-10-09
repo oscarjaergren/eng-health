@@ -3,7 +3,10 @@
 -- database, so every statement must be safe to repeat.
 --
 -- Raise user_version when the tables or the PR JSON in pull_requests.data change shape.
--- Each side refuses a database whose version is newer than the one it was built with.
+-- Each side refuses a database whose version is newer than the one it was built with. Only the
+-- engine sets it: on an older database it re-syncs everything, so old records gain new fields.
+--
+-- 2: PR size (additions, deletions, changed_files).
 
 CREATE TABLE IF NOT EXISTS pull_requests (
     key TEXT PRIMARY KEY,
@@ -48,4 +51,4 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_attempt TEXT,
     last_error TEXT
 );
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;

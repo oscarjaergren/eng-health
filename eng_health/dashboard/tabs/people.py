@@ -93,3 +93,19 @@ def render(df: pd.DataFrame, people: dict[str, str]) -> None:
             "url": st.column_config.LinkColumn("Link", display_text="Open"),
         },
     )
+
+    volume = metrics.author_volume(df)
+    if not volume.empty:
+        st.subheader("Lines written")
+        st.caption(
+            "Volume, not value: lines added and deleted in each person's PRs, without lock "
+            "files and generated code. GitHub PRs only, for now."
+        )
+        st.dataframe(
+            volume.rename(index=name),
+            width="stretch",
+            column_config={
+                c: st.column_config.NumberColumn(format="%d")
+                for c in ("Lines added", "Lines deleted", "Median PR (lines)", "Largest PR (lines)")
+            },
+        )

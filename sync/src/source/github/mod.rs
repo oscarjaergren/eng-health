@@ -31,6 +31,7 @@ const NESTED_MAX: i64 = 100;
 const PR_FIELDS: &str = "
 fragment PrFields on PullRequest {
   number title url isDraft state createdAt updatedAt closedAt mergedAt
+  additions deletions changedFiles files(first: 100) { totalCount nodes { path additions deletions } }
   author { __typename login }
   reviewRequests(first: 25) { nodes { requestedReviewer { ... on User { login } } } }
   reviews(first: $nested) { totalCount nodes { state submittedAt author { __typename login } } }
@@ -275,7 +276,10 @@ impl Source for GitHub {
     }
 
     fn is_unchanged(&self, item: &Item, cached: &PullRequest) -> bool {
-        cached.details_complete && cached.updated_at == parse_time(Some(&item.node.updated_at))
+        // A record without a size predates sizes, so it is fetched again to get one.
+        cached.details_complete
+            && cached.additions.is_some()
+            && cached.updated_at == parse_time(Some(&item.node.updated_at))
     }
 
     async fn complete(&self, repo: &Repo, item: Item) -> Result<Item, SourceError> {

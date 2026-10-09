@@ -7,14 +7,17 @@
     "erin@example.com": "Erin"
   },
   "pull_request": {
+    "additions": null,
     "approvers": [
       "bob@example.com",
       "dave@example.com"
     ],
     "author": "alice@example.com",
+    "changed_files": null,
     "closed_at": "2026-09-02T09:00:00+00:00",
     "comment_counts": {},
     "created_at": "2026-09-01T09:00:00+00:00",
+    "deletions": null,
     "details_complete": true,
     "first_responses": {
       "bob@example.com": "2026-09-01T17:00:00+00:00",

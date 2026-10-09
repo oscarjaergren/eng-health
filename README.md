@@ -64,6 +64,13 @@ Setting only half of a platform's pair is reported as an error rather than ignor
   authors' replies on their own PRs unless you switch that on.
 - **Infrastructure PRs**: titles that mention Terraform, Helm, Bicep, Kubernetes and similar
   are hidden by default. A sidebar toggle brings them back.
+- **PR size**: lines added plus lines deleted, leaving out lock files, generated and minified
+  code, snapshots and vendored folders (the list is `is_noise` in `sync/src/rules.rs`). Sizes
+  are bucketed XS (≤10 lines), S (≤100), M (≤400), L (≤1000) and XL. A PR with more than 100
+  changed files counts everything GitHub reports. GitHub only for now; Azure DevOps reports no
+  line counts in its PR API.
+- **Comments per 100 lines**: comments from people other than the author, per 100 changed
+  lines. Low on big PRs means they are skimmed rather than read.
 
 Filters are kept in the page URL, so a filtered view can be shared as a link. Dates and
 times are shown in your browser's time zone.
