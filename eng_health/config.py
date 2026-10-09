@@ -11,6 +11,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import connections
+
 
 class ConfigError(ValueError):
     """Raised when the environment describes an incomplete or invalid setup."""
@@ -31,6 +33,8 @@ class Settings:
     mock: bool
     # Maps one identity onto another, e.g. a GitHub login onto an Azure DevOps email.
     aliases: dict[str, str] = field(default_factory=dict)
+    # Platforms connected through a CLI (connections.json) rather than .env.
+    connected: tuple[str, ...] = ()
     # US dollars per CI minute, by runner (pipeline_jobs.runner).
     ci_prices: dict[str, float] = field(default_factory=lambda: dict(CI_PRICES))
 
@@ -58,10 +62,20 @@ class Settings:
                 raise ConfigError(f"{missing} is not set (needed alongside {a if va else b})")
             return None
 
+        data_dir = Path(env.get("DATA_DIR", "data"))
+        # Platforms .env leaves out may be connected through the gh or az CLI instead.
+        saved = connections.load(data_dir)
+        azure = pair("AZURE_DEVOPS_ORGANIZATION", "AZURE_DEVOPS_PAT")
+        github = pair("GITHUB_OWNER", "GITHUB_TOKEN")
         return cls(
-            azure_organization=pair("AZURE_DEVOPS_ORGANIZATION", "AZURE_DEVOPS_PAT"),
-            github_owner=pair("GITHUB_OWNER", "GITHUB_TOKEN"),
-            data_dir=Path(env.get("DATA_DIR", "data")),
+            azure_organization=azure or saved.get("azure_devops", {}).get("organization"),
+            github_owner=github or saved.get("github", {}).get("owner"),
+            data_dir=data_dir,
+            connected=tuple(
+                p
+                for p, from_env in (("azure_devops", azure), ("github", github))
+                if not from_env and p in saved
+            ),
             mock=env.get("MOCK_MODE", "").strip().lower() in ("1", "true", "yes", "on"),
             aliases=_parse_aliases(env.get("IDENTITY_ALIASES", "")),
             ci_prices=CI_PRICES | _parse_prices(env.get("CI_MINUTE_PRICES", "")),

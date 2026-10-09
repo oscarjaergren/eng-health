@@ -21,7 +21,16 @@ With no credentials in `.env` the dashboard shows generated sample data. Open
 
 ## Use your own data
 
-1. Copy `.env.example` to `.env` and fill in Azure DevOps, GitHub, or both.
+**Connect with your CLI logins** (no tokens to create). Sign in with `gh auth login` and/or
+`az login`, start the dashboard with `mise run dev` (below), open **Connect** in the sidebar,
+pick an account or organisation and press **Sync now**. Nothing secret is saved: the choice
+goes in `connections.json` in the data folder, and each sync asks `gh` or `az` for a fresh
+token. `mise run sync` uses the same connections.
+
+**Or use tokens in `.env`**, which also works in Docker, where there is no `gh` or `az`:
+
+1. Copy `.env.example` to `.env` and fill in Azure DevOps, GitHub, or both. `.env` takes
+   precedence over a connection.
 2. Start the dashboard with `docker compose up -d dashboard` and press **Sync now**, or
    sync from the command line with `docker compose run --rm cli sync`.
 
