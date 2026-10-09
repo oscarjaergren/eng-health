@@ -402,5 +402,13 @@ mod tests {
             msg.ends_with("failed: Please run az login. Sign in with `az login`."),
             "{msg}"
         );
+
+        // Success without a token is a failure too, not an empty token.
+        let dir = connected("exit 0", "echo entra.fake");
+        let d = dir.path().to_str().unwrap();
+        let msg = Settings::from_env(&env(&[("DATA_DIR", d), ("PATH", d)]))
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("failed: no output"), "{msg}");
     }
 }
