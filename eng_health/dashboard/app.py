@@ -14,7 +14,7 @@ from .. import metrics
 from ..config import ConfigError, Settings
 from ..models import PLATFORM_NAMES
 from ..store import SchemaError, Store
-from . import pipelines_page
+from . import digest_page, pipelines_page
 from .data import load, relative, run_sync
 from .filters import sidebar_filters
 from .tabs import flow, overview, people, size, table, timing
@@ -107,8 +107,15 @@ def main() -> None:
     if store is not None and slot is not None:
         _sync_status(settings, store, slot)
 
-    if st.sidebar.radio("View", ["Pull requests", "Pipelines"], horizontal=True) == "Pipelines":
-        pipelines_page.render(store, github=bool(settings.github_owner), prices=settings.ci_prices)
+    view = st.sidebar.radio("View", ["This week", "Pull requests", "Pipelines"], horizontal=True)
+    github = bool(settings.github_owner)
+    if view == "Pipelines":
+        pipelines_page.render(store, github=github, prices=settings.ci_prices)
+        return
+    if view == "This week":
+        digest_page.render(
+            load(settings, store)[0], store, github=github, prices=settings.ci_prices
+        )
         return
 
     st.title("Pull request analytics")

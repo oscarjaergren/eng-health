@@ -1,9 +1,14 @@
 # eng-health
 
-A Streamlit dashboard for pull request flow and code review across Azure DevOps and GitHub.
-It shows how long PRs take to get reviewed and merged, which PRs are waiting, and who is
-doing the reviewing. A Pipelines view covers GitHub Actions: failure rate, slow
-workflows, time lost to reruns, and flaky jobs and tests.
+A Streamlit dashboard for engineering health across Azure DevOps and GitHub. It opens on
+**This week**: the headline numbers for pull requests and CI against the week before, and
+what moved most, such as a workflow that got slower or a test that started failing
+intermittently.
+
+The **Pull requests** view shows how long PRs take to get reviewed and merged, how big they
+are, which are waiting, and who is doing the reviewing. The **Pipelines** view covers GitHub
+Actions: failure rate, slow workflows, CI minutes and their cost, time lost to reruns, and
+flaky jobs and tests.
 
 ## Try it with sample data
 
@@ -75,6 +80,11 @@ Setting only half of a platform's pair is reported as an error rather than ignor
 
 Filters are kept in the page URL, so a filtered view can be shared as a link. Dates and
 times are shown in your browser's time zone.
+
+This week compares the last 7 days with the 7 before. A workflow is listed under "What
+moved" when its median run time or its CI minutes change by 20% or more, with at least 3 runs
+or 30 minutes in each week; a test is listed the first week it fails and then passes on the
+same commit.
 
 Pipelines (GitHub Actions, last 90 days):
 
