@@ -17,7 +17,7 @@ from ..store import SchemaError, Store
 from . import pipelines_page
 from .data import load, relative, run_sync
 from .filters import sidebar_filters
-from .tabs import flow, overview, people, table, timing
+from .tabs import flow, overview, people, size, table, timing
 
 # Module level, so it runs once per process rather than on every rerun.
 load_dotenv()
@@ -138,14 +138,16 @@ def main() -> None:
         st.info("No pull requests match these filters.")
         return
 
-    tabs = st.tabs(["Overview", "Flow", "People", "Timing", "Data"])
+    tabs = st.tabs(["Overview", "Flow", "Size", "People", "Timing", "Data"])
     with tabs[0]:
         overview.render(filtered, tz)
     with tabs[1]:
         flow.render(filtered, names, tz)
     with tabs[2]:
-        people.render(filtered, names)
+        size.render(filtered, tz)
     with tabs[3]:
-        timing.render(filtered, tz)
+        people.render(filtered, names)
     with tabs[4]:
+        timing.render(filtered, tz)
+    with tabs[5]:
         table.render(filtered, names)

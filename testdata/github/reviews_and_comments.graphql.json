@@ -102,6 +102,29 @@
           }
         }
       ]
+    },
+    "additions": 1240,
+    "deletions": 30,
+    "changedFiles": 3,
+    "files": {
+      "totalCount": 3,
+      "nodes": [
+        {
+          "path": "src/app.py",
+          "additions": 120,
+          "deletions": 20
+        },
+        {
+          "path": "tests/test_app.py",
+          "additions": 40,
+          "deletions": 10
+        },
+        {
+          "path": "package-lock.json",
+          "additions": 1080,
+          "deletions": 0
+        }
+      ]
     }
   }
 }

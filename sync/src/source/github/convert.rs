@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{Platform, PullRequest, Repo, State, Timestamp};
-use crate::rules::{identity, is_bot, is_infrastructure, parse_time};
+use crate::rules::{identity, is_bot, is_infrastructure, is_noise, parse_time};
 use crate::source::{People, Responses};
 
 use super::types::{Actor, PrNode, PrState};
@@ -28,6 +28,25 @@ fn person(raw: &str, people: &mut People) -> String {
             .or_insert_with(|| raw.to_owned());
     }
     ident
+}
+
+/// Lines added, deleted and files changed, without noise files. A PR with more files than one
+/// query carries falls back to GitHub's totals, noise included.
+// ponytail: >100 files uses unfiltered totals; page `files` if huge PRs matter.
+fn size(node: &PrNode) -> (Option<i64>, Option<i64>, Option<i64>) {
+    match &node.files {
+        Some(files) if !files.truncated() => {
+            let kept = files.nodes.iter().filter(|f| !is_noise(&f.path));
+            let (mut added, mut deleted, mut count) = (0, 0, 0);
+            for f in kept {
+                added += f.additions;
+                deleted += f.deletions;
+                count += 1;
+            }
+            (Some(added), Some(deleted), Some(count))
+        }
+        _ => (node.additions, node.deletions, node.changed_files),
+    }
 }
 
 #[must_use]
@@ -95,6 +114,7 @@ pub fn convert(node: &PrNode, repo: &Repo, complete: bool, people: &mut People) 
         PrState::Closed => State::Abandoned,
         PrState::Open => State::Open,
     };
+    let (additions, deletions, changed_files) = size(node);
 
     PullRequest {
         platform: Platform::Github,
@@ -110,6 +130,9 @@ pub fn convert(node: &PrNode, repo: &Repo, complete: bool, people: &mut People) 
         closed_at: parse_time(node.merged_at.as_deref().or(node.closed_at.as_deref())),
         url: node.url.clone(),
         is_infrastructure: is_infrastructure(&node.title),
+        additions,
+        deletions,
+        changed_files,
         updated_at: parse_time(Some(&node.updated_at)),
         reviewers,
         approvers: approvers.into_iter().collect(),

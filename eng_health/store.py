@@ -47,7 +47,9 @@ class Store:
                     f"{self.path} uses schema version {version}, but this dashboard "
                     f"understands {SCHEMA_VERSION}. Update the dashboard."
                 )
-            c.executescript(_SCHEMA)
+            # Without the final PRAGMA: the engine stamps the version, because it alone re-syncs
+            # when it finds an older one.
+            c.executescript(_SCHEMA.rsplit("PRAGMA user_version", 1)[0])
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:

@@ -84,7 +84,10 @@ def _spec(rng: random.Random, now: datetime, number: int) -> dict[str, Any]:
         if age < timedelta(days=4) or roll < 0.05
         else ("abandoned" if roll < 0.12 else "merged")
     )
-    cycle = timedelta(hours=rng.lognormvariate(3, 1))
+    # Mostly small PRs with a long tail; bigger ones wait longer, as they do in practice.
+    lines = int(rng.lognormvariate(4.5, 1.3)) + 1
+    slower = (1 + lines / 400) ** 0.6
+    cycle = timedelta(hours=rng.lognormvariate(3, 1) * slower)
     closed = created + cycle if state != "open" and created + cycle < now else None
     if closed is None and state != "open":
         state = "open"
@@ -94,7 +97,7 @@ def _spec(rng: random.Random, now: datetime, number: int) -> dict[str, Any]:
     reviewers = rng.sample(others, rng.choice([0, 1, 1, 2, 2, 2, 3]))
     events = []
     for r in reviewers:
-        t = created + timedelta(hours=rng.lognormvariate(1.5, 1.2))
+        t = created + timedelta(hours=rng.lognormvariate(1.5, 1.2) * slower)
         if t < now:
             vote = rng.choices([10, 5, -10, 0], [70, 15, 5, 10])[0] if state != "abandoned" else 0
             events.append(
@@ -111,6 +114,9 @@ def _spec(rng: random.Random, now: datetime, number: int) -> dict[str, Any]:
         "reviewers": reviewers,
         "events": events,
         "author_replies": rng.choice([0, 0, 1, 2]) if events else 0,
+        "deletions": int(lines * rng.uniform(0.05, 0.4)),
+        "lines": lines,
+        "files": max(1, lines // rng.randint(20, 80)),
     }
 
 
@@ -145,6 +151,10 @@ def _record(s: dict[str, Any], platform: str, repo: str) -> PullRequest:
             else f"https://github.com/demo/{repo}/pull/{number}"
         ),
         is_infrastructure=s["title"] in INFRA_TITLES,
+        # Azure DevOps reports no sizes yet, like the real thing.
+        additions=None if azure else s["lines"] - s["deletions"],
+        deletions=None if azure else s["deletions"],
+        changed_files=None if azure else s["files"],
         updated_at=None if azure else max([s["created"], *(e["at"] for e in s["events"])]),
         reviewers=[who(p) for p in s["reviewers"]],
         approvers=sorted(who(e["who"]) for e in s["events"] if e["vote"] >= 5),

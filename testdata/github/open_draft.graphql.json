@@ -33,6 +33,19 @@
     "reviewThreads": {
       "totalCount": 0,
       "nodes": []
+    },
+    "additions": 5000,
+    "deletions": 4000,
+    "changedFiles": 150,
+    "files": {
+      "totalCount": 150,
+      "nodes": [
+        {
+          "path": "src/a.py",
+          "additions": 1,
+          "deletions": 1
+        }
+      ]
     }
   }
 }

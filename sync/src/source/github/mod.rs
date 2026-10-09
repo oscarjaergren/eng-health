@@ -31,6 +31,7 @@ const NESTED_MAX: i64 = 100;
 const PR_FIELDS: &str = "
 fragment PrFields on PullRequest {
   number title url isDraft state createdAt updatedAt closedAt mergedAt
+  additions deletions changedFiles files(first: 100) { totalCount nodes { path additions deletions } }
   author { __typename login }
   reviewRequests(first: 25) { nodes { requestedReviewer { ... on User { login } } } }
   reviews(first: $nested) { totalCount nodes { state submittedAt author { __typename login } } }
@@ -275,7 +276,10 @@ impl Source for GitHub {
     }
 
     fn is_unchanged(&self, item: &Item, cached: &PullRequest) -> bool {
-        cached.details_complete && cached.updated_at == parse_time(Some(&item.node.updated_at))
+        // A record without a size predates sizes, so it is fetched again to get one.
+        cached.details_complete
+            && cached.additions.is_some()
+            && cached.updated_at == parse_time(Some(&item.node.updated_at))
     }
 
     async fn complete(&self, repo: &Repo, item: Item) -> Result<Item, SourceError> {
@@ -300,5 +304,51 @@ impl Source for GitHub {
 
     fn requests(&self) -> u64 {
         self.http.requests()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{GitHubSettings, OwnerType};
+
+    fn fixture() -> (Repo, Item) {
+        let raw: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../testdata/github/reviews_and_comments.graphql.json"
+        ))
+        .unwrap();
+        let repo = Repo {
+            platform: Platform::Github,
+            id: "101".into(),
+            name: "web".into(),
+            raw: json!({}),
+        };
+        (
+            repo,
+            Item::new(serde_json::from_value(raw["node"].clone()).unwrap()),
+        )
+    }
+
+    #[test]
+    fn only_a_complete_sized_record_of_the_same_update_is_skipped() {
+        let gh = GitHub::new(GitHubSettings {
+            owner: "o".into(),
+            token: "t".into(),
+            owner_type: OwnerType::Org,
+            api_url: API.into(),
+        });
+        let (repo, item) = fixture();
+        let stored = gh.convert(&repo, &item, &mut People::new());
+        assert!(gh.is_unchanged(&item, &stored));
+
+        let mut older = stored.clone();
+        older.updated_at = parse_time(Some("2020-01-01T00:00:00Z"));
+        let mut partial = stored.clone();
+        partial.details_complete = false;
+        let mut no_size = stored;
+        no_size.additions = None;
+        for cached in [older, partial, no_size] {
+            assert!(!gh.is_unchanged(&item, &cached), "{cached:?}");
+        }
     }
 }

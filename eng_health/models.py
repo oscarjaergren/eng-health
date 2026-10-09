@@ -30,6 +30,11 @@ class PullRequest:
     closed_at: datetime | None
     url: str
     is_infrastructure: bool
+    # Lines and files changed, without lock files and generated code (the engine's
+    # rules::is_noise). None where the platform doesn't report them: Azure DevOps, for now.
+    additions: int | None = None
+    deletions: int | None = None
+    changed_files: int | None = None
     # GitHub exposes this and we use it to skip unchanged PRs; Azure DevOps does not.
     updated_at: datetime | None = None
     reviewers: list[str] = field(default_factory=list)

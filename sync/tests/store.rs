@@ -134,3 +134,32 @@ fn newer_schema_is_refused() {
         Err(StoreError::NewerSchema { .. })
     ));
 }
+
+#[test]
+fn an_older_schema_forgets_sync_windows_so_everything_is_synced_again() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("db.sqlite");
+    let mut s = Store::open(&path).unwrap();
+    s.record_sync("github", Utc::now(), true, None).unwrap();
+    drop(s);
+    let conn = Connection::open(&path).unwrap();
+    conn.pragma_update(None, "user_version", SCHEMA_VERSION - 1)
+        .unwrap();
+    drop(conn);
+
+    let s = Store::open(&path).unwrap();
+    assert!(s.sync_state("github").unwrap().last_sync.is_none());
+    drop(s);
+    // Stamped with the current version, so the next open keeps the windows.
+    let mut s = Store::open(&path).unwrap();
+    s.record_sync("github", Utc::now(), true, None).unwrap();
+    drop(s);
+    assert!(
+        Store::open(&path)
+            .unwrap()
+            .sync_state("github")
+            .unwrap()
+            .last_sync
+            .is_some()
+    );
+}

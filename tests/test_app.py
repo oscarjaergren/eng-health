@@ -27,8 +27,11 @@ def run() -> AppTest:
 def test_sample_data_renders_every_tab() -> None:
     at = run()
     assert "sample data" in at.sidebar.info[0].value
-    assert [t.label for t in at.tabs] == ["Overview", "Flow", "People", "Timing", "Data"]
+    tabs = [t.label for t in at.tabs]
+    assert tabs == ["Overview", "Flow", "Size", "People", "Timing", "Data"]
     assert at.metric[0].value != "0"
+    size = at.tabs[tabs.index("Size")]
+    assert size.dataframe[0].value["PRs"].sum() > 0
 
 
 def test_filters_survive_in_the_url() -> None:
@@ -64,7 +67,7 @@ def test_sync_button_runs_the_sync_and_shows_the_data(
     assert "2 API requests" in " ".join(m.value for m in at.markdown)
     # The sidebar reflects the sync that just ran, not the state before it.
     assert "Last synced just now" in " ".join(c.value for c in at.sidebar.caption)
-    assert len(at.tabs) == 5
+    assert len(at.tabs) == 6
     # The infrastructure PR is hidden by default.
     assert "1 of 2 PRs match" in " ".join(c.value for c in at.sidebar.caption)
 
@@ -99,7 +102,7 @@ def test_live_mode_reads_the_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     monkeypatch.setenv("AZURE_DEVOPS_ORGANIZATION", "org")
     monkeypatch.setenv("AZURE_DEVOPS_PAT", "pat")
     at = run()
-    assert len(at.tabs) == 5
+    assert len(at.tabs) == 6
 
 
 def test_bad_config_is_shown_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:

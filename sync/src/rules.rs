@@ -16,11 +16,33 @@ static INFRA: LazyLock<Regex> = LazyLock::new(|| {
     .expect("valid regex")
 });
 
+// Files that change by the thousand without anyone writing them: lock files, generated and
+// minified code, snapshots, vendored folders. Left out of PR size, which should mean lines a
+// person wrote and a reviewer read.
+static NOISE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?ix)
+        (^|/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?
+             |Cargo\.lock|uv\.lock|poetry\.lock|Pipfile\.lock|composer\.lock|Gemfile\.lock
+             |go\.sum|packages\.lock\.json|flake\.lock|pubspec\.lock|Podfile\.lock|mix\.lock
+             |mise\.lock|\.terraform\.lock\.hcl)$
+        | \.(min\.js|min\.css|map|snap|pb\.go|designer\.cs|g\.cs|g\.i\.cs)$
+        | _pb2(_grpc)?\.pyi?$ | ModelSnapshot\.cs$
+        | (^|/)(vendor|node_modules|third_party|__snapshots__|generated)/",
+    )
+    .expect("valid regex")
+});
+
 const KNOWN_BOTS: [&str; 4] = ["github-actions", "dependabot", "renovate", "copilot"];
 
 #[must_use]
 pub(crate) fn is_infrastructure(title: &str) -> bool {
     INFRA.is_match(title)
+}
+
+#[must_use]
+pub(crate) fn is_noise(path: &str) -> bool {
+    NOISE.is_match(path)
 }
 
 #[must_use]
@@ -54,6 +76,35 @@ pub fn parse_time(value: Option<&str>) -> Option<Timestamp> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn noise_is_generated_or_locked_not_written() {
+        for path in [
+            "package-lock.json",
+            "web/yarn.lock",
+            "sync/Cargo.lock",
+            "go.sum",
+            ".config/mise.lock",
+            "infra/.terraform.lock.hcl",
+            "app/static/app.min.js",
+            "src/__snapshots__/view.test.ts.snap",
+            "Data/Migrations/20260101_Init.Designer.cs",
+            "Data/Migrations/AppDbContextModelSnapshot.cs",
+            "api/orders_pb2.py",
+            "vendor/github.com/x/y.go",
+        ] {
+            assert!(is_noise(path), "{path}");
+        }
+        for path in [
+            "src/lock.rs",
+            "docs/lockfiles.md",
+            "Services/OrderDesigner.cs",
+            "src/generator.py",
+            "README.md",
+        ] {
+            assert!(!is_noise(path), "{path}");
+        }
+    }
 
     #[test]
     fn infrastructure_matches_whole_words_only() {

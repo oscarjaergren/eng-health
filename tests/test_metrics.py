@@ -114,3 +114,22 @@ def test_export_table_uses_display_names() -> None:
     out = metrics.export_table(frame(pr(1, approvers=["bob"])), {"alice": "Alice", "bob": "Bob"})
     row = out.iloc[0]
     assert (row["Platform"], row["Author"], row["Approved by"]) == ("GitHub", "Alice", "Bob")
+
+
+def test_size_buckets_depth_and_volume() -> None:
+    # (additions, deletions): 10 lines is XS, 11 is S, 1000 is L, 1001 is XL.
+    sizes = {1: (6, 4), 2: (11, 0), 3: (900, 100), 4: (1000, 1)}
+    prs = [pr(n, additions=a, deletions=d, changed_files=1) for n, (a, d) in sizes.items()]
+    prs[2].comment_counts = {"bob": 5, "alice": 9}  # alice wrote it: her replies don't count
+    prs.append(pr(5, platform="azure_devops"))  # no size yet: left out of every size view
+    df = frame(*prs)
+
+    assert df["size"].tolist()[:4] == ["XS (≤10)", "S (≤100)", "L (≤1000)", "XL (>1000)"]
+    assert pd.isna(df["size"].iloc[4])
+    table = metrics.by_size(df)
+    assert table["PRs"].tolist() == [1, 1, 1, 1]
+    assert table.loc["L (≤1000)", "Comments per 100 lines"] == 0.5
+
+    volume = metrics.author_volume(df).loc["alice"]
+    assert (volume["PRs"], volume["Lines added"], volume["Lines deleted"]) == (4, 1917, 105)
+    assert volume["Largest PR (lines)"] == 1001
