@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import numpy as np
 import pandas as pd
 
@@ -18,6 +20,10 @@ def prepare(jobs: pd.DataFrame) -> pd.DataFrame:
     for col in ("started_at", "finished_at"):
         jobs[col] = pd.to_datetime(jobs[col], utc=True, format="ISO8601")
     jobs["is_default_branch"] = jobs["is_default_branch"].astype(bool)
+    # A database from before runner and is_private, until the next sync refetches its jobs.
+    jobs["runner"] = jobs.get("runner", "linux")
+    jobs["is_private"] = jobs.get("is_private", 1)
+    jobs["is_private"] = jobs["is_private"].astype(bool)
     jobs["minutes"] = _minutes(jobs, "started_at", "finished_at")
     return jobs
 
@@ -107,3 +113,28 @@ def flaky_tests(failures: pd.DataFrame, att: pd.DataFrame) -> pd.DataFrame:
         flaky_runs=("run_id", "nunique"), last_seen=("started", "max")
     )
     return out.sort_values("flaky_runs", ascending=False).reset_index()
+
+
+def billed(jobs: pd.DataFrame, prices: Mapping[str, float]) -> pd.DataFrame:
+    """Jobs with billable minutes and estimated cost. GitHub rounds each job up to a whole minute
+    and bills every attempt on every branch; public repositories run free on standard runners."""
+    minutes = np.ceil(jobs["minutes"].fillna(0).clip(lower=0))
+    price = jobs["runner"].map(prices).fillna(0) * jobs["is_private"]
+    week = jobs["started_at"].dt.tz_localize(None).dt.to_period("W").dt.start_time
+    return jobs.assign(billed=minutes, cost=minutes * price, week=week)
+
+
+def minutes_by_workflow(b: pd.DataFrame, now: pd.Timestamp, days: int = 28) -> pd.DataFrame:
+    """Billed minutes and cost per workflow, for the last `days` against the `days` before."""
+    recent = b["started_at"] >= now - pd.Timedelta(days=days)
+    before = ~recent & (b["started_at"] >= now - pd.Timedelta(days=2 * days))
+    keys = ["repository", "pipeline"]
+    out = pd.DataFrame(
+        {
+            "Minutes": b[recent].groupby(keys)["billed"].sum(),
+            "Before": b[before].groupby(keys)["billed"].sum(),
+            "Est. cost ($)": b[recent].groupby(keys)["cost"].sum(),
+        }
+    ).fillna(0)
+    out["Change"] = (out["Minutes"] - out["Before"]) / out["Before"].where(out["Before"] > 0)
+    return out.sort_values("Minutes", ascending=False).reset_index()

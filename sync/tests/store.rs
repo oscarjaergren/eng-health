@@ -163,3 +163,33 @@ fn an_older_schema_forgets_sync_windows_so_everything_is_synced_again() {
             .is_some()
     );
 }
+
+#[test]
+fn a_version_2_jobs_table_is_replaced_with_the_new_columns() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("db.sqlite");
+    drop(Store::open(&path).unwrap());
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "DROP TABLE pipeline_jobs;
+         CREATE TABLE pipeline_jobs (key TEXT PRIMARY KEY, repo_id TEXT, repository TEXT,
+           pipeline TEXT, run_id INTEGER, attempt INTEGER, branch TEXT, is_default_branch INTEGER,
+           commit_sha TEXT, name TEXT, conclusion TEXT, started_at TEXT, finished_at TEXT,
+           url TEXT);
+         PRAGMA user_version = 2;",
+    )
+    .unwrap();
+    drop(conn);
+
+    drop(Store::open(&path).unwrap());
+    let columns: Vec<String> = Connection::open(&path)
+        .unwrap()
+        .prepare("SELECT name FROM pragma_table_info('pipeline_jobs')")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(columns.contains(&"runner".to_owned()));
+    assert!(columns.contains(&"is_private".to_owned()));
+}
