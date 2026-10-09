@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# mise verifies each tool's attestations through GitHub's API. Unauthenticated, that shares the
+# runner IP's small hourly limit with every other job on it, and installs fail when it runs out.
+env:
+  MISE_GITHUB_TOKEN: ${{ github.token }}
+
 # A newer push to the same branch makes the running one irrelevant.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -98,7 +103,8 @@ jobs:
         with:
           version: 2026.8.9 # the same mise as min_version in .config/mise.toml
           install_args: github:sourcefrog/cargo-mutants
-      - run: mise run mutate
+      # The script, not `mise run mutate`: a task makes mise install every tool in the config.
+      - run: scripts/mutate.sh
 
   security:
     runs-on: ubuntu-latest

@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# mise verifies each tool's attestations through GitHub's API. Unauthenticated, that shares the
+# runner IP's small hourly limit with every other job on it, and installs fail when it runs out.
+env:
+  MISE_GITHUB_TOKEN: ${{ github.token }}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
