@@ -58,15 +58,19 @@ def _filter(jobs: pd.DataFrame) -> pd.DataFrame:
     return jobs
 
 
+def load(store: Store | None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Jobs and test failures: sample data without a store."""
+    if store is None:
+        return _sample(datetime.now(UTC).date().isoformat())
+    return _load(str(store.path), store.version())
+
+
 def render(store: Store | None, github: bool, prices: Mapping[str, float]) -> None:
     st.title("Pipelines")
-    if store is None:
-        raw, failures = _sample(datetime.now(UTC).date().isoformat())
-    elif not github:
+    if store is not None and not github:
         st.info("Pipelines come from GitHub Actions. Connect GitHub to see them.")
         return
-    else:
-        raw, failures = _load(str(store.path), store.version())
+    raw, failures = load(store)
     if raw.empty:
         st.info("No pipeline data yet. Sync to fetch the last 90 days of GitHub Actions runs.")
         return

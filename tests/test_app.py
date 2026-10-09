@@ -17,10 +17,14 @@ from .test_sync import fake_binary
 APP = str(Path(__file__).parent.parent / "dashboard_main.py")
 
 
-def run() -> AppTest:
+def run(view: str = "Pull requests") -> AppTest:
+    """The app as it first opens ("This week"), then switched to `view`."""
     at = AppTest.from_file(APP, default_timeout=60)
     at.run()
     assert not at.exception, at.exception
+    if view != "This week":
+        at.sidebar.radio[0].set_value(view).run()
+        assert not at.exception, at.exception
     return at
 
 
@@ -107,7 +111,7 @@ def test_live_mode_reads_the_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 
 def test_bad_config_is_shown_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITHUB_TOKEN", "tok")
-    at = run()
+    at = run("This week")  # the app stops before the view switcher
     assert "GITHUB_OWNER" in at.error[0].value
 
 
@@ -117,3 +121,11 @@ def test_cli_export(tmp_path: Path) -> None:
     out = tmp_path / "prs.csv"
     assert cli(["export", str(out)]) == 0
     assert len(pd.read_csv(out)) == 20
+
+
+def test_this_week_opens_first_with_both_halves() -> None:
+    at = run("This week")
+    assert at.title[0].value == "This week"
+    labels = [m.label for m in at.metric]
+    assert "PRs merged" in labels
+    assert "CI minutes" in labels
