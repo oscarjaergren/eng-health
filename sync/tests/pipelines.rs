@@ -401,3 +401,18 @@ proptest::proptest! {
         let _ = failed_tests(&zip_of(&[("r.xml", &body), ("r.trx", &body)]));
     }
 }
+
+#[test]
+fn reopening_a_current_database_keeps_its_jobs() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("db.sqlite");
+    Store::open(&path)
+        .unwrap()
+        .upsert_jobs(&[stored_job(1)])
+        .unwrap();
+    // Only an older schema version drops pipeline_jobs.
+    assert_eq!(
+        Store::open(&path).unwrap().run_attempts("7").unwrap()[&99],
+        1
+    );
+}
