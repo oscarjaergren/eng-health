@@ -36,7 +36,8 @@ async fn mount_repo(server: &MockServer) {
         .respond_with(ResponseTemplate::new(200).set_body_json(
             json!({"data": {"organization": {"repositories": {
                 "pageInfo": {"hasNextPage": false, "endCursor": null},
-                "nodes": [{"databaseId": 7, "name": "web", "defaultBranchRef": {"name": "main"}}]
+                "nodes": [{"databaseId": 7, "name": "web", "isPrivate": false,
+                           "defaultBranchRef": {"name": "main"}}]
             }}}}),
         ))
         .mount(server)
@@ -106,7 +107,11 @@ async fn jobs_from_every_attempt_are_stored_and_reruns_refetched() {
     let server = MockServer::start().await;
     mount_repo(&server).await;
     mount_runs(&server, 2).await;
-    mount_jobs(&server, &[job(1, 1, "failure"), job(2, 2, "success")], 1).await;
+    let mut windows = job(1, 1, "failure");
+    windows["labels"] = json!(["windows-latest"]);
+    let mut own = job(2, 2, "success");
+    own["labels"] = json!(["self-hosted", "Linux", "X64"]);
+    mount_jobs(&server, &[windows, own], 1).await;
     let (dir, store) = store();
     let gh = client(&server);
 
@@ -127,6 +132,23 @@ async fn jobs_from_every_attempt_are_stored_and_reruns_refetched() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(names, ["CI", "dynamic/dependabot/update-graph"]);
+    // Runners by price; Dependabot's job carries no labels, so it counts as Linux.
+    let runners: Vec<(String, bool)> = rusqlite::Connection::open(dir.path().join("db.sqlite"))
+        .unwrap()
+        .prepare("SELECT runner, is_private FROM pipeline_jobs ORDER BY key")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        runners,
+        [
+            ("windows".to_owned(), false),
+            ("self-hosted".to_owned(), false),
+            ("linux".to_owned(), false)
+        ]
+    );
 
     // Same run, same attempt: nothing is fetched again (the jobs mock expects one call).
     assert_eq!(sync(&gh, &store).await.saved, 0);
@@ -196,6 +218,8 @@ fn stored_job(attempt: i64) -> Job {
         started_at: parse_time(Some(&Utc::now().to_rfc3339())),
         finished_at: None,
         url: String::new(),
+        runner: "linux",
+        is_private: true,
     }
 }
 
@@ -376,4 +400,19 @@ proptest::proptest! {
     ) {
         let _ = failed_tests(&zip_of(&[("r.xml", &body), ("r.trx", &body)]));
     }
+}
+
+#[test]
+fn reopening_a_current_database_keeps_its_jobs() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("db.sqlite");
+    Store::open(&path)
+        .unwrap()
+        .upsert_jobs(&[stored_job(1)])
+        .unwrap();
+    // Only an older schema version drops pipeline_jobs.
+    assert_eq!(
+        Store::open(&path).unwrap().run_attempts("7").unwrap()[&99],
+        1
+    );
 }

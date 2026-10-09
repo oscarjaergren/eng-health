@@ -7,6 +7,8 @@
 -- engine sets it: on an older database it re-syncs everything, so old records gain new fields.
 --
 -- 2: PR size (additions, deletions, changed_files).
+-- 3: runner and is_private on pipeline_jobs. The engine drops an older pipeline_jobs, a cache of
+--    GitHub's last 90 days, and the next sync fetches it again with the new columns.
 
 CREATE TABLE IF NOT EXISTS pull_requests (
     key TEXT PRIMARY KEY,
@@ -36,7 +38,11 @@ CREATE TABLE IF NOT EXISTS pipeline_jobs (
     conclusion TEXT NOT NULL,
     started_at TEXT,
     finished_at TEXT,
-    url TEXT NOT NULL
+    url TEXT NOT NULL,
+    -- linux, windows, macos or self-hosted, from the job's runner labels: what a minute costs.
+    runner TEXT NOT NULL,
+    -- Public repositories run free on standard runners.
+    is_private INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS pipeline_jobs_run ON pipeline_jobs (repo_id, run_id);
 CREATE TABLE IF NOT EXISTS test_failures (
@@ -51,4 +57,4 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_attempt TEXT,
     last_error TEXT
 );
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;

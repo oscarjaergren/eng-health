@@ -38,18 +38,19 @@ writes every stored PR to a CSV file.
 
 ## Configuration
 
-| Variable                                        |                                                                                                                                |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `AZURE_DEVOPS_ORGANIZATION`, `AZURE_DEVOPS_PAT` | Azure DevOps organisation and a PAT with Code (Read) scope. Every project is read.                                             |
-| `GITHUB_OWNER`, `GITHUB_TOKEN`, `GITHUB_TYPE`   | GitHub organisation or user (`org` or `user`) and a token that can read its repositories.                                      |
-| `DATA_DIR`                                      | Where the database lives. Default `data`.                                                                                      |
-| `MAX_PARALLEL_WORKERS`                          | Concurrent API requests. Default 8.                                                                                            |
-| `IDENTITY_ALIASES`                              | Merge one person's identities, e.g. `jdoe=jane.doe@example.com,jd2=jane.doe@example.com`.                                      |
-| `MOCK_MODE`                                     | `true` shows sample data even when credentials are set.                                                                        |
-| `GITHUB_API_URL`, `AZURE_DEVOPS_URL`            | GitHub Enterprise Server or Azure DevOps Server addresses.                                                                     |
-| `LOG_LEVEL`                                     | Dashboard log level (`DEBUG`, `INFO`, `WARNING`). Default `INFO`. The log also includes `eng-health`'s output after each sync. |
-| `RUST_LOG`                                      | `eng-health` log level, e.g. `eng_health=debug` to log every API request with its status and time. Default `info`.             |
-| `ENG_HEALTH_BIN`                                | Path to `eng-health`, if it is neither on `PATH` nor in `sync/target/release`.                                                 |
+| Variable                                        |                                                                                                                                 |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `AZURE_DEVOPS_ORGANIZATION`, `AZURE_DEVOPS_PAT` | Azure DevOps organisation and a PAT with Code (Read) scope. Every project is read.                                              |
+| `GITHUB_OWNER`, `GITHUB_TOKEN`, `GITHUB_TYPE`   | GitHub organisation or user (`org` or `user`) and a token that can read its repositories.                                       |
+| `DATA_DIR`                                      | Where the database lives. Default `data`.                                                                                       |
+| `MAX_PARALLEL_WORKERS`                          | Concurrent API requests. Default 8.                                                                                             |
+| `IDENTITY_ALIASES`                              | Merge one person's identities, e.g. `jdoe=jane.doe@example.com,jd2=jane.doe@example.com`.                                       |
+| `MOCK_MODE`                                     | `true` shows sample data even when credentials are set.                                                                         |
+| `GITHUB_API_URL`, `AZURE_DEVOPS_URL`            | GitHub Enterprise Server or Azure DevOps Server addresses.                                                                      |
+| `LOG_LEVEL`                                     | Dashboard log level (`DEBUG`, `INFO`, `WARNING`). Default `INFO`. The log also includes `eng-health`'s output after each sync.  |
+| `RUST_LOG`                                      | `eng-health` log level, e.g. `eng_health=debug` to log every API request with its status and time. Default `info`.              |
+| `ENG_HEALTH_BIN`                                | Path to `eng-health`, if it is neither on `PATH` nor in `sync/target/release`.                                                  |
+| `CI_MINUTE_PRICES`                              | Dollars per CI minute by runner, e.g. `linux=0.006,windows=0.010,macos=0.062`. Defaults to GitHub's list prices (October 2026). |
 
 Setting only half of a platform's pair is reported as an error rather than ignored.
 
@@ -81,6 +82,10 @@ Pipelines (GitHub Actions, last 90 days):
   Cancelled runs are left out.
 - **Run time**: median and 90th percentile of successful runs, per workflow and job.
 - **Lost to reruns**: time spent in attempts that were then re-run.
+- **CI minutes**: every attempt of every job on every branch, each rounded up to a whole minute,
+  as GitHub bills them. The runner (Linux, Windows, macOS, self-hosted) comes from the job's
+  labels. **Estimated cost** uses list prices (`CI_MINUTE_PRICES`) before any minutes your
+  plan includes; public repositories and self-hosted runners count as free.
 - **Flaky job**: a job that failed, then passed when the same run was re-run.
 - **Flaky test**: a test that failed in a run that then passed on the same commit (a
   rerun, or another run of the workflow). Test results come from JUnit or TRX files in

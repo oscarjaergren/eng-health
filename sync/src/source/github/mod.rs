@@ -46,7 +46,7 @@ const ORG_REPOS: &str = "
 query($login: String!, $cursor: String) {
   organization(login: $login) {
     repositories(first: 100, after: $cursor) {
-      pageInfo { hasNextPage endCursor } nodes { databaseId name defaultBranchRef { name } }
+      pageInfo { hasNextPage endCursor } nodes { databaseId name isPrivate defaultBranchRef { name } }
     }
   }
 }";
@@ -55,7 +55,7 @@ const USER_REPOS: &str = "
 query($login: String!, $cursor: String) {
   user(login: $login) {
     repositories(first: 100, after: $cursor, ownerAffiliations: [OWNER]) {
-      pageInfo { hasNextPage endCursor } nodes { databaseId name defaultBranchRef { name } }
+      pageInfo { hasNextPage endCursor } nodes { databaseId name isPrivate defaultBranchRef { name } }
     }
   }
 }";
@@ -226,7 +226,10 @@ impl Source for GitHub {
                 platform: Platform::Github,
                 id: r.database_id.to_string(),
                 name: r.name,
-                raw: json!({ "default_branch": r.default_branch_ref.map(|b| b.name) }),
+                raw: json!({
+                    "default_branch": r.default_branch_ref.map(|b| b.name),
+                    "private": r.is_private,
+                }),
             }));
             if !page.page_info.has_next_page {
                 return Ok(repos);

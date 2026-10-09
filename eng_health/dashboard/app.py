@@ -108,7 +108,7 @@ def main() -> None:
         _sync_status(settings, store, slot)
 
     if st.sidebar.radio("View", ["Pull requests", "Pipelines"], horizontal=True) == "Pipelines":
-        pipelines_page.render(store, github=bool(settings.github_owner))
+        pipelines_page.render(store, github=bool(settings.github_owner), prices=settings.ci_prices)
         return
 
     st.title("Pull request analytics")

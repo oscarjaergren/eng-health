@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from eng_health import pipelines as pl
+from eng_health.config import ConfigError, Settings
 from eng_health.mock import FLAKY_TESTS, mock_pipelines
 
 from .seed import WritableStore
@@ -34,6 +35,8 @@ def job(
         "started_at": start.isoformat(),
         "finished_at": (start + pd.Timedelta(minutes=10)).isoformat(),
         "url": f"https://github.com/o/web/actions/runs/{run_id}",
+        "runner": "linux",
+        "is_private": 1,
     }
     return {**row, **kw}
 
@@ -103,7 +106,7 @@ def test_pipelines_view_renders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     at = run()
     at.sidebar.radio[0].set_value("Pipelines").run()
     assert not at.exception, at.exception
-    assert [t.label for t in at.tabs] == ["Overview", "Slow", "Reruns", "Flaky"]
+    assert [t.label for t in at.tabs] == ["Overview", "Slow", "Minutes", "Reruns", "Flaky"]
     assert at.metric[0].value == "4"  # runs
     assert at.metric[1].value == "50%"
     assert any("No test results found" in i.value for i in at.info)
@@ -131,7 +134,7 @@ def test_pipelines_view_in_sample_mode() -> None:
     at = run()
     at.sidebar.radio[0].set_value("Pipelines").run()
     assert not at.exception, at.exception
-    assert [t.label for t in at.tabs] == ["Overview", "Slow", "Reruns", "Flaky"]
+    assert [t.label for t in at.tabs] == ["Overview", "Slow", "Minutes", "Reruns", "Flaky"]
     flaky_jobs, flaky_tests = at.metric[3].value.split(" / ")
     assert int(flaky_jobs) > 0
     assert int(flaky_tests) > 0
@@ -146,3 +149,30 @@ def test_sample_pipelines_cover_every_view() -> None:
     assert not pl.rerun_cost(att).empty
     assert not pl.flaky_jobs(jobs).empty
     assert 0 < pl.failure_rate(att)["failed"].mean() < 0.5
+
+
+def test_billed_minutes_round_up_and_public_repos_run_free() -> None:
+    rows = [
+        job(1, 1, "success", runner="linux", is_private=1),  # 10 minutes
+        job(2, 1, "success", runner="macos", is_private=1),
+        job(3, 1, "success", runner="linux", is_private=0),  # public: free
+        job(4, 1, "cancelled", runner="self-hosted", is_private=1),  # self-hosted: free
+    ]
+    rows[0]["finished_at"] = (
+        pd.Timestamp(rows[0]["started_at"]) + pd.Timedelta(seconds=541)
+    ).isoformat()
+    b = pl.billed(pl.prepare(pd.DataFrame(rows)), Settings.from_env({}).ci_prices)
+    assert b["billed"].tolist() == [10, 10, 10, 10]  # 9:01 bills as 10 minutes
+    assert b["cost"].round(3).tolist() == [0.06, 0.62, 0.0, 0.0]
+
+    later = pd.Timestamp(rows[3]["started_at"]) + pd.Timedelta(days=1)
+    table = pl.minutes_by_workflow(b, later, days=2)  # runs 3 and 4 recent, 1 and 2 before
+    assert table[["Minutes", "Before"]].values.tolist() == [[20, 20]]
+    assert table["Change"].tolist() == [0.0]
+
+
+def test_ci_prices_can_be_overridden() -> None:
+    prices = Settings.from_env({"CI_MINUTE_PRICES": "linux=0.004, Windows=0.02"}).ci_prices
+    assert (prices["linux"], prices["windows"], prices["macos"]) == (0.004, 0.02, 0.062)
+    with pytest.raises(ConfigError):
+        Settings.from_env({"CI_MINUTE_PRICES": "linux=cheap"})

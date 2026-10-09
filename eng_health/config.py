@@ -16,6 +16,12 @@ class ConfigError(ValueError):
     """Raised when the environment describes an incomplete or invalid setup."""
 
 
+# GitHub's list prices for standard hosted runners, per minute, as of October 2026:
+# https://docs.github.com/en/billing/reference/actions-runner-pricing
+# CI_MINUTE_PRICES overrides them, e.g. "linux=0.006,windows=0.010".
+CI_PRICES = {"linux": 0.006, "windows": 0.010, "macos": 0.062, "self-hosted": 0.0}
+
+
 @dataclass(frozen=True)
 class Settings:
     # Organisation and owner names, set only when the platform is fully configured.
@@ -25,6 +31,8 @@ class Settings:
     mock: bool
     # Maps one identity onto another, e.g. a GitHub login onto an Azure DevOps email.
     aliases: dict[str, str] = field(default_factory=dict)
+    # US dollars per CI minute, by runner (pipeline_jobs.runner).
+    ci_prices: dict[str, float] = field(default_factory=lambda: dict(CI_PRICES))
 
     @property
     def platforms(self) -> list[str]:
@@ -56,7 +64,19 @@ class Settings:
             data_dir=Path(env.get("DATA_DIR", "data")),
             mock=env.get("MOCK_MODE", "").strip().lower() in ("1", "true", "yes", "on"),
             aliases=_parse_aliases(env.get("IDENTITY_ALIASES", "")),
+            ci_prices=CI_PRICES | _parse_prices(env.get("CI_MINUTE_PRICES", "")),
         )
+
+
+def _parse_prices(value: str) -> dict[str, float]:
+    prices = {}
+    for part in filter(None, (p.strip() for p in value.split(","))):
+        runner, _, price = part.partition("=")
+        try:
+            prices[runner.strip().lower()] = float(price)
+        except ValueError:
+            raise ConfigError(f"CI_MINUTE_PRICES: {part!r} is not runner=price") from None
+    return prices
 
 
 def _parse_aliases(value: str) -> dict[str, str]:

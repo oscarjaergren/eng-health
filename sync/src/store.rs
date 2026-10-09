@@ -11,7 +11,7 @@ use crate::model::{Platform, PullRequest, Timestamp};
 use crate::pipelines::Job;
 
 /// The version at the end of `schema.sql`; a test checks they agree.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = include_str!("../schema.sql");
 
@@ -62,6 +62,10 @@ impl Store {
                 path: path.display().to_string(),
                 found,
             });
+        }
+        if found < 3 {
+            // Version 3 added columns; CREATE TABLE IF NOT EXISTS can't add them to an old table.
+            conn.execute("DROP TABLE IF EXISTS pipeline_jobs", [])?;
         }
         conn.execute_batch(SCHEMA)?;
         if found < SCHEMA_VERSION {
@@ -196,7 +200,7 @@ impl Store {
             }
             let mut put = tx.prepare_cached(
                 "INSERT OR REPLACE INTO pipeline_jobs VALUES \
-                 (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                 (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             )?;
             for j in jobs {
                 put.execute(params![
@@ -214,6 +218,8 @@ impl Store {
                     j.started_at.map(|t| t.to_string()),
                     j.finished_at.map(|t| t.to_string()),
                     j.url,
+                    j.runner,
+                    j.is_private,
                 ])?;
             }
             bump(&tx)?;

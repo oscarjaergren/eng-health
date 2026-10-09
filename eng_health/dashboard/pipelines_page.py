@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -57,7 +58,7 @@ def _filter(jobs: pd.DataFrame) -> pd.DataFrame:
     return jobs
 
 
-def render(store: Store | None, github: bool) -> None:
+def render(store: Store | None, github: bool, prices: Mapping[str, float]) -> None:
     st.title("Pipelines")
     if store is None:
         raw, failures = _sample(datetime.now(UTC).date().isoformat())
@@ -79,7 +80,9 @@ def render(store: Store | None, github: bool) -> None:
     flaky = pl.flaky_jobs(jobs)
     tests = pl.flaky_tests(failures, att) if not failures.empty else pd.DataFrame()
 
-    overview, slow, rerun_tab, flaky_tab = st.tabs(["Overview", "Slow", "Reruns", "Flaky"])
+    overview, slow, minutes_tab, rerun_tab, flaky_tab = st.tabs(
+        ["Overview", "Slow", "Minutes", "Reruns", "Flaky"]
+    )
     with overview:
         final = att[att["final"]]
         default = final[final["is_default_branch"] & (final["conclusion"] != "cancelled")]
@@ -126,6 +129,9 @@ def render(store: Store | None, github: bool) -> None:
         st.dataframe(
             pl.job_durations(jobs).head(20), width="stretch", column_config=_minutes_cols()
         )
+
+    with minutes_tab:
+        _minutes(pl.billed(jobs, prices))
 
     with rerun_tab:
         if reruns.empty:
@@ -186,3 +192,49 @@ def render(store: Store | None, github: bool) -> None:
 def _minutes_cols() -> dict[str, Any]:
     fmt = st.column_config.NumberColumn(format="%.1f")
     return {"Median (min)": fmt, "90th pct (min)": fmt}
+
+
+def _minutes(b: pd.DataFrame) -> None:
+    table = pl.minutes_by_workflow(b, pd.Timestamp.now(tz="UTC"))
+    recent, before = table["Minutes"].sum(), table["Before"].sum()
+    c = st.columns(2)
+    c[0].metric(
+        "CI minutes, last 4 weeks",
+        f"{recent:,.0f}",
+        delta=f"{(recent - before) / before:+.0%} on the 4 weeks before" if before else None,
+        delta_color="inverse",
+        help="Every attempt of every job on every branch, each rounded up to a whole minute, "
+        "as GitHub bills them.",
+    )
+    c[1].metric(
+        "Estimated cost, last 4 weeks",
+        f"${table['Est. cost ($)'].sum():,.2f}",
+        help="At list price per runner (CI_MINUTE_PRICES overrides it), before any minutes your "
+        "plan includes. Public repositories run free on standard runners; self-hosted are free.",
+    )
+    by = st.radio("Colour by", ["Workflow", "Runner"], horizontal=True)
+    column = "pipeline" if by == "Workflow" else "runner"
+    weekly = b.groupby(["week", column], as_index=False)["billed"].sum()
+    show(
+        px.bar(
+            weekly,
+            x="week",
+            y="billed",
+            color=column,
+            title="CI minutes per week",
+            labels={"billed": "Minutes", "week": "", column: by},
+        )
+    )
+    st.dataframe(
+        table,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "repository": "Repository",
+            "pipeline": "Workflow",
+            "Minutes": st.column_config.NumberColumn("Minutes (last 4 weeks)", format="%d"),
+            "Before": st.column_config.NumberColumn("4 weeks before", format="%d"),
+            "Est. cost ($)": st.column_config.NumberColumn(format="dollar"),
+            "Change": st.column_config.NumberColumn(format="percent"),
+        },
+    )

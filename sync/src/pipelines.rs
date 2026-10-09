@@ -53,6 +53,8 @@ pub struct Job {
     pub started_at: Option<Timestamp>,
     pub finished_at: Option<Timestamp>,
     pub url: String,
+    pub runner: &'static str,
+    pub is_private: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -88,6 +90,24 @@ struct JobInfo {
     started_at: Option<String>,
     completed_at: Option<String>,
     html_url: Option<String>,
+    #[serde(default)]
+    labels: Vec<String>,
+}
+
+/// The runner a job ran on, by price: GitHub bills Linux, Windows and macOS minutes differently,
+/// and self-hosted ones not at all.
+// ponytail: larger runners (8-core etc.) count as standard; read the size label if they matter.
+fn runner(labels: &[String]) -> &'static str {
+    let has = |s: &str| labels.iter().any(|l| l.to_lowercase().contains(s));
+    if has("self-hosted") {
+        "self-hosted"
+    } else if has("windows") {
+        "windows"
+    } else if has("macos") {
+        "macos"
+    } else {
+        "linux"
+    }
 }
 
 #[derive(Deserialize)]
@@ -252,6 +272,9 @@ impl GitHub {
             _ => "unnamed".to_owned(),
         };
         let default = repo.raw.get("default_branch").and_then(|b| b.as_str());
+        // Unknown means private, so a missing field overstates cost rather than hiding it.
+        let is_private =
+            repo.raw.get("private").and_then(serde_json::Value::as_bool) != Some(false);
         Ok(infos
             .into_iter()
             .map(|j| Job {
@@ -269,6 +292,8 @@ impl GitHub {
                 started_at: parse_time(j.started_at.as_deref()),
                 finished_at: parse_time(j.completed_at.as_deref()),
                 url: j.html_url.unwrap_or_default(),
+                runner: runner(&j.labels),
+                is_private,
             })
             .collect())
     }

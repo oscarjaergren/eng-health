@@ -211,6 +211,11 @@ def mock_pipelines(
                         "started_at": start.isoformat(),
                         "finished_at": (start + timedelta(minutes=minutes)).isoformat(),
                         "url": f"https://github.com/demo/{repo}/actions/runs/{run_id}",
+                        # The mobile app builds on macOS, the 10x price; Nightly on Windows.
+                        "runner": "macos"
+                        if repo == "mobile-app" and workflow == "CI"
+                        else ("windows" if workflow == "Nightly" else "linux"),
+                        "is_private": int(repo != "docs-site"),
                     }
                 )
             start += timedelta(minutes=30)
