@@ -64,7 +64,7 @@ impl Store {
             });
         }
         conn.execute_batch(SCHEMA)?;
-        if found > 0 && found < SCHEMA_VERSION {
+        if found < SCHEMA_VERSION {
             // Records changed shape. Forgetting the sync windows makes the next sync list every
             // PR again, and sources refetch any record missing the new fields.
             conn.execute("UPDATE sync_state SET last_sync = NULL", [])?;
