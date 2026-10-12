@@ -7,13 +7,16 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 
+import numpy as np
 import pandas as pd
 
 from .models import PLATFORM_NAMES, PullRequest, State
+from .period import Period, between, sparklines
 
-WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+# Dependency update bots: their PRs follow no human review process, so they are left out by default.
+BOTS = "dependabot|renovate"
 
 
 def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = None) -> pd.DataFrame:
@@ -29,6 +32,7 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
         counts: dict[str, int] = {}
         for p, n in pr.comment_counts.items():
             counts[one(p)] = counts.get(one(p), 0) + n
+        author = one(pr.author)
         rows.append(
             {
                 "key": pr.key,
@@ -36,7 +40,7 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
                 "repository": pr.repository,
                 "number": pr.number,
                 "title": pr.title,
-                "author": one(pr.author),
+                "author": author,
                 "state": pr.state.value,
                 "is_draft": pr.is_draft,
                 "is_infrastructure": pr.is_infrastructure,
@@ -52,6 +56,8 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
                 "approvers": sorted({one(p) for p in pr.approvers}),
                 "rejecters": sorted({one(p) for p in pr.rejecters}),
                 "comment_counts": counts,
+                # Authors replying on their own PR is not review.
+                "comments": sum(n for p, n in counts.items() if p != author),
                 "first_responses": responses,
             }
         )
@@ -67,6 +73,7 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
         df[col] = pd.to_numeric(df[col]).astype("Float64")
     df["lines"] = df["additions"] + df["deletions"]
     df["size"] = pd.cut(df["lines"], SIZE_EDGES, labels=SIZE_LABELS)
+    df["is_bot"] = df["author"].str.contains(BOTS, case=False)
     return df
 
 
@@ -79,7 +86,7 @@ _COLUMNS = [
     "key", "platform", "repository", "number", "title", "author", "state", "is_draft",
     "is_infrastructure", "additions", "deletions", "changed_files", "details_complete",
     "created_at", "closed_at", "first_review_at",
-    "url", "reviewers", "approvers", "rejecters", "comment_counts", "first_responses",
+    "url", "reviewers", "approvers", "rejecters", "comment_counts", "comments", "first_responses",
 ]  # fmt: skip
 
 
@@ -89,11 +96,9 @@ class Filters:
     repositories: tuple[str, ...] = ()
     authors: tuple[str, ...] = ()
     states: tuple[str, ...] = ()
-    start: date | None = None
-    end: date | None = None
-    include_infrastructure: bool = False
     include_drafts: bool = True
-    tz: str = "UTC"
+    include_bots: bool = False
+    include_infrastructure: bool = False
 
 
 def apply_filters(df: pd.DataFrame, f: Filters) -> pd.DataFrame:
@@ -106,148 +111,98 @@ def apply_filters(df: pd.DataFrame, f: Filters) -> pd.DataFrame:
     ):
         if wanted:
             mask &= df[col].isin(wanted)
-    local_day = df["created_at"].dt.tz_convert(f.tz).dt.date
-    if f.start:
-        mask &= local_day >= f.start
-    if f.end:
-        mask &= local_day <= f.end
-    if not f.include_infrastructure:
-        mask &= ~df["is_infrastructure"]
     if not f.include_drafts:
         mask &= ~df["is_draft"]
+    if not f.include_bots:
+        mask &= ~df["is_bot"]
+    if not f.include_infrastructure:
+        mask &= ~df["is_infrastructure"]
     return df[mask]
 
 
-def _median(s: pd.Series) -> float:
-    return float(s.median()) if s.notna().any() else float("nan")
+def merged_in(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    return df[(df["state"] == State.MERGED.value) & between(df["closed_at"], start, end)]
 
 
-def summary(df: pd.DataFrame) -> dict[str, float]:
-    merged = df[df["state"] == State.MERGED.value]
-    reviewed = merged["approvers"].map(len).gt(0) | merged["first_review_at"].notna()
-    return {
-        "prs": len(df),
-        "merged": len(merged),
-        "open": int((df["state"] == State.OPEN.value).sum()),
-        "median_cycle_hours": _median(merged["cycle_hours"]),
-        "median_first_review_hours": _median(df["first_review_hours"]),
-        "merged_without_review": int((~reviewed).sum()),
-    }
+def opened_in(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    return df[between(df["created_at"], start, end)]
 
 
-def repo_summary(df: pd.DataFrame) -> pd.DataFrame:
-    g = df.groupby("repository")
+def review_status(df: pd.DataFrame) -> pd.Series:
+    """Where each PR's review stands. An approval outranks an earlier change request."""
+    approved = df["approvers"].map(len).gt(0)
+    status = np.select(
+        [approved, df["rejecters"].map(len).gt(0), df["first_review_at"].notna()],
+        ["Approved, not merged", "Changes requested", "Commented"],
+        "No review",
+    )
+    return pd.Series(status, index=df.index)
+
+
+def waiting(df: pd.DataFrame, now: datetime, min_days: int = 2) -> pd.DataFrame:
+    """Open, non-draft PRs open for `min_days` or more, oldest first."""
+    open_ = df[(df["state"] == State.OPEN.value) & ~df["is_draft"]]
+    open_ = open_.assign(
+        status=review_status(open_), age=(pd.Timestamp(now) - open_["created_at"]).dt.days
+    )
+    out = open_[open_["age"] >= min_days].sort_values("age", ascending=False)
+    return out[["title", "repository", "author", "status", "age", "url"]]
+
+
+def reviews_given(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:
+    """Per person: PRs they first responded to (comment, vote or review) in (start, end]."""
+    people = [p for firsts in df["first_responses"] for p, t in firsts.items() if start < t <= end]
+    return pd.Series(people, dtype="str").value_counts()
+
+
+def _merges(df: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str, by: str) -> pd.DataFrame:
+    """PRs merged: a row per chart bucket, a column per value of `by`."""
+    return period.each(now, tz, lambda a, b: merged_in(df, a, b)[by].value_counts()).fillna(0)
+
+
+def repositories(df: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str) -> pd.DataFrame:
+    """Per repository: PRs merged and opened in the period, open now, and merges per bucket."""
+    start, end = period.window(now)
+    merged = merged_in(df, start, end)
     out = pd.DataFrame(
         {
-            "PRs": g.size(),
-            "Merged": g["state"].apply(lambda s: int((s == State.MERGED.value).sum())),
-            "Open": g["state"].apply(lambda s: int((s == State.OPEN.value).sum())),
-            "Median cycle (h)": g["cycle_hours"].median(),
-            "Median first review (h)": g["first_review_hours"].median(),
+            "Merged": merged["repository"].value_counts(),
+            "Opened": opened_in(df, start, end)["repository"].value_counts(),
+            "Open now": df.loc[df["state"] == State.OPEN.value, "repository"].value_counts(),
+            "Median to merge (h)": merged.groupby("repository")["cycle_hours"].median(),
         }
-    )
-    return out.sort_values("PRs", ascending=False)
-
-
-def monthly_flow(df: pd.DataFrame, tz: str = "UTC") -> pd.DataFrame:
-    def month(col: str) -> pd.Series:
-        period: pd.Series = df[col].dt.tz_convert(tz).dt.tz_localize(None).dt.to_period("M")
-        return period
-
-    opened = df.groupby(month("created_at")).size().rename("Opened")
-    merged = df[df["state"] == State.MERGED.value]
-    by_close = merged.groupby(month("closed_at").loc[merged.index])
-    out = pd.concat(
-        [
-            opened,
-            by_close.size().rename("Merged"),
-            by_close["cycle_hours"].median().rename("Median cycle (h)"),
-            by_close["cycle_hours"].quantile(0.75).rename("75th pct cycle (h)"),
-            df.groupby(month("created_at"))["first_review_hours"]
-            .median()
-            .rename("Median first review (h)"),
-        ],
-        axis=1,
-    ).sort_index()
-    out[["Opened", "Merged"]] = out[["Opened", "Merged"]].fillna(0).astype(int)
-    out.index = pd.PeriodIndex(out.index).to_timestamp()
-    out.index.name = "month"
-    return out
-
-
-def stale_open(df: pd.DataFrame, now: datetime, older_than_days: int = 7) -> pd.DataFrame:
-    open_ = df[(df["state"] == State.OPEN.value) & ~df["is_draft"]].copy()
-    open_["Age (days)"] = (pd.Timestamp(now) - open_["created_at"]).dt.days
-    open_["Approvals"] = open_["approvers"].map(len)
-    open_["Reviewed"] = open_["first_review_at"].notna()
-    stale = open_[open_["Age (days)"] >= older_than_days]
-    return stale.sort_values("Age (days)", ascending=False)[
-        ["title", "repository", "author", "Age (days)", "Reviewed", "Approvals", "url"]
-    ]
-
-
-def comment_rows(df: pd.DataFrame, exclude_own: bool = True) -> pd.DataFrame:
-    """One row per (commenter, PR) with the number of comments."""
-    rows = [
-        (person, author, repo, key, title, n)
-        for counts, author, repo, key, title in zip(
-            df["comment_counts"],
-            df["author"],
-            df["repository"],
-            df["key"],
-            df["title"],
-            strict=True,
-        )
-        for person, n in counts.items()
-        if not (exclude_own and person == author)
-    ]
-    return pd.DataFrame(
-        rows, columns=["person", "author", "repository", "key", "title", "comments"]
-    )
-
-
-def reviewer_activity(df: pd.DataFrame, exclude_own_comments: bool = True) -> pd.DataFrame:
-    """Per person: what they authored and how they took part in others' reviews."""
-    approvals = df["approvers"].explode().dropna().value_counts()
-    rejections = df["rejecters"].explode().dropna().value_counts()
-    comments = comment_rows(df, exclude_own_comments).groupby("person")["comments"].sum()
-
-    responses = [
-        (person, (t - created).total_seconds() / 3600)
-        for created, firsts in zip(df["created_at"], df["first_responses"], strict=True)
-        for person, t in firsts.items()
-    ]
-    resp = pd.DataFrame(responses, columns=["person", "hours"])
-    reviewed = resp.groupby("person").size()
-    response_h = resp.groupby("person")["hours"].median()
-
-    authored = df["author"].value_counts()
-    out = pd.DataFrame(
-        {
-            "PRs authored": authored,
-            "PRs reviewed": reviewed,
-            "Approvals": approvals,
-            "Change requests": rejections,
-            "Comments": comments,
-            "Median response (h)": response_h,
-        }
-    )
-    counts = ["PRs authored", "PRs reviewed", "Approvals", "Change requests", "Comments"]
+    ).rename_axis("repository")
+    counts = ["Merged", "Opened", "Open now"]
     out[counts] = out[counts].fillna(0).astype(int)
-    out.index.name = "person"
-    return out.sort_values(["PRs reviewed", "Comments"], ascending=False)
+    out["Trend"] = sparklines(_merges(df, period, now, tz, "repository"), out.index)
+    return out.sort_values(["Merged", "Opened"], ascending=False)
 
 
-def non_reviewers(activity: pd.DataFrame) -> pd.DataFrame:
-    """People who author PRs but have not reviewed anyone else's."""
-    mask = (activity["PRs authored"] > 0) & (activity["PRs reviewed"] == 0)
-    return activity.loc[mask, ["PRs authored"]].sort_values("PRs authored", ascending=False)
-
-
-def weekday_hour(df: pd.DataFrame, tz: str = "UTC") -> pd.DataFrame:
-    local = df["created_at"].dt.tz_convert(tz)
-    grid = pd.crosstab(local.dt.day_name(), local.dt.hour)
-    return grid.reindex(index=WEEKDAYS, columns=range(24), fill_value=0)
+def people(df: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str) -> pd.DataFrame:
+    """Per person, in the period: PRs opened, merged and reviewed, and lines in merged PRs.
+    Lines are missing for people whose PRs report no size (Azure DevOps)."""
+    start, end = period.window(now)
+    merged = merged_in(df, start, end)
+    sized = merged[merged["lines"].notna()].groupby("author")
+    out = pd.DataFrame(
+        {
+            "Opened": opened_in(df, start, end)["author"].value_counts(),
+            "Merged": merged["author"].value_counts(),
+            "Reviews": reviews_given(df, start, end),
+            "Lines added": sized["additions"].sum(),
+            "Lines deleted": sized["deletions"].sum(),
+            "Median to merge (h)": merged.groupby("author")["cycle_hours"].median(),
+        }
+    ).rename_axis("person")
+    counts = ["Opened", "Merged", "Reviews"]
+    out[counts] = out[counts].fillna(0).astype(int)
+    out["Net"] = out["Lines added"] - out["Lines deleted"]
+    # NaN, not pd.NA, so a missing size shows as a blank rather than "None".
+    out[["Lines added", "Lines deleted", "Net"]] = out[
+        ["Lines added", "Lines deleted", "Net"]
+    ].astype(float)
+    out["Trend"] = sparklines(_merges(df, period, now, tz, "author"), out.index)
+    return out.sort_values(["Merged", "Reviews"], ascending=False)
 
 
 EXPORT_COLUMNS = {
@@ -287,40 +242,13 @@ def export_table(df: pd.DataFrame, people: Mapping[str, str]) -> pd.DataFrame:
 def by_size(df: pd.DataFrame) -> pd.DataFrame:
     """Per size bucket: how long PRs wait for review and merge, and how closely they are read."""
     sized = df[df["lines"].notna()]
-    others = comment_rows(sized).groupby("key")["comments"].sum()
-    sized = sized.assign(comments=sized["key"].map(others).fillna(0))
     g = sized.groupby("size", observed=False)
     out = pd.DataFrame(
         {
             "PRs": g.size(),
             "Median first review (h)": g["first_review_hours"].median(),
             "Median to merge (h)": g["cycle_hours"].median(),
-            # Comments from people other than the author, per 100 changed lines.
             "Comments per 100 lines": 100 * g["comments"].sum() / g["lines"].sum(),
         }
     )
     return out[out["PRs"] > 0]
-
-
-def size_trend(df: pd.DataFrame, tz: str = "UTC") -> pd.DataFrame:
-    """Median lines changed per PR, by the month PRs were opened (weeks are too few PRs)."""
-    sized = df[df["lines"].notna()]
-    month = sized["created_at"].dt.tz_convert(tz).dt.tz_localize(None).dt.to_period("M")
-    out = sized.groupby(month.dt.start_time)["lines"].agg(["median", "size"])
-    return out.rename(columns={"median": "Median lines", "size": "PRs"}).rename_axis("month")
-
-
-def author_volume(df: pd.DataFrame) -> pd.DataFrame:
-    """Per author: lines written in the selection's PRs, and how big their PRs usually are."""
-    sized = df[df["lines"].notna()]
-    g = sized.groupby("author")
-    out = pd.DataFrame(
-        {
-            "PRs": g.size(),
-            "Lines added": g["additions"].sum(),
-            "Lines deleted": g["deletions"].sum(),
-            "Median PR (lines)": g["lines"].median(),
-            "Largest PR (lines)": g["lines"].max(),
-        }
-    ).rename_axis("person")
-    return out.sort_values("Lines added", ascending=False)

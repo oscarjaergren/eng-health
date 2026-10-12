@@ -64,6 +64,10 @@ Each of these fails silently, cryptically, or only on someone else's machine.
   installs with `--locked` and fails on a tool without a recorded download URL.
 - **actionlint skips its shell checks when shellcheck is missing.** Run hooks through mise, which
   has it pinned.
+- **A URL-bound widget with a `format_func` stores the label, not the value, in the URL**:
+  `?view=Review&period=30D`, not `?view=review`. Any other spelling is silently ignored.
+- **Streamlit reads `.streamlit/config.toml` from the directory it starts in.** Started from
+  anywhere but the repo root (or `/app` in the image), the dashboard loses its theme.
 - **pandas joins on an empty frame can change the index.** Merge on columns; `flaky_jobs` crashed
   for selections with no failures this way.
 - **`mise run mutate` edits `sync/src` in place** (the tests read `../testdata`, which a copy

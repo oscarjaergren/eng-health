@@ -1,113 +1,127 @@
-"""Sidebar filters, mirrored into the URL so a filtered view can be shared."""
+"""The filter bar: the period, and which PRs count. Every choice is kept in the URL, so a
+filtered view can be shared."""
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from collections.abc import Callable
 
 import pandas as pd
 import streamlit as st
 
 from ..metrics import Filters
 from ..models import PLATFORM_NAMES
+from ..period import PERIODS, Period
+from .charts import esc, html, md
 
-STATES = ["open", "merged", "abandoned"]
-DEFAULT_STATES = ["open", "merged"]
-
-
-def _url_list(name: str, options: list[str], default: list[str] | None = None) -> list[str]:
-    values = st.query_params.get_all(name)
-    picked = [v for v in values if v in options]
-    return picked if values else (default or [])
-
-
-def _url_date(name: str, fallback: date) -> date:
-    try:
-        return date.fromisoformat(st.query_params.get(name, ""))
-    except ValueError:
-        return fallback
+STATES = {"open": "Open", "merged": "Merged", "abandoned": "Abandoned"}
+# Each chip opens a checklist. A checkbox's key is "<chip>|<option>", so its state is the filter.
+CHIPS = {"platform": "Platform", "repo": "Repository", "author": "Author", "state": "State"}
+CHIP_DEFAULTS = {"state": ["open", "merged"]}
+TOGGLES = {"drafts": True, "bots": False, "infra": False}
 
 
-def sidebar_filters(df: pd.DataFrame, people: dict[str, str], tz: str) -> Filters:
-    st.sidebar.header("Filters")
+def _clear() -> None:
+    for key in list(st.session_state):
+        chip, sep, option = str(key).partition("|")
+        if sep and chip in CHIPS:
+            st.session_state[key] = option in CHIP_DEFAULTS.get(chip, [])
+    for key, value in TOGGLES.items():
+        st.session_state[key] = value
 
-    def name(p: str) -> str:
-        return people.get(p, p)
+
+def _chip(name: str, options: list[str], label: Callable[[str], str] = str) -> list[str]:
+    """A chip whose checklist picks some of `options`; none picked means all of them."""
+    keys = {o: f"{name}|{o}" for o in options}
+    default = CHIP_DEFAULTS.get(name, [])
+    if not any(k in st.session_state for k in keys.values()):
+        # First run: from the URL, where "all" stands for an empty choice that isn't the default.
+        wanted = st.query_params.get_all(name) or default
+        for option, key in keys.items():
+            st.session_state[key] = option in wanted
+    chosen = [o for o, k in keys.items() if st.session_state[k]]
+
+    if not chosen or len(chosen) == len(options):
+        summary = "All"
+    elif len(chosen) <= 2:
+        summary = ", ".join(label(o) for o in chosen)
+    else:
+        summary = f"{len(chosen)} selected"
+    changed = chosen != [o for o in options if o in default]
+    with st.popover(
+        f":gray[{CHIPS[name]}] {md(summary)}",
+        type="primary" if changed else "secondary",
+        key=f"chip-{name}",
+    ):
+        for option, key in keys.items():
+            st.checkbox(md(label(option)), key=key)
+
+    if changed:
+        st.query_params[name] = chosen or ["all"]
+    elif name in st.query_params:
+        del st.query_params[name]
+    return chosen
+
+
+def _span(period: Period, now: pd.Timestamp, tz: str) -> str:
+    end = now.tz_convert(tz)
+    start = end - pd.Timedelta(days=period.days - 1)
+    year = ", %Y" if start.year != end.year else ""
+    days = f"{start.strftime('%b %-d' + year)} – {end.strftime('%b %-d')}"
+    return f'<div class="span-range">{days}<span>vs prior {esc(period.name)}</span></div>'
+
+
+def bar(
+    df: pd.DataFrame, names: dict[str, str], now: pd.Timestamp, tz: str
+) -> tuple[Period, Filters]:
+    period = PERIODS[
+        st.segmented_control(
+            "Period",
+            list(PERIODS),
+            format_func=str.upper,
+            default="7d",
+            required=True,
+            key="period",
+            bind="query-params",
+            label_visibility="collapsed",
+        )
+    ]
+    html(_span(period, now, tz))
+    html('<div><span class="vrule"></span></div>')
 
     platforms = sorted(df["platform"].unique())
-    chosen_platforms: list[str] = []
-    if len(platforms) > 1:
-        chosen_platforms = st.sidebar.multiselect(
-            "Platform",
-            platforms,
-            default=_url_list("platform", platforms),
-            format_func=lambda p: PLATFORM_NAMES.get(p, p),
-            placeholder="All platforms",
-        )
-
-    repos = sorted(df["repository"].unique())
-    chosen_repos = st.sidebar.multiselect(
-        "Repository", repos, default=_url_list("repo", repos), placeholder="All repositories"
+    chosen_platforms = (
+        _chip("platform", platforms, PLATFORM_NAMES.__getitem__) if len(platforms) > 1 else []
     )
-
-    authors = sorted(df["author"].unique(), key=lambda p: name(p).lower())
-    chosen_authors = st.sidebar.multiselect(
-        "Author",
-        authors,
-        default=_url_list("author", authors),
-        format_func=name,
-        placeholder="All authors",
+    repos = _chip("repo", sorted(df["repository"].unique()))
+    authors = _chip(
+        "author",
+        sorted(df["author"].unique(), key=lambda p: str(names.get(p, p)).lower()),
+        lambda p: names.get(p, p),
     )
+    states = _chip("state", list(STATES), STATES.__getitem__)
+    html('<div><span class="vrule"></span></div>')
 
-    chosen_states = st.sidebar.multiselect(
-        "State",
-        STATES,
-        default=_url_list("state", STATES, DEFAULT_STATES),
-        format_func=str.capitalize,
-        placeholder="All states",
+    drafts = st.toggle("Drafts", value=True, key="drafts", bind="query-params")
+    bots = st.toggle("Dependabot & Renovate PRs", value=False, key="bots", bind="query-params")
+    infra = st.toggle(
+        "Infrastructure PRs",
+        value=False,
+        key="infra",
+        bind="query-params",
+        help="Titles mentioning Terraform, Helm, Bicep, Kubernetes and similar. Left out by "
+        "default because they usually follow a different review process.",
     )
+    chips_set = any(k in st.query_params for k in CHIPS)
+    if chips_set or any(st.session_state[k] != v for k, v in TOGGLES.items()):
+        st.space("stretch")
+        st.button("Clear filters", type="tertiary", on_click=_clear, key="clear")
 
-    local = df["created_at"].dt.tz_convert(tz)
-    lo, hi = local.min().date(), local.max().date()
-    picked = st.sidebar.date_input(
-        "Created between",
-        value=(max(lo, _url_date("from", lo)), min(hi, _url_date("to", hi))),
-        min_value=lo,
-        max_value=max(hi, datetime.now(UTC).date()),
-    )
-    # While the user is mid-way through picking a range, only one date is set.
-    start, end = picked if isinstance(picked, tuple) and len(picked) == 2 else (lo, hi)
-
-    infra = st.sidebar.toggle(
-        "Include infrastructure PRs",
-        value=st.query_params.get("infra") == "1",
-        help=f"{int(df['is_infrastructure'].sum())} PRs have titles mentioning Terraform, Helm, "
-        "Bicep, Kubernetes and similar. They are left out by default because they usually "
-        "follow a different review process.",
-    )
-    drafts = st.sidebar.toggle("Include drafts", value=st.query_params.get("drafts", "1") == "1")
-
-    st.query_params.clear()
-    params: dict[str, str | list[str]] = {
-        "platform": chosen_platforms,
-        "repo": chosen_repos,
-        "author": chosen_authors,
-        # "all" keeps an empty selection from reverting to the default on reload.
-        "state": chosen_states or ["all"],
-        **({"from": start.isoformat()} if start != lo else {}),
-        **({"to": end.isoformat()} if end != hi else {}),
-        **({"infra": "1"} if infra else {}),
-        **({"drafts": "0"} if not drafts else {}),
-    }
-    st.query_params.update({k: v for k, v in params.items() if v})
-
-    return Filters(
+    return period, Filters(
         platforms=tuple(chosen_platforms),
-        repositories=tuple(chosen_repos),
-        authors=tuple(chosen_authors),
-        states=tuple(chosen_states),
-        start=start,
-        end=end,
-        include_infrastructure=infra,
+        repositories=tuple(repos),
+        authors=tuple(authors),
+        states=tuple(states),
         include_drafts=drafts,
-        tz=tz,
+        include_bots=bots,
+        include_infrastructure=infra,
     )

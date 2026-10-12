@@ -42,6 +42,8 @@ TITLES = [
 ]
 # Merges each sample GitHub login with the same person's Azure DevOps identity.
 ALIASES = {login: f"{login}@example.com" for _, login in PEOPLE}
+# Dependency updates, hidden by default like real ones.
+BOT = ("Dependabot", "dependabot[bot]")
 INFRA_TITLES = [
     "Bump Terraform AWS provider",
     "Update Helm chart values",
@@ -59,6 +61,7 @@ def mock_pull_requests(
     numbers = dict.fromkeys(repos, 0)
     people = {f"{login}@example.com": name for name, login in PEOPLE}
     people.update({login: login for _, login in PEOPLE})
+    people[BOT[1]] = BOT[0]
 
     prs = []
     for _ in range(count):
@@ -69,7 +72,8 @@ def mock_pull_requests(
 
 
 def _spec(rng: random.Random, now: datetime, number: int) -> dict[str, Any]:
-    author = rng.choice(PEOPLE)
+    bot = rng.random() < 0.05
+    author = BOT if bot else rng.choice(PEOPLE)
     # Weekday office hours, as people actually work.
     day = now - timedelta(days=rng.uniform(0, 270))
     while day.weekday() >= 5:
@@ -105,7 +109,9 @@ def _spec(rng: random.Random, now: datetime, number: int) -> dict[str, Any]:
             )
     return {
         "number": number,
-        "title": rng.choice(INFRA_TITLES) if rng.random() < 0.06 else rng.choice(TITLES),
+        "title": "Bump pandas from 3.0.5 to 3.0.6"
+        if bot
+        else (rng.choice(INFRA_TITLES) if rng.random() < 0.06 else rng.choice(TITLES)),
         "author": author,
         "created": created,
         "closed": closed,
@@ -167,7 +173,12 @@ def _record(s: dict[str, Any], platform: str, repo: str) -> PullRequest:
 # --- Pipelines -------------------------------------------------------------
 
 WORKFLOWS = {"CI": ["build", "test", "lint"], "Deploy": ["deploy"], "Nightly": ["e2e"]}
-FLAKY_TESTS = ["tests.test_api::test_timeout_retry", "OrderTests.Concurrent_checkout"]
+# The last one only started failing this week, so Today has a new flaky test to show.
+FLAKY_TESTS = [
+    "tests.test_api::test_timeout_retry",
+    "OrderTests.Concurrent_checkout",
+    "checkout.spec.ts › applies discount code",
+]
 BROKEN_TESTS = ["tests.test_store::test_migration", "ParserTests.Parses_unicode"]
 
 
@@ -220,6 +231,6 @@ def mock_pipelines(
                 )
             start += timedelta(minutes=30)
         if test_fails:
-            pool = FLAKY_TESTS if flaky else BROKEN_TESTS
+            pool = (FLAKY_TESTS[2:] if age < 6 else FLAKY_TESTS[:2]) if flaky else BROKEN_TESTS
             failures.append({"repo_id": repo, "run_id": run_id, "test_id": rng.choice(pool)})
     return jobs, failures

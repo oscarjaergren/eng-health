@@ -14,6 +14,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from eng_health import pipelines as pl
+from eng_health.period import PERIODS
 
 from .test_pipelines import job
 
@@ -114,5 +115,5 @@ def test_each_run_has_one_final_attempt_and_rates_are_shares(
     assert dict(zip(att[att["final"]]["run_id"], att[att["final"]]["conclusion"], strict=True)) == {
         run_id: c for run_id, (_, _, c) in final_outcomes(rows).items()
     }
-    rates = pl.failure_rate(att)["failed"]
-    assert rates.between(0, 1).all()
+    rates = pl.failure_rate(att, PERIODS["30d"], pd.Timestamp("2026-09-20T00:00Z"), "UTC")
+    assert ((rates.fillna(0) >= 0) & (rates.fillna(0) <= 100)).all().all()

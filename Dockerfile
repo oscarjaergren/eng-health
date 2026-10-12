@@ -35,6 +35,7 @@ COPY --from=engine /repo/sync/target/release/eng-health /usr/local/bin/eng-healt
 COPY sync/schema.sql ./sync/
 COPY eng_health ./eng_health
 COPY main.py dashboard_main.py ./
+COPY .streamlit ./.streamlit
 # UID 1000 matches the usual host user, so the ./data bind mount stays writable.
 RUN useradd --create-home --uid 1000 app && mkdir -p /app/data && chown app /app/data
 USER 1000

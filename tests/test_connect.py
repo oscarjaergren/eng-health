@@ -50,13 +50,14 @@ def test_a_saved_connection_configures_the_platform_but_env_wins(tmp_path: Path)
     assert connections.load(tmp_path) == {}
 
 
-def test_connect_in_the_sidebar_saves_the_choice(tmp_path: Path) -> None:
-    st.cache_data.clear()  # the panel caches what the CLIs listed
+def test_connect_in_settings_saves_the_choice(tmp_path: Path) -> None:
+    st.cache_data.clear()  # the drawer caches what the CLIs listed
     fake_cli(tmp_path / "bin", "gh", GH)
-    at = run("This week")
-    at.sidebar.selectbox(key="github_pick").set_value(1).run()
-    at.sidebar.button(key="connect_github").click().run()
+    at = run()
+    at.button(key="sample").click().run()
+    at.radio(key="github_pick").set_value(1).run()
+    at.button(key="connect_github").click().run()
     assert not at.exception, at.exception
     assert connections.load(tmp_path) == {"github": {"owner": "acme", "type": "org"}}
-    # Now live, with a way back.
-    assert at.sidebar.button(key="disconnect_github")
+    # Now live, and the drawer stays open to show it, with a way back.
+    assert at.button(key="disconnect_github")

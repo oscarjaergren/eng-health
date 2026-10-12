@@ -1,4 +1,4 @@
-"""Pipeline metrics and the Pipelines view."""
+"""Pipeline metrics and the CI view."""
 
 from __future__ import annotations
 
@@ -10,10 +10,11 @@ import pytest
 
 from eng_health import pipelines as pl
 from eng_health.config import ConfigError, Settings
-from eng_health.mock import FLAKY_TESTS, mock_pipelines
+from eng_health.mock import FLAKY_TESTS, mock_pipelines, mock_pull_requests
+from eng_health.period import PERIODS, Period
 
 from .seed import WritableStore
-from .test_app import run
+from .test_app import numbers, run, text
 
 
 def job(
@@ -59,13 +60,12 @@ def test_attempts_and_failure_rate(jobs: pd.DataFrame) -> None:
     att = pl.attempts(jobs)
     final = att[att["final"]].set_index("run_id")["conclusion"].to_dict()
     assert final == {1: "success", 2: "failure", 3: "cancelled", 4: "success"}
-    # Default branch, cancelled excluded: run 1 passed, run 2 failed.
-    assert pl.failure_rate(att)["failed"].tolist() == [0.5]
+    # Default branch, cancelled excluded: run 1 passed on 8 September, run 2 failed on the 9th.
+    rates = pl.failure_rate(att, PERIODS["7d"], pd.Timestamp("2026-09-12T00:00Z"), "UTC")
+    assert rates["CI"].dropna().tolist() == [0.0, 100.0]
 
 
-def test_rerun_cost_and_flaky_jobs(jobs: pd.DataFrame) -> None:
-    att = pl.attempts(jobs)
-    assert pl.rerun_cost(att)["hours"].sum() == pytest.approx(10 / 60)
+def test_flaky_jobs(jobs: pd.DataFrame) -> None:
     flaky = pl.flaky_jobs(jobs)
     assert flaky[["name", "flaky_runs", "minutes_lost"]].values.tolist() == [["test", 1, 10.0]]
 
@@ -95,49 +95,46 @@ def test_durations_use_successful_final_attempts(jobs: pd.DataFrame) -> None:
     assert d.loc["CI", "Median (min)"] == pytest.approx(10)
 
 
-def live(monkeypatch: pytest.MonkeyPatch) -> None:
+def live(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> WritableStore:
     monkeypatch.setenv("GITHUB_OWNER", "acme")
     monkeypatch.setenv("GITHUB_TOKEN", "tok")
+    return WritableStore(tmp_path / "eng_health.db")
 
 
-def test_pipelines_view_renders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    live(monkeypatch)
-    WritableStore(tmp_path / "eng_health.db").upsert_jobs(ROWS)
-    at = run()
-    at.sidebar.radio[0].set_value("Pipelines").run()
-    assert not at.exception, at.exception
-    assert [t.label for t in at.tabs] == ["Overview", "Slow", "Minutes", "Reruns", "Flaky"]
-    assert at.metric[0].value == "4"  # runs
-    assert at.metric[1].value == "50%"
-    assert any("No test results found" in i.value for i in at.info)
+def recent(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`rows` moved to end yesterday, so the view's 7 days include them whenever this runs."""
+    shift = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=1) - pd.Timestamp(rows[-1]["started_at"])
+    return [
+        {
+            **r,
+            **{k: (pd.Timestamp(r[k]) + shift).isoformat() for k in ("started_at", "finished_at")},
+        }
+        for r in rows
+    ]
 
 
-def test_flaky_tests_view(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    live(monkeypatch)
-    db = WritableStore(tmp_path / "eng_health.db")
-    db.upsert_jobs(ROWS)
+def test_ci_view_renders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    live(monkeypatch, tmp_path).upsert_jobs(recent(ROWS))
+    at = run("ci")
+    shown = numbers(at)
+    assert shown["Default-branch failures"] == "50.0%"
+    assert shown["Flaky jobs"] == "1"
+    assert "No test results found" in text(at)
+
+
+def test_ci_view_shows_flaky_tests(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    db = live(monkeypatch, tmp_path)
+    db.upsert_jobs(recent(ROWS))
     db.upsert_test_failures([("1", 1, "Api.Flaky")])
-    at = run()
-    at.sidebar.radio[0].set_value("Pipelines").run()
-    assert not at.exception, at.exception
-    assert at.metric[3].value == "1 / 1"
+    at = run("ci")
+    assert "↳ Api.Flaky" in text(at)  # under the job that flaked on the same run
 
 
-def test_pipelines_view_without_data(monkeypatch: pytest.MonkeyPatch) -> None:
-    live(monkeypatch)
-    at = run()
-    at.sidebar.radio[0].set_value("Pipelines").run()
-    assert any("No pipeline data yet" in i.value for i in at.info)
-
-
-def test_pipelines_view_in_sample_mode() -> None:
-    at = run()
-    at.sidebar.radio[0].set_value("Pipelines").run()
-    assert not at.exception, at.exception
-    assert [t.label for t in at.tabs] == ["Overview", "Slow", "Minutes", "Reruns", "Flaky"]
-    flaky_jobs, flaky_tests = at.metric[3].value.split(" / ")
-    assert int(flaky_jobs) > 0
-    assert int(flaky_tests) > 0
+def test_ci_view_without_runs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    prs, people = mock_pull_requests(count=20)
+    live(monkeypatch, tmp_path).upsert(prs, people)
+    at = run("ci")
+    assert any("No pipeline runs match" in i.value for i in at.info)
 
 
 def test_sample_pipelines_cover_every_view() -> None:
@@ -146,9 +143,10 @@ def test_sample_pipelines_cover_every_view() -> None:
     att = pl.attempts(jobs)
     tests = pl.flaky_tests(failures, att)
     assert set(tests["test_id"]) == set(FLAKY_TESTS)  # broken tests never pass, so never flaky
-    assert not pl.rerun_cost(att).empty
+    assert not att["final"].all()  # some runs were re-run
     assert not pl.flaky_jobs(jobs).empty
-    assert 0 < pl.failure_rate(att)["failed"].mean() < 0.5
+    final = att[att["final"] & att["is_default_branch"]]
+    assert 0 < final["failed"].mean() < 0.5
 
 
 def test_billed_minutes_round_up_and_public_repos_run_free() -> None:
@@ -165,10 +163,10 @@ def test_billed_minutes_round_up_and_public_repos_run_free() -> None:
     assert b["billed"].tolist() == [10, 10, 10, 10]  # 9:01 bills as 10 minutes
     assert b["cost"].round(3).tolist() == [0.06, 0.62, 0.0, 0.0]
 
-    later = pd.Timestamp(rows[3]["started_at"]) + pd.Timedelta(days=1)
-    table = pl.minutes_by_workflow(b, later, days=2)  # runs 3 and 4 recent, 1 and 2 before
-    assert table[["Minutes", "Before"]].values.tolist() == [[20, 20]]
-    assert table["Change"].tolist() == [0.0]
+    # Runs 3 and 4 fall in the last 2 days, 1 and 2 in the 2 before.
+    now = pd.Timestamp(rows[3]["started_at"]) + pd.Timedelta(hours=23)
+    table = pl.cost_by_repository(b, Period(2, "2 days", "D", 2), now, "UTC")
+    assert table[["Minutes", "Share", "Change"]].values.tolist() == [[20, 1.0, 0.0]]
 
 
 def test_ci_prices_can_be_overridden() -> None:
