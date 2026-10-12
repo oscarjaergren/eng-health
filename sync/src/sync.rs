@@ -179,6 +179,11 @@ async fn run<S: Source>(
         // Only "Mine" in the dashboard needs it, so it doesn't fail the sync.
         Err(e) => tracing::warn!("{platform}: could not tell whose credentials these are: {e}"),
     }
+    match source.teams().await {
+        Ok(teams) => db(store, move |s| s.save_teams(platform, &teams)).await?,
+        // Reading teams can need a permission the PR sync doesn't (GitHub's read:org).
+        Err(e) => tracing::warn!("{platform}: could not read teams: {e}"),
+    }
     tracing::info!(
         "{platform}: {} repositories, listing PRs since {since:?}",
         repos.len()

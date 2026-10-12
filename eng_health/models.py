@@ -16,6 +16,16 @@ class State(StrEnum):
     ABANDONED = "abandoned"
 
 
+@dataclass(frozen=True)
+class Team:
+    """A team as GitHub or Azure DevOps defines it, as the engine syncs it."""
+
+    key: str  # "platform:team_id"
+    name: str
+    members: frozenset[str]
+    repos: frozenset[str]  # repository keys ("platform:repo_id"); none on Azure DevOps
+
+
 @dataclass
 class PullRequest:
     platform: str

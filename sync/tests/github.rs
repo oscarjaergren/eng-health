@@ -5,7 +5,7 @@ use std::time::Duration;
 use chrono::{TimeZone, Utc};
 use eng_health::github::GitHub;
 use eng_health::{GitHubSettings, OwnerType};
-use eng_health::{Platform, Repo};
+use eng_health::{Platform, Repo, Team};
 use eng_health::{Source, SourceError};
 use serde_json::{Value, json};
 use wiremock::matchers::{body_partial_json, body_string_contains, header, method};
@@ -136,6 +136,59 @@ async fn the_viewer_is_named_as_prs_name_people() {
         .await;
     let me = client(&server, OwnerType::Org).viewer().await.unwrap();
     assert_eq!(me.as_deref(), Some("jane-doe"));
+}
+
+#[tokio::test]
+async fn teams_come_with_all_their_members_and_repositories() {
+    let server = MockServer::start().await;
+    let page = |more: bool, nodes: Value| json!({"pageInfo": {"hasNextPage": more, "endCursor": "m1"}, "nodes": nodes});
+    Mock::given(body_string_contains("teams(first"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({"data": {"organization": {"teams": {
+                "pageInfo": {"hasNextPage": false, "endCursor": null},
+                "nodes": [{
+                    "slug": "payments", "name": "Payments",
+                    "members": page(true, json!([{"login": "Ann"}])),
+                    "repositories": page(false, json!([{"databaseId": 7}])),
+                }]
+            }}}}),
+        ))
+        // Asked once: asking again would be a loop that missed the last page.
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(body_string_contains("team(slug"))
+        .and(body_string_contains("members(first"))
+        .and(body_string_contains("membership: ALL"))
+        .and(body_string_contains("nodes { login }"))
+        .and(body_partial_json(
+            json!({"variables": {"slug": "payments", "cursor": "m1"}}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"data": {"organization": {
+                "team": {"members": page(false, json!([{"login": "bob"}]))}
+            }}})),
+        )
+        .mount(&server)
+        .await;
+
+    let teams = client(&server, OwnerType::Org).teams().await.unwrap();
+    assert_eq!(
+        teams,
+        [Team {
+            id: "payments".into(),
+            name: "Payments".into(),
+            members: vec!["ann".into(), "bob".into()],
+            repos: vec!["7".into()],
+        }]
+    );
+}
+
+#[tokio::test]
+async fn a_user_account_has_no_teams_to_ask_for() {
+    let server = MockServer::start().await; // no mocks: any request would fail
+    let teams = client(&server, OwnerType::User).teams().await.unwrap();
+    assert_eq!(teams, []);
 }
 
 #[tokio::test]

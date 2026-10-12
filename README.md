@@ -54,7 +54,7 @@ writes every stored PR to a CSV file.
 
 | Variable                                        |                                                                                                                                 |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `AZURE_DEVOPS_ORGANIZATION`, `AZURE_DEVOPS_PAT` | Azure DevOps organisation and a PAT with Code (Read) scope. Every project is read.                                              |
+| `AZURE_DEVOPS_ORGANIZATION`, `AZURE_DEVOPS_PAT` | Azure DevOps organisation and a PAT with Code (Read) scope, and Project and Team (Read) for teams. Every project is read.       |
 | `GITHUB_OWNER`, `GITHUB_TOKEN`, `GITHUB_TYPE`   | GitHub organisation or user (`org` or `user`) and a token that can read its repositories.                                       |
 | `DATA_DIR`                                      | Where the database lives. Default `data`.                                                                                       |
 | `MAX_PARALLEL_WORKERS`                          | Concurrent API requests. Default 8.                                                                                             |
@@ -82,6 +82,13 @@ Setting only half of a platform's pair is reported as an error rather than ignor
   the GitHub or Azure DevOps credentials belong to; `IDENTITY_ALIASES` joins the two. The
   dashboard opens on Mine when it knows who you are, and then on whichever scope you picked last
   (kept in `dashboard.json` in the data folder).
+- **Teams**: the scope switcher also lists the teams GitHub and Azure DevOps already have, yours
+  first, with nothing to set up. A GitHub team covers the repositories it owns; an Azure DevOps
+  team, which owns none, covers where its members work, the way Mine does. Reading teams takes
+  `read:org` on GitHub (the gh CLI has it) and Project and Team (Read) on Azure DevOps; without
+  it there are no teams to pick, and everything else works as before.
+- **Repository pages**: click a repository's name in any table for the same view about just
+  that repository. The ✕ next to its name goes back.
 - **Repositories**: archived repositories and forks are left out unless you pick them in the
   Repository filter, which lists the busiest first and searches as you type. Two repositories with
   the same name, in different Azure DevOps projects or on both platforms, are shown as

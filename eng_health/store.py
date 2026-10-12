@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .models import PullRequest
+from .models import PullRequest, Team
 
 # The schema shared with the sync engine; it ends by setting user_version.
 _SCHEMA = (Path(__file__).resolve().parent.parent / "sync" / "schema.sql").read_text()
@@ -75,6 +75,22 @@ class Store:
 
     def test_failures(self) -> pd.DataFrame:
         return self._query("SELECT * FROM test_failures")
+
+    def teams(self) -> list[Team]:
+        """Teams as the platforms define them, synced by the engine."""
+        with self._conn() as c:
+            teams = c.execute("SELECT platform, team_id, name FROM teams").fetchall()
+            members = c.execute("SELECT platform, team_id, identity FROM team_members").fetchall()
+            repos = c.execute("SELECT platform, team_id, repo_id FROM team_repos").fetchall()
+        return [
+            Team(
+                f"{p}:{t}",
+                name,
+                frozenset(m for mp, mt, m in members if (mp, mt) == (p, t)),
+                frozenset(f"{p}:{r}" for rp, rt, r in repos if (rp, rt) == (p, t)),
+            )
+            for p, t, name in teams
+        ]
 
     def me(self) -> dict[str, str]:
         """Platform -> who its credentials belong to, as PR records name people."""

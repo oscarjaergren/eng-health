@@ -9,7 +9,7 @@ use eng_health::AzureSettings;
 use eng_health::Store;
 use eng_health::azure::{Azure, Threads};
 use eng_health::{Event, Options, sync_platform};
-use eng_health::{Platform, Repo, State};
+use eng_health::{Platform, Repo, State, Team};
 use eng_health::{Source, SourceError};
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path, query_param};
@@ -88,6 +88,36 @@ async fn the_viewer_comes_from_connection_data() {
         .await;
     let me = client(&server).viewer().await.unwrap();
     assert_eq!(me.as_deref(), Some("jane@contoso.com"));
+}
+
+#[tokio::test]
+async fn teams_are_read_per_project_with_their_people() {
+    let server = MockServer::start().await;
+    Mock::given(path("/org/_apis/projects"))
+        .respond_with(list(&[json!({"id": "p1", "name": "Payments"})]))
+        .mount(&server)
+        .await;
+    Mock::given(path("/org/_apis/projects/p1/teams"))
+        .respond_with(list(&[json!({"id": "t1", "name": "Payments Team"})]))
+        .mount(&server)
+        .await;
+    Mock::given(path("/org/_apis/projects/p1/teams/t1/members"))
+        .respond_with(list(&[
+            json!({"identity": {"uniqueName": "Ann@Contoso.com"}}),
+            json!({"identity": {"uniqueName": "[Payments]\\Readers", "isContainer": true}}),
+        ]))
+        .mount(&server)
+        .await;
+    let teams = client(&server).teams().await.unwrap();
+    assert_eq!(
+        teams,
+        [Team {
+            id: "t1".into(),
+            name: "Payments Team".into(),
+            members: vec!["ann@contoso.com".into()],
+            repos: vec![],
+        }]
+    );
 }
 
 #[tokio::test]

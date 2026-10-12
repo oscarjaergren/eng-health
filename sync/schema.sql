@@ -12,6 +12,7 @@
 --    GitHub's last 90 days, and the next sync fetches it again with the new columns.
 -- 4: repositories. Every sync lists them anyway, so the next one fills the table.
 -- 5: me. The next sync fills it too.
+-- 6: teams, team_members and team_repos. And again.
 
 CREATE TABLE IF NOT EXISTS pull_requests (
     key TEXT PRIMARY KEY,
@@ -35,6 +36,27 @@ CREATE TABLE IF NOT EXISTS repositories (
 CREATE TABLE IF NOT EXISTS me (
     platform TEXT PRIMARY KEY,
     identity TEXT NOT NULL
+);
+-- Teams as the platforms define them (GitHub organisation teams, Azure DevOps project teams),
+-- so the dashboard can scope to one with no setup of its own.
+CREATE TABLE IF NOT EXISTS teams (
+    platform TEXT NOT NULL,
+    team_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (platform, team_id)
+);
+CREATE TABLE IF NOT EXISTS team_members (
+    platform TEXT NOT NULL,
+    team_id TEXT NOT NULL,
+    identity TEXT NOT NULL,
+    PRIMARY KEY (platform, team_id, identity)
+);
+-- GitHub only: Azure DevOps teams own no repositories, so the dashboard goes by where members work.
+CREATE TABLE IF NOT EXISTS team_repos (
+    platform TEXT NOT NULL,
+    team_id TEXT NOT NULL,
+    repo_id TEXT NOT NULL,
+    PRIMARY KEY (platform, team_id, repo_id)
 );
 CREATE TABLE IF NOT EXISTS people (
     id TEXT PRIMARY KEY,
@@ -78,4 +100,4 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_attempt TEXT,
     last_error TEXT
 );
-PRAGMA user_version = 5;
+PRAGMA user_version = 6;

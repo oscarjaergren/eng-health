@@ -10,7 +10,7 @@ import random
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from .models import PullRequest, State
+from .models import PullRequest, State, Team
 
 PEOPLE = [
     ("Alice Johnson", "alice"),
@@ -51,6 +51,33 @@ TITLES = [
 ]
 # Whose credentials the sample data was "synced" with, so Mine has someone to be.
 ME = {"github": "grace", "azure_devops": "grace@example.com"}
+# GitHub teams own repositories; Azure DevOps teams don't, so theirs come from where they work.
+TEAMS = [
+    Team(
+        "github:mobile",
+        "Mobile",
+        frozenset({"grace", "ivy", "henry"}),
+        frozenset({"github:gi-mobile-app"}),
+    ),
+    Team(
+        "github:data",
+        "Data",
+        frozenset({"alice", "bob"}),
+        frozenset({"github:gi-data-pipeline", "github:gi-docs-site"}),
+    ),
+    Team(
+        "azure_devops:payments",
+        "Payments Team",
+        frozenset({"grace@example.com", "frank@example.com", "diana@example.com"}),
+        frozenset(),
+    ),
+    Team(
+        "azure_devops:identity",
+        "Identity Team",
+        frozenset({"charlie@example.com", "eve@example.com"}),
+        frozenset(),
+    ),
+]
 # Merges each sample GitHub login with the same person's Azure DevOps identity.
 ALIASES = {login: f"{login}@example.com" for _, login in PEOPLE}
 # Dependency updates, hidden by default like real ones.

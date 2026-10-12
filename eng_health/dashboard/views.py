@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cached_property, partial
 from typing import Literal
@@ -16,6 +16,7 @@ from .. import pipelines as pl
 from ..digest import Change, Move, Numbers
 from ..metrics import SIZE_LABELS
 from ..period import Period, between
+from . import filters
 from .charts import (
     AMBER,
     HOT,
@@ -31,6 +32,7 @@ from .charts import (
     head,
     html,
     lines,
+    linked,
     md,
     spark,
     table,
@@ -68,6 +70,8 @@ class Context:
     tz: str
     no_ci: str  # why `jobs` is empty
     has_ci: bool  # whether there are runs at all, before the filters
+    repo_link: Callable[[str], str | None]  # repository name -> its page
+    picked: tuple[str, ...]  # repository names picked in the Repository chip, if any
 
     def name(self, person: str) -> str:
         return self.names.get(person, person)
@@ -187,10 +191,27 @@ def _kpis(changes: Sequence[Change], views: Sequence[str] = ()) -> None:
                     st.button(f"Open {VIEWS[view]}", key=f"go-{i}", on_click=go, args=(view,))
 
 
-def _header(crumb: str, question: str, answer: str) -> None:
+def _where(c: Context) -> None:
+    """The repositories the view is narrowed to, with ✕ to go back to the scope."""
+    if not c.picked:
+        return
+    names = c.picked[0] if len(c.picked) == 1 else f"{len(c.picked)} repositories"
+    html(f'<div class="crumb">&nbsp;›&nbsp;&nbsp;<b>{esc(names)}</b></div>', "content")
+    st.button(
+        "✕",
+        key="unpick",
+        help="Back to all of them",
+        type="tertiary",
+        on_click=filters.forget,
+        args=("repo",),
+    )
+
+
+def _header(c: Context, crumb: str, question: str, answer: str) -> None:
     with st.container(horizontal=True, gap=None, vertical_alignment="center", key="crumbs"):
         st.button("Today", type="tertiary", on_click=go, args=("today",), key="crumb")
         html(f'<div class="crumb">&nbsp;/&nbsp;&nbsp;<b>{esc(crumb)}</b></div>', "content")
+        _where(c)
     st.header(question, anchor=False)
     html(f'<div class="answer">{esc(answer)}</div>')
 
@@ -339,7 +360,12 @@ def today(c: Context) -> None:
     handled: dict[str, str] = st.session_state.setdefault("handled", {})
     groups = [(t, v, a, [i for i in items if i.key not in handled]) for t, v, a, items in _inbox(c)]
     count = sum(len(items) for *_, items in groups)
-    html(f'<div class="c-m" style="font-size:13px">{c.now.tz_convert(c.tz):%A, %b %-d}</div>')
+    with st.container(horizontal=True, gap=None, vertical_alignment="center", key="crumbs"):
+        html(
+            f'<div class="c-m" style="font-size:13px">{c.now.tz_convert(c.tz):%A, %b %-d}</div>',
+            "content",
+        )
+        _where(c)
     st.title(
         f"{count} {'thing needs' if count == 1 else 'things need'} a look"
         if count
@@ -431,6 +457,7 @@ def shipping(c: Context) -> None:
     opened, merged, still_open = now["opened"] or 0, now["merged"] or 0, now["open"] or 0
     queue = "growing" if opened > merged else "shrinking" if opened < merged else "steady"
     _header(
+        c,
         "Shipping",
         "Are we shipping?",
         f"{merged:.0f} PRs merged in {c.last} against {opened:.0f} opened, so the open queue is "
@@ -473,7 +500,7 @@ def shipping(c: Context) -> None:
         hot = r["Median to merge (h)"] > slow
         rows.append(
             [
-                cell(repo),
+                linked(str(repo), c.repo_link(str(repo))),
                 cell(r["Merged"], "n"),
                 cell(r["Opened"], "n"),
                 cell(r["Open now"], "n"),
@@ -509,7 +536,7 @@ def review(c: Context) -> None:
     if total >= 10 and len(load) >= 2:
         share = load["Reviews given"].iloc[:2].sum() / total
         answer += f" {load.index[0]} and {load.index[1]} gave {share:.0%} of all reviews."
-    _header("Review", "Is review the bottleneck?", answer)
+    _header(c, "Review", "Is review the bottleneck?", answer)
     _kpis([c.pr.change(k) for k in ("wait", "ttm", "depth", "unreviewed")])
 
     t = c.pr.trend
@@ -549,7 +576,7 @@ def review(c: Context) -> None:
     rows = [
         [
             cell(r["title"]),
-            cell(r["repository"], "m"),
+            linked(r["repository"], c.repo_link(r["repository"]), "m"),
             cell(c.name(r["author"]), "m"),
             cell(r["status"], "hot-tag" if r["status"] == "No review" else "tag"),
             cell(f"{r['age']} d", "hot" if r["status"] == "No review" else "n"),
@@ -594,7 +621,7 @@ def _flaky_rows(c: Context) -> list[list[str]]:
                 [
                     cell(j["name"]),
                     cell(pipeline, "m"),
-                    cell(repo, "m"),
+                    linked(repo, c.repo_link(repo), "m"),
                     cell(j["flaky_runs"], "hot" if j["flaky_runs"] >= 5 else "n"),
                     cell(f"{since.tz_convert(c.tz):%b %-d}", "n"),
                     status(since),
@@ -663,7 +690,7 @@ def ci(c: Context) -> None:
             )
         )
     kpis += [c.ci.change("rerun_hours"), c.ci.change("flaky")]
-    _header("CI", "Is CI slowing us down?", answer)
+    _header(c, "CI", "Is CI slowing us down?", answer)
     _kpis(kpis)
 
     t = c.ci.trend
@@ -733,6 +760,7 @@ def cost(c: Context) -> None:
         f" ({spent.ratio:+.0%} on the {c.period.name} before)" if spent.ratio is not None else ""
     )
     _header(
+        c,
         "Cost",
         "What's it costing?",
         f"{_value(spent.now, '$')} in {c.last}{change}, across {minutes:,.0f} CI minutes. "
@@ -770,7 +798,7 @@ def cost(c: Context) -> None:
     )
     rows = [
         [
-            cell(repo),
+            linked(str(repo), c.repo_link(str(repo))),
             cell(f"{r['Minutes']:,.0f}", "n"),
             cell(_value(r["Est. cost ($)"], "$"), "n"),
             cell(f"{r['Share']:.0%}", "n"),
@@ -811,7 +839,7 @@ def people(c: Context) -> None:
         if p[column].sum():
             top = str(p[column].idxmax())
             answer += f" {c.name(top)} {did} the most ({p.loc[top, column]})."
-    _header("People", "Who's doing what?", answer)
+    _header(c, "People", "Who's doing what?", answer)
     _kpis([c.pr.change(k) for k in ("authors", "per_person", "added", "deleted")])
     top8 = p.nlargest(8, "Merged").rename(index=c.name)
     lines_written = top8[["Lines added", "Lines deleted"]].dropna(how="all")

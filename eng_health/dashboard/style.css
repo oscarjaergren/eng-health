@@ -85,7 +85,7 @@ header[data-testid="stHeader"] { display: none; }
 /* A view's heading: breadcrumb, question, answer. */
 .st-key-crumb button p, .crumb { font-family: 'Geist Mono', monospace; font-size: 13px; color: #6E6C66; }
 .crumb b { font-weight: 400; color: #1C1B19; }
-.st-key-crumb button { padding: 0; min-height: 0; }
+.st-key-crumb button, .st-key-unpick button { padding: 0 4px; min-height: 0; }
 /* Two lines kept for the answer, so the numbers below don't jump as filters change its length. */
 .answer { font-size: 16px; line-height: 1.5; color: #4A4843; max-width: 760px; text-wrap: pretty; min-height: 3em; }
 
@@ -141,6 +141,8 @@ svg.spark { display: block; overflow: visible; }
 .tbl-head { min-height: 0; padding: 8px 20px; background: #FAF9F6; font-size: 12px; color: #6E6C66; }
 .tbl-row > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-t { font-size: 14px; font-weight: 500; }
+.tbl a { color: inherit; text-decoration: none; }
+.tbl a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .c-m { font-family: 'Geist Mono', monospace; font-size: 12px; color: #6E6C66; }
 .c-st { font-family: 'Geist Mono', monospace; font-size: 12px; color: #4A4843; padding-left: 20px; }
 .c-n, .r { text-align: right; }

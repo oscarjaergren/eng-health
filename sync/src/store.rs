@@ -7,11 +7,11 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::model::{Platform, PullRequest, Repo, Timestamp};
+use crate::model::{Platform, PullRequest, Repo, Team, Timestamp};
 use crate::pipelines::Job;
 
 /// The version at the end of `schema.sql`; a test checks they agree.
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 /// The last version whose records changed shape. A database older than it is re-synced in full.
 const RECORDS_CHANGED: i64 = 3;
 
@@ -139,6 +139,34 @@ impl Store {
         Ok(())
     }
 
+    /// Replace one platform's teams with the ones just read.
+    pub fn save_teams(&mut self, platform: Platform, teams: &[Team]) -> Result<(), StoreError> {
+        let p = platform.as_str();
+        let tx = self.conn.transaction()?;
+        for table in ["teams", "team_members", "team_repos"] {
+            tx.execute(&format!("DELETE FROM {table} WHERE platform = ?1"), [p])?;
+        }
+        {
+            let mut team = tx.prepare_cached("INSERT INTO teams VALUES (?1, ?2, ?3)")?;
+            let mut member =
+                tx.prepare_cached("INSERT OR IGNORE INTO team_members VALUES (?1, ?2, ?3)")?;
+            let mut repo =
+                tx.prepare_cached("INSERT OR IGNORE INTO team_repos VALUES (?1, ?2, ?3)")?;
+            for t in teams {
+                team.execute(params![p, t.id, t.name])?;
+                for m in &t.members {
+                    member.execute(params![p, t.id, m])?;
+                }
+                for r in &t.repos {
+                    repo.execute(params![p, t.id, r])?;
+                }
+            }
+        }
+        bump(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn save_me(&mut self, platform: Platform, identity: &str) -> Result<(), StoreError> {
         let tx = self.conn.transaction()?;
         tx.execute(
@@ -218,7 +246,8 @@ impl Store {
         let tx = self.conn.transaction()?;
         tx.execute_batch(
             "DELETE FROM pull_requests; DELETE FROM people; DELETE FROM repositories; \
-             DELETE FROM me; DELETE FROM sync_state;",
+             DELETE FROM me; DELETE FROM teams; DELETE FROM team_members; DELETE FROM team_repos; \
+             DELETE FROM sync_state;",
         )?;
         bump(&tx)?;
         tx.commit()?;

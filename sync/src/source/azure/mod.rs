@@ -7,13 +7,14 @@ pub(crate) mod types;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use futures::{StreamExt, stream};
 use reqwest::{RequestBuilder, Url};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use crate::config::AzureSettings;
 use crate::http::Http;
-use crate::model::{Platform, PullRequest, Repo, State};
+use crate::model::{Platform, PullRequest, Repo, State, Team};
 use crate::rules::identity;
 use crate::source::{People, Source, SourceError};
 
@@ -189,6 +190,43 @@ impl Source for Azure {
             .await?;
         let account = data.pointer("/authenticatedUser/properties/Account/$value");
         Ok(account.and_then(Value::as_str).map(|a| identity(Some(a))))
+    }
+
+    async fn teams(&self) -> Result<Vec<Team>, SourceError> {
+        let top = [("$top", "1000".to_owned())];
+        let projects: List<Value> = self.json(&self.url(&["_apis", "projects"]), &top).await?;
+        let mut teams = Vec::new();
+        for project in &projects.value {
+            let pid = project["id"].as_str().unwrap_or_default();
+            let url = self.url(&["_apis", "projects", pid, "teams"]);
+            let list: List<Value> = self.json(&url, &top).await?;
+            teams.extend(list.value.into_iter().map(|t| (pid.to_owned(), t)));
+        }
+        // One request per team for its members, so a few at a time.
+        stream::iter(teams)
+            .map(|(pid, team)| async move {
+                let id = team["id"].as_str().unwrap_or_default().to_owned();
+                let url = self.url(&["_apis", "projects", &pid, "teams", &id, "members"]);
+                let members: List<Value> = self.json(&url, &[("$top", "1000".to_owned())]).await?;
+                Ok(Team {
+                    name: team["name"].as_str().unwrap_or(&id).to_owned(),
+                    id,
+                    members: members
+                        .value
+                        .iter()
+                        .map(|m| &m["identity"])
+                        .filter(|i| i["isContainer"] != true) // groups, not people
+                        .filter_map(|i| i["uniqueName"].as_str())
+                        .map(|u| identity(Some(u)))
+                        .collect(),
+                    repos: Vec::new(),
+                })
+            })
+            .buffer_unordered(8)
+            .collect::<Vec<Result<Team, SourceError>>>()
+            .await
+            .into_iter()
+            .collect()
     }
 
     async fn pull_requests(

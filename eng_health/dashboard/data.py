@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import NamedTuple
 
@@ -12,8 +14,8 @@ import streamlit as st
 from .. import metrics, sync
 from ..config import Settings
 from ..mock import ALIASES as MOCK_ALIASES
-from ..mock import ME, mock_pipelines, mock_pull_requests, mock_repositories
-from ..models import PLATFORM_NAMES
+from ..mock import ME, TEAMS, mock_pipelines, mock_pull_requests, mock_repositories
+from ..models import PLATFORM_NAMES, Team
 from ..store import Store
 
 log = logging.getLogger(__name__)
@@ -24,6 +26,11 @@ class Data(NamedTuple):
     names: dict[str, str]  # identity -> display name
     repos: pd.DataFrame  # the store's repositories table
     me: frozenset[str]  # the identities "Mine" is about, after aliases
+    teams: tuple[Team, ...]  # members after aliases
+
+
+def _aliased(teams: list[Team], aliases: Mapping[str, str]) -> tuple[Team, ...]:
+    return tuple(replace(t, members=frozenset(aliases.get(m, m) for m in t.members)) for t in teams)
 
 
 @st.cache_data(show_spinner=False)
@@ -34,7 +41,7 @@ def _load_store(db_path: str, version: int, aliases: tuple[tuple[str, str], ...]
     a = dict(aliases)
     df = metrics.name_repositories(metrics.to_frame(prs, a), repos)
     me = frozenset(a.get(i, i) for i in store.me().values())
-    return Data(df, store.people(), repos, me)
+    return Data(df, store.people(), repos, me, _aliased(store.teams(), a))
 
 
 @st.cache_data(show_spinner=False)
@@ -43,7 +50,8 @@ def _load_mock(day: str) -> Data:
     repos = pd.DataFrame(mock_repositories())
     log.info("generated %d sample PRs for %s", len(prs), day)
     df = metrics.name_repositories(metrics.to_frame(prs, MOCK_ALIASES), repos)
-    return Data(df, people, repos, frozenset(MOCK_ALIASES.get(i, i) for i in ME.values()))
+    me = frozenset(MOCK_ALIASES.get(i, i) for i in ME.values())
+    return Data(df, people, repos, me, _aliased(TEAMS, MOCK_ALIASES))
 
 
 def load(settings: Settings, store: Store | None) -> Data:

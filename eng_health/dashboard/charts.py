@@ -218,6 +218,13 @@ def cell(value: object, kind: str = "t") -> str:
     return f'<span class="{_CELLS[kind]}">{prefix}{esc(value)}</span>'
 
 
+def linked(text: str, href: str | None, kind: str = "t") -> str:
+    """A table cell that opens `href` in this tab, such as a repository's page; plain without."""
+    if not href:
+        return cell(text, kind)
+    return f'<a class="{_CELLS[kind]}" href="{esc(href)}" target="_self">{esc(text)}</a>'
+
+
 def trend(values: Sequence[float], color: str = MID) -> str:
     return f'<div class="c-spark">{spark(values, color, width=80)}</div>'
 

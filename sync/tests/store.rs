@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use chrono::{Duration, TimeZone, Utc};
-use eng_health::{Platform, PullRequest, Repo};
+use eng_health::{Platform, PullRequest, Repo, Team};
 use eng_health::{SCHEMA_VERSION, Store, StoreError, SyncState};
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -210,6 +210,38 @@ fn saving_repositories_replaces_that_platforms_list() {
         .query_row("SELECT COUNT(*) FROM repositories", [], |r| r.get(0))
         .unwrap();
     assert_eq!(left, 0);
+}
+
+#[test]
+fn saving_teams_replaces_that_platforms_teams() {
+    let (dir, mut s) = store();
+    let team = |id: &str, members: &[&str]| Team {
+        id: id.into(),
+        name: id.to_uppercase(),
+        members: members.iter().map(|&m| m.into()).collect(),
+        repos: vec!["1".into()],
+    };
+    s.save_teams(
+        Platform::Github,
+        &[team("a", &["ann", "bob"]), team("b", &["cy"])],
+    )
+    .unwrap();
+    s.save_teams(Platform::Github, &[team("a", &["ann"])])
+        .unwrap();
+    let count = |table: &str| -> i64 {
+        db(&dir)
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    };
+    assert_eq!(
+        (count("teams"), count("team_members"), count("team_repos")),
+        (1, 1, 1)
+    );
+    s.clear().unwrap();
+    assert_eq!(
+        count("teams") + count("team_members") + count("team_repos"),
+        0
+    );
 }
 
 #[test]
