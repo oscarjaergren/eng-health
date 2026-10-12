@@ -50,6 +50,10 @@ pub trait Source: Send + Sync {
 
     fn repositories(&self) -> impl Future<Output = Result<Vec<Repo>, SourceError>> + Send;
 
+    /// Who the credentials belong to, as PR records name them: what "Mine" in the dashboard
+    /// is about. `None` when the platform doesn't say.
+    fn viewer(&self) -> impl Future<Output = Result<Option<String>, SourceError>> + Send;
+
     /// PRs changed since `since` (all of them when `None`).
     fn pull_requests(
         &self,

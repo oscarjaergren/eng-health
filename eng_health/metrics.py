@@ -5,7 +5,7 @@ Kept free of Streamlit so they can be unit tested.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -152,6 +152,23 @@ def merged_in(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.Da
 
 def opened_in(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     return df[between(df["created_at"], start, end)]
+
+
+MINE_DAYS = 90
+
+
+def mine(df: pd.DataFrame, me: Collection[str], now: datetime) -> set[str]:
+    """Repository keys that are "Mine": where one of `me` (a person's identities) opened a PR or
+    first responded to one in the last MINE_DAYS, or still has one open."""
+    since = pd.Timestamp(now) - pd.Timedelta(days=MINE_DAYS)
+    open_ = df["state"] == State.OPEN.value
+    authored = df["author"].isin(me) & ((df["created_at"] > since) | open_)
+    responded = pd.Series(
+        [any(p in me and t > since for p, t in firsts.items()) for firsts in df["first_responses"]],
+        index=df.index,
+        dtype=bool,
+    )
+    return set(df.loc[authored | responded, "repo"])
 
 
 def activity(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp, by: str) -> pd.Series:

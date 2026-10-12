@@ -9,11 +9,12 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use reqwest::{RequestBuilder, Url};
 use serde::de::DeserializeOwned;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::config::AzureSettings;
 use crate::http::Http;
 use crate::model::{Platform, PullRequest, Repo, State};
+use crate::rules::identity;
 use crate::source::{People, Source, SourceError};
 
 pub use convert::convert;
@@ -87,7 +88,9 @@ impl Azure {
     ) -> impl Fn(&reqwest::Client) -> RequestBuilder {
         let (url, token, bearer) = (url.clone(), self.token.clone(), self.bearer);
         let mut query = query.to_vec();
-        query.push(("api-version", API_VERSION.to_owned()));
+        if !query.iter().any(|(k, _)| *k == "api-version") {
+            query.push(("api-version", API_VERSION.to_owned()));
+        }
         move |c| {
             let request = c.get(url.clone());
             let request = if bearer {
@@ -175,6 +178,17 @@ impl Source for Azure {
                 }
             })
             .collect())
+    }
+
+    async fn viewer(&self) -> Result<Option<String>, SourceError> {
+        // The location service answers any valid token; the profile API would need a scope the
+        // README's PAT doesn't have. It is still a preview API.
+        let url = self.url(&["_apis", "connectionData"]);
+        let data: Value = self
+            .json(&url, &[("api-version", "7.1-preview".to_owned())])
+            .await?;
+        let account = data.pointer("/authenticatedUser/properties/Account/$value");
+        Ok(account.and_then(Value::as_str).map(|a| identity(Some(a))))
     }
 
     async fn pull_requests(

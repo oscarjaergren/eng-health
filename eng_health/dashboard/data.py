@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from typing import NamedTuple
 
 import pandas as pd
 import streamlit as st
@@ -11,35 +12,41 @@ import streamlit as st
 from .. import metrics, sync
 from ..config import Settings
 from ..mock import ALIASES as MOCK_ALIASES
-from ..mock import mock_pipelines, mock_pull_requests, mock_repositories
+from ..mock import ME, mock_pipelines, mock_pull_requests, mock_repositories
 from ..models import PLATFORM_NAMES
 from ..store import Store
 
 log = logging.getLogger(__name__)
 
 
-Loaded = tuple[pd.DataFrame, dict[str, str], pd.DataFrame]
+class Data(NamedTuple):
+    prs: pd.DataFrame
+    names: dict[str, str]  # identity -> display name
+    repos: pd.DataFrame  # the store's repositories table
+    me: frozenset[str]  # the identities "Mine" is about, after aliases
 
 
 @st.cache_data(show_spinner=False)
-def _load_store(db_path: str, version: int, aliases: tuple[tuple[str, str], ...]) -> Loaded:
+def _load_store(db_path: str, version: int, aliases: tuple[tuple[str, str], ...]) -> Data:
     store = Store(db_path)
     prs, repos = store.pull_requests(), store.repositories()
     log.info("loaded %d PRs from %s (revision %d)", len(prs), db_path, version)
-    df = metrics.name_repositories(metrics.to_frame(prs, dict(aliases)), repos)
-    return df, store.people(), repos
+    a = dict(aliases)
+    df = metrics.name_repositories(metrics.to_frame(prs, a), repos)
+    me = frozenset(a.get(i, i) for i in store.me().values())
+    return Data(df, store.people(), repos, me)
 
 
 @st.cache_data(show_spinner=False)
-def _load_mock(day: str) -> Loaded:
+def _load_mock(day: str) -> Data:
     prs, people = mock_pull_requests()
     repos = pd.DataFrame(mock_repositories())
     log.info("generated %d sample PRs for %s", len(prs), day)
-    return metrics.name_repositories(metrics.to_frame(prs, MOCK_ALIASES), repos), people, repos
+    df = metrics.name_repositories(metrics.to_frame(prs, MOCK_ALIASES), repos)
+    return Data(df, people, repos, frozenset(MOCK_ALIASES.get(i, i) for i in ME.values()))
 
 
-def load(settings: Settings, store: Store | None) -> Loaded:
-    """PRs, display names, and the repositories table."""
+def load(settings: Settings, store: Store | None) -> Data:
     if store is None:
         # Keyed by day so the sample data stays anchored to "now".
         return _load_mock(datetime.now(UTC).date().isoformat())

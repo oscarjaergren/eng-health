@@ -11,7 +11,7 @@ use crate::model::{Platform, PullRequest, Repo, Timestamp};
 use crate::pipelines::Job;
 
 /// The version at the end of `schema.sql`; a test checks they agree.
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 /// The last version whose records changed shape. A database older than it is re-synced in full.
 const RECORDS_CHANGED: i64 = 3;
 
@@ -139,6 +139,17 @@ impl Store {
         Ok(())
     }
 
+    pub fn save_me(&mut self, platform: Platform, identity: &str) -> Result<(), StoreError> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT INTO me VALUES (?1, ?2) ON CONFLICT(platform) DO UPDATE SET identity = excluded.identity",
+            params![platform.as_str(), identity],
+        )?;
+        bump(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn pull_requests(
         &self,
         platform: Option<Platform>,
@@ -207,7 +218,7 @@ impl Store {
         let tx = self.conn.transaction()?;
         tx.execute_batch(
             "DELETE FROM pull_requests; DELETE FROM people; DELETE FROM repositories; \
-             DELETE FROM sync_state;",
+             DELETE FROM me; DELETE FROM sync_state;",
         )?;
         bump(&tx)?;
         tx.commit()?;

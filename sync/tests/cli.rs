@@ -45,6 +45,12 @@ async fn json_progress_and_a_populated_database() {
         }}}})))
         .mount(&server)
         .await;
+    Mock::given(body_string_contains("viewer { login }"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"data": {"viewer": {"login": "bob"}}})),
+        )
+        .mount(&server)
+        .await;
     let fixture: Value = serde_json::from_str(include_str!(
         "../../testdata/github/reviews_and_comments.graphql.json"
     ))
@@ -95,7 +101,7 @@ async fn json_progress_and_a_populated_database() {
         (report["repositories"].as_u64(), report["saved"].as_u64()),
         (Some(1), Some(1))
     );
-    assert_eq!(report["requests"].as_u64(), Some(2));
+    assert_eq!(report["requests"].as_u64(), Some(3)); // repositories, viewer, pull requests
     assert!(
         events[..events.len() - 1]
             .iter()

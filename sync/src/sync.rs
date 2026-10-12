@@ -173,6 +173,12 @@ async fn run<S: Source>(
     report.repositories = repos.len();
     let listed = repos.clone();
     db(store, move |s| s.save_repositories(platform, &listed)).await?;
+    match source.viewer().await {
+        Ok(Some(me)) => db(store, move |s| s.save_me(platform, &me)).await?,
+        Ok(None) => {}
+        // Only "Mine" in the dashboard needs it, so it doesn't fail the sync.
+        Err(e) => tracing::warn!("{platform}: could not tell whose credentials these are: {e}"),
+    }
     tracing::info!(
         "{platform}: {} repositories, listing PRs since {since:?}",
         repos.len()

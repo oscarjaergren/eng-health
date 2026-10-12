@@ -134,6 +134,23 @@ def test_repository_options_put_the_busy_ones_first_and_hidden_ones_last() -> No
     assert options["status"].tolist() == ["", "", "", "archived", "fork"]
 
 
+def test_mine_is_where_i_opened_reviewed_or_still_have_a_pr_open() -> None:
+    now = T0 + timedelta(days=200)
+    recent, old = now - timedelta(days=10), now - timedelta(days=150)
+    df = frame(
+        pr(1, repo_id="authored", author="me", created_at=recent, closed_at=recent),
+        pr(2, repo_id="reviewed", author="bob", first_responses={"me": recent}),
+        pr(3, repo_id="still-open", author="me", created_at=old, closed_at=None, state=State.OPEN),
+        pr(4, repo_id="long-ago", author="me", created_at=old, closed_at=old),
+        pr(5, repo_id="not-mine", author="bob", first_responses={"carol": recent}),
+    )
+    assert metrics.mine(df, {"me"}, now) == {
+        "github:authored",
+        "github:reviewed",
+        "github:still-open",
+    }
+
+
 def test_aliases_merge_identities() -> None:
     df = frame(
         pr(1, comment_counts={"bob": 1, "bob@example.com": 2}),
