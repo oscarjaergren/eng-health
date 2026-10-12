@@ -77,6 +77,11 @@ Setting only half of a platform's pair is reported as an error rather than ignor
   were reset by later pushes.
 - **Comments**: text comments by people. System messages and bots are left out, and so are
   authors' replies on their own PRs unless you switch that on.
+- **Mine**: repositories where, in the last 90 days, you opened a PR or first commented on,
+  reviewed or voted on someone else's, plus any where you still have a PR open. "You" are whoever
+  the GitHub or Azure DevOps credentials belong to; `IDENTITY_ALIASES` joins the two. The
+  dashboard opens on Mine when it knows who you are, and then on whichever scope you picked last
+  (kept in `dashboard.json` in the data folder).
 - **Repositories**: archived repositories and forks are left out unless you pick them in the
   Repository filter, which lists the busiest first and searches as you type. Two repositories with
   the same name, in different Azure DevOps projects or on both platforms, are shown as

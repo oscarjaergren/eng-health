@@ -68,17 +68,21 @@ def _chip(name: str, options: list[str], label: Callable[[str], str] = str) -> l
 
 
 def _pick(
-    name: str, options: list[str], label: Callable[[str], str], notes: Mapping[str, str]
+    name: str,
+    options: list[str],
+    label: Callable[[str], str],
+    notes: Mapping[str, str],
+    everything: str = "All",
 ) -> list[str]:
     """A chip whose popover is a search list of `options`, in the order given, each with its
-    note ("12 PRs"). None picked means all of them."""
+    note ("12 PRs"). None picked means all of them, which the chip calls `everything`."""
     key = f"{name}|{st.session_state.get('round', 0)}"
     picked = st.session_state.get(key)
     if picked is None:  # not drawn yet: from the URL
         picked = st.query_params.get_all(name)
     chosen = [o for o in picked if o in options]
     summary = (
-        "All"
+        everything
         if not chosen
         else ", ".join(label(o) for o in chosen)
         if len(chosen) <= 2
@@ -123,14 +127,21 @@ def _span(period: Period, now: pd.Timestamp, tz: str) -> str:
 
 
 def bar(
-    df: pd.DataFrame, names: dict[str, str], repos: pd.DataFrame, now: pd.Timestamp, tz: str
+    df: pd.DataFrame,
+    names: dict[str, str],
+    repos: pd.DataFrame,
+    now: pd.Timestamp,
+    tz: str,
+    scope: tuple[str, ...] = (),
+    scope_name: str = "All",
 ) -> tuple[Period, Filters]:
-    """`repos` is the store's repositories table."""
+    """`repos` is the store's repositories table. `scope` are the repository keys to cover while
+    none are picked (none: all of them); `scope_name` is what the Repository chip calls them."""
     # Two rows, so a chip growing or Clear filters appearing never rewraps the bar.
     chips_row = st.container(horizontal=True, vertical_alignment="center", gap="xsmall")
     toggles_row = st.container(horizontal=True, vertical_alignment="center")
     with chips_row:
-        period, chosen, hidden = _chips(df, names, repos, now, tz)
+        period, chosen, hidden = _chips(df, names, repos, now, tz, scope_name if scope else "All")
     with toggles_row:
         drafts = st.toggle("Drafts", value=True, key="drafts", bind="query-params")
         bots = st.toggle("Dependabot & Renovate PRs", value=False, key="bots", bind="query-params")
@@ -153,7 +164,8 @@ def bar(
     platforms, chosen_repos, authors, states = chosen
     return period, Filters(
         platforms=tuple(platforms),
-        repositories=tuple(chosen_repos),
+        # Picked repositories win over the scope; archived ones and forks stay out of it.
+        repositories=tuple(chosen_repos) or tuple(k for k in scope if k not in hidden),
         hidden=hidden,
         authors=tuple(authors),
         states=tuple(states),
@@ -164,7 +176,12 @@ def bar(
 
 
 def _chips(
-    df: pd.DataFrame, names: dict[str, str], repos: pd.DataFrame, now: pd.Timestamp, tz: str
+    df: pd.DataFrame,
+    names: dict[str, str],
+    repos: pd.DataFrame,
+    now: pd.Timestamp,
+    tz: str,
+    everywhere: str,
 ) -> tuple[Period, tuple[list[str], list[str], list[str], list[str]], tuple[str, ...]]:
     period = PERIODS[
         st.segmented_control(
@@ -192,7 +209,9 @@ def _chips(
         for k, n, status in zip(options.index, options["prs"], options["status"], strict=True)
     }
     repo_names = dict(zip(options.index.astype(str), options["name"].astype(str), strict=True))
-    chosen_repos = _pick("repo", list(options.index), repo_names.__getitem__, repo_notes)
+    chosen_repos = _pick(
+        "repo", list(options.index), repo_names.__getitem__, repo_notes, everywhere
+    )
 
     def person(p: str) -> str:
         return names.get(p, p)

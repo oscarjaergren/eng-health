@@ -21,6 +21,10 @@ header[data-testid="stHeader"] { display: none; }
 }
 .st-key-brand p { font-family: 'Geist Mono', monospace; font-weight: 500; font-size: 14px; margin-right: 1.5rem; }
 
+/* The scope switcher next to the brand, outlined like the chips. */
+.st-key-scope [data-baseweb="select"] > div { background: #fff; border-color: #E6E3DC; min-height: 32px; font-weight: 500; }
+.st-key-scope [data-baseweb="select"] > div:hover { border-color: #1C1B19; }
+
 /* View tabs: plain text, the current one a dark pill. */
 .st-key-view [role="radiogroup"] { gap: 4px; }
 .st-key-view button[role="radio"] {

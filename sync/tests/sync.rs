@@ -85,6 +85,10 @@ impl Source for Fake {
         Ok(repos())
     }
 
+    async fn viewer(&self) -> Result<Option<String>, SourceError> {
+        Ok(Some("bob".into()))
+    }
+
     async fn pull_requests(
         &self,
         repo: &Repo,
@@ -231,6 +235,14 @@ async fn first_sync_saves_everything_and_keeps_same_numbers_apart() {
         .query_row("SELECT COUNT(*) FROM repositories", [], |r| r.get(0))
         .unwrap();
     assert_eq!(listed, 2, "the dashboard needs every listed repository");
+    let me: String = db
+        .query_row(
+            "SELECT identity FROM me WHERE platform = 'github'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(me, "bob");
 }
 
 #[tokio::test]

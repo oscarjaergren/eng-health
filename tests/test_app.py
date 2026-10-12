@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -96,6 +97,26 @@ def test_the_repository_search_filters_by_id() -> None:
     assert at.query_params["repo"] == "github:gi-docs-site"  # one value comes back unwrapped
     names = re.findall(r'<span class="c-t">([^<]*)</span>', text(at))
     assert names == ["docs-site"]  # the By repository table
+
+
+def test_the_scope_starts_on_mine_and_remembers_a_change(tmp_path: Path) -> None:
+    at = run()
+    assert at.selectbox(key="scope").value == "mine"
+    at.selectbox(key="scope").set_value("all").run()
+    assert json.loads((tmp_path / "dashboard.json").read_text()) == {"scope": "all"}
+    # A new visit opens where the last one left off.
+    assert run().selectbox(key="scope").value == "all"
+
+
+def test_without_knowing_who_you_are_there_is_no_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prs, people = mock_pull_requests(count=60)
+    WritableStore(tmp_path / "eng_health.db").upsert(prs, people)
+    monkeypatch.setenv("AZURE_DEVOPS_ORGANIZATION", "org")
+    monkeypatch.setenv("AZURE_DEVOPS_PAT", "pat")
+    at = run()
+    assert not [s for s in at.selectbox if s.key == "scope"]
 
 
 def test_a_chip_starts_from_the_url() -> None:

@@ -76,6 +76,11 @@ class Store:
     def test_failures(self) -> pd.DataFrame:
         return self._query("SELECT * FROM test_failures")
 
+    def me(self) -> dict[str, str]:
+        """Platform -> who its credentials belong to, as PR records name people."""
+        with self._conn() as c:
+            return dict(c.execute("SELECT platform, identity FROM me"))
+
     def repositories(self) -> pd.DataFrame:
         """Every repository the last sync listed: platform, repo_id, name, owner, is_archived
         and is_fork. Empty until the engine that writes it has synced."""

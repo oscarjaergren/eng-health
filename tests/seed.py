@@ -78,6 +78,10 @@ class WritableStore(Store):
                 list(repos),
             )
 
+    def set_me(self, platform: str, identity: str) -> None:
+        with self._write() as c:
+            c.execute("INSERT OR REPLACE INTO me VALUES (?, ?)", (platform, identity))
+
     def upsert_test_failures(self, rows: Iterable[tuple[str, int, str]]) -> None:
         with self._write() as c:
             c.executemany("INSERT OR IGNORE INTO test_failures VALUES (?, ?, ?)", list(rows))

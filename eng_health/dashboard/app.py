@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-from .. import metrics
+from .. import metrics, prefs
 from .. import pipelines as pl
 from ..config import ConfigError, Settings
 from ..store import SchemaError, Store
@@ -51,9 +51,40 @@ def _sync_status(settings: Settings, store: Store) -> str:
     return f"Synced {relative(min(synced))}" if len(synced) == len(states) else "Not synced yet"
 
 
-def _top_bar(settings: Settings, store: Store | None) -> str:
+SCOPES = {"mine": "Mine", "all": "All repositories"}
+
+
+def _remember_scope(settings: Settings) -> None:
+    prefs.save(settings.data_dir, scope=st.session_state["scope"])
+
+
+def _scope(settings: Settings, scopes: list[str]) -> str:
+    """Whose repositories the dashboard is about. The choice is remembered between visits."""
+    if len(scopes) == 1:
+        return scopes[0]
+    remembered = prefs.load(settings.data_dir).get("scope", scopes[0])
+    current = st.session_state.get("scope", remembered)
+    return str(
+        st.selectbox(
+            "Scope",
+            scopes,
+            # The current value as the default too, so the box keeps it across reruns.
+            index=scopes.index(current if current in scopes else scopes[0]),
+            format_func=SCOPES.__getitem__,
+            key="scope",
+            bind="query-params",
+            on_change=_remember_scope,
+            args=(settings,),
+            label_visibility="collapsed",
+            width=170,
+        )
+    )
+
+
+def _top_bar(settings: Settings, store: Store | None, scopes: list[str]) -> tuple[str, str]:
     with st.container(key="brand", width="content"):
         st.markdown("eng·health")
+    scope = _scope(settings, scopes)
     # A segmented control rather than st.navigation: AppTest can only switch to file pages.
     view: str = st.segmented_control(
         "View",
@@ -80,7 +111,7 @@ def _top_bar(settings: Settings, store: Store | None) -> str:
     st.button(":material/settings:", help="Settings", key="settings", on_click=connect.show)
     if st.session_state.get("settings_open"):
         connect.drawer(settings, store)
-    return view
+    return view, scope
 
 
 def main() -> None:
@@ -115,10 +146,12 @@ def main() -> None:
             "Each batch of PRs is saved as it arrives, so stopping a sync keeps its progress."
         )
         run_sync(settings, full=request == "full", reset=request == "reset")
+    df, names, repos, me = load(settings, store)
+    now, tz = pd.Timestamp.now(tz="UTC"), _browser_timezone()
+    mine = metrics.mine(df, me, now)
     with top:
-        view = _top_bar(settings, store)
+        view, scope = _top_bar(settings, store, ["mine", "all"] if mine else ["all"])
 
-    df, names, repos = load(settings, store)
     github = store is None or bool(settings.github_owner)
     raw, failures = load_pipelines(store) if github else (pd.DataFrame(), pd.DataFrame())
     if df.empty and raw.empty:
@@ -142,9 +175,9 @@ def main() -> None:
             "The next sync retries them."
         )
 
-    now, tz = pd.Timestamp.now(tz="UTC"), _browser_timezone()
     with bar:
-        period, chosen = filters.bar(df, names, repos, now, tz)
+        in_scope = tuple(sorted(mine)) if scope == "mine" else ()
+        period, chosen = filters.bar(df, names, repos, now, tz, in_scope, SCOPES[scope])
     jobs = pl.prepare(raw) if not raw.empty else raw
     if not jobs.empty:
         # The same repository filter as the PRs': runs are all GitHub's.

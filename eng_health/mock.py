@@ -49,6 +49,8 @@ TITLES = [
     "Fix alarm threshold for queue depth",
     "Optimise slow report queries",
 ]
+# Whose credentials the sample data was "synced" with, so Mine has someone to be.
+ME = {"github": "grace", "azure_devops": "grace@example.com"}
 # Merges each sample GitHub login with the same person's Azure DevOps identity.
 ALIASES = {login: f"{login}@example.com" for _, login in PEOPLE}
 # Dependency updates, hidden by default like real ones.

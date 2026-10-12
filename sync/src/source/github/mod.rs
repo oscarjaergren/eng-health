@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use crate::config::{GitHubSettings, OwnerType};
 use crate::http::Http;
 use crate::model::{Platform, PullRequest, Repo};
-use crate::rules::parse_time;
+use crate::rules::{identity, parse_time};
 use crate::source::{People, Source, SourceError};
 
 pub use convert::convert;
@@ -59,6 +59,8 @@ query($login: String!, $cursor: String) {
     }
   }
 }";
+
+const VIEWER: &str = "query { viewer { login } }";
 
 const PULLS: &str = "
 query($owner: String!, $name: String!, $cursor: String, $pageSize: Int!, $nested: Int!) {
@@ -239,6 +241,11 @@ impl Source for GitHub {
             }
             cursor = page.page_info.end_cursor;
         }
+    }
+
+    async fn viewer(&self) -> Result<Option<String>, SourceError> {
+        let data: Value = self.query(VIEWER, json!({})).await?;
+        Ok(data["viewer"]["login"].as_str().map(|l| identity(Some(l))))
     }
 
     async fn pull_requests(

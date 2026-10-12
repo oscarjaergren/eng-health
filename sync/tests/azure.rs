@@ -74,6 +74,23 @@ async fn repositories_skip_disabled_ones_and_keep_project_fork_and_url() {
 }
 
 #[tokio::test]
+async fn the_viewer_comes_from_connection_data() {
+    let server = MockServer::start().await;
+    Mock::given(path("/org/_apis/connectionData"))
+        .and(query_param("api-version", "7.1-preview"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"authenticatedUser": {
+                "providerDisplayName": "Jane",
+                "properties": {"Account": {"$type": "System.String", "$value": "Jane@Contoso.com"}}
+            }})),
+        )
+        .mount(&server)
+        .await;
+    let me = client(&server).viewer().await.unwrap();
+    assert_eq!(me.as_deref(), Some("jane@contoso.com"));
+}
+
+#[tokio::test]
 async fn an_azure_cli_token_is_sent_as_a_bearer_token() {
     let server = MockServer::start().await;
     Mock::given(path("/org/_apis/git/repositories"))
@@ -99,6 +116,8 @@ async fn full_listing_pages_until_a_short_page() {
         Mock::given(path(PRS))
             .and(query_param("searchCriteria.status", "all"))
             .and(query_param("$skip", skip))
+            // Requests with query parameters of their own still say which API version.
+            .and(query_param("api-version", "7.1"))
             .respond_with(list(
                 &(0..count).map(|i| pr(i, "completed")).collect::<Vec<_>>(),
             ))

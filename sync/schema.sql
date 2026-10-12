@@ -11,6 +11,7 @@
 -- 3: runner and is_private on pipeline_jobs. The engine drops an older pipeline_jobs, a cache of
 --    GitHub's last 90 days, and the next sync fetches it again with the new columns.
 -- 4: repositories. Every sync lists them anyway, so the next one fills the table.
+-- 5: me. The next sync fills it too.
 
 CREATE TABLE IF NOT EXISTS pull_requests (
     key TEXT PRIMARY KEY,
@@ -28,6 +29,12 @@ CREATE TABLE IF NOT EXISTS repositories (
     is_archived INTEGER NOT NULL,
     is_fork INTEGER NOT NULL,
     PRIMARY KEY (platform, repo_id)
+);
+-- Who the credentials belong to on each platform, named as PR records name people: whose
+-- repositories "Mine" in the dashboard means.
+CREATE TABLE IF NOT EXISTS me (
+    platform TEXT PRIMARY KEY,
+    identity TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS people (
     id TEXT PRIMARY KEY,
@@ -71,4 +78,4 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_attempt TEXT,
     last_error TEXT
 );
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;

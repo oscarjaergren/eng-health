@@ -125,6 +125,20 @@ async fn user_accounts_use_the_user_query() {
 }
 
 #[tokio::test]
+async fn the_viewer_is_named_as_prs_name_people() {
+    let server = MockServer::start().await;
+    Mock::given(body_string_contains("viewer { login }"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"data": {"viewer": {"login": "Jane-Doe"}}})),
+        )
+        .mount(&server)
+        .await;
+    let me = client(&server, OwnerType::Org).viewer().await.unwrap();
+    assert_eq!(me.as_deref(), Some("jane-doe"));
+}
+
+#[tokio::test]
 async fn unknown_owner_is_an_error() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
