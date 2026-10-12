@@ -30,6 +30,9 @@ fn repo() -> Repo {
         platform: Platform::Github,
         id: "101".into(),
         name: "web".into(),
+        owner: String::new(),
+        archived: false,
+        fork: false,
         raw: Value::Null,
     }
 }
@@ -74,7 +77,7 @@ async fn org_repositories_page_through_and_use_database_ids() {
         .respond_with(ResponseTemplate::new(200).set_body_json(
             json!({"data": {"organization": {"repositories": {
                 "pageInfo": {"hasNextPage": false, "endCursor": null},
-                "nodes": [{"databaseId": 2, "name": "web"}]
+                "nodes": [{"databaseId": 2, "name": "web", "isArchived": true, "isFork": true}]
             }}}}),
         ))
         .mount(&server)
@@ -86,9 +89,23 @@ async fn org_repositories_page_through_and_use_database_ids() {
         .unwrap();
     let got: Vec<_> = repos
         .iter()
-        .map(|r| (r.id.as_str(), r.name.as_str()))
+        .map(|r| {
+            (
+                r.id.as_str(),
+                r.name.as_str(),
+                r.owner.as_str(),
+                r.archived,
+                r.fork,
+            )
+        })
         .collect();
-    assert_eq!(got, [("1", "api"), ("2", "web")]);
+    assert_eq!(
+        got,
+        [
+            ("1", "api", "acme", false, false),
+            ("2", "web", "acme", true, true)
+        ]
+    );
 }
 
 #[tokio::test]

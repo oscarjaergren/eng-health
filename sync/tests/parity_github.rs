@@ -29,6 +29,9 @@ fn graphql_fixtures_match_python_goldens() {
             platform: Platform::Github,
             id: fixture["repo"]["id"].as_str().unwrap().to_owned(),
             name: fixture["repo"]["name"].as_str().unwrap().to_owned(),
+            owner: String::new(),
+            archived: false,
+            fork: false,
             raw: Value::Null,
         };
         let mut people = People::new();

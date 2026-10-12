@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use chrono::{Duration, TimeZone, Utc};
-use eng_health::{Platform, PullRequest};
+use eng_health::{Platform, PullRequest, Repo};
 use eng_health::{SCHEMA_VERSION, Store, StoreError, SyncState};
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -135,19 +135,24 @@ fn newer_schema_is_refused() {
     ));
 }
 
-#[test]
-fn an_older_schema_forgets_sync_windows_so_everything_is_synced_again() {
+fn synced_then_opened_as(version: i64) -> (TempDir, Store) {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("db.sqlite");
     let mut s = Store::open(&path).unwrap();
     s.record_sync("github", Utc::now(), true, None).unwrap();
     drop(s);
     let conn = Connection::open(&path).unwrap();
-    conn.pragma_update(None, "user_version", SCHEMA_VERSION - 1)
-        .unwrap();
+    conn.pragma_update(None, "user_version", version).unwrap();
     drop(conn);
-
     let s = Store::open(&path).unwrap();
+    (dir, s)
+}
+
+#[test]
+fn a_schema_from_before_records_changed_forgets_sync_windows() {
+    // Version 3 last changed a record's shape (pipeline_jobs).
+    let (dir, s) = synced_then_opened_as(2);
+    let path = dir.path().join("db.sqlite");
     assert!(s.sync_state("github").unwrap().last_sync.is_none());
     drop(s);
     // Stamped with the current version, so the next open keeps the windows.
@@ -162,6 +167,49 @@ fn an_older_schema_forgets_sync_windows_so_everything_is_synced_again() {
             .last_sync
             .is_some()
     );
+}
+
+#[test]
+fn a_schema_that_only_gained_tables_keeps_sync_windows() {
+    let (_dir, s) = synced_then_opened_as(3);
+    assert!(s.sync_state("github").unwrap().last_sync.is_some());
+}
+
+fn repo(id: &str, name: &str, archived: bool) -> Repo {
+    Repo {
+        platform: Platform::Github,
+        id: id.into(),
+        name: name.into(),
+        owner: "acme".into(),
+        archived,
+        fork: false,
+        raw: serde_json::Value::Null,
+    }
+}
+
+#[test]
+fn saving_repositories_replaces_that_platforms_list() {
+    let (dir, mut s) = store();
+    s.save_repositories(
+        Platform::Github,
+        &[repo("1", "web", false), repo("2", "old", true)],
+    )
+    .unwrap();
+    s.save_repositories(Platform::Github, &[repo("1", "web", true)])
+        .unwrap();
+    let rows: Vec<(String, String, String, bool)> = db(&dir)
+        .prepare("SELECT repo_id, name, owner, is_archived FROM repositories")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(rows, [("1".into(), "web".into(), "acme".into(), true)]);
+    s.clear().unwrap();
+    let left: i64 = db(&dir)
+        .query_row("SELECT COUNT(*) FROM repositories", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(left, 0);
 }
 
 #[test]

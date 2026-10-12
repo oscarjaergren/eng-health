@@ -29,6 +29,9 @@ fn azure_fixtures_match_python_goldens() {
             platform: Platform::AzureDevops,
             id: fixture["repo"]["id"].as_str().unwrap().to_owned(),
             name: fixture["repo"]["name"].as_str().unwrap().to_owned(),
+            owner: String::new(),
+            archived: false,
+            fork: false,
             raw: fixture["repo"]["raw"].clone(),
         };
         let mut people = People::new();

@@ -4,16 +4,30 @@
 --
 -- Raise user_version when the tables or the PR JSON in pull_requests.data change shape.
 -- Each side refuses a database whose version is newer than the one it was built with. Only the
--- engine sets it: on an older database it re-syncs everything, so old records gain new fields.
+-- engine sets it. When records changed shape (RECORDS_CHANGED in store.rs), it re-syncs
+-- everything on an older database, so old records gain the new fields.
 --
 -- 2: PR size (additions, deletions, changed_files).
 -- 3: runner and is_private on pipeline_jobs. The engine drops an older pipeline_jobs, a cache of
 --    GitHub's last 90 days, and the next sync fetches it again with the new columns.
+-- 4: repositories. Every sync lists them anyway, so the next one fills the table.
 
 CREATE TABLE IF NOT EXISTS pull_requests (
     key TEXT PRIMARY KEY,
     platform TEXT NOT NULL,
     data TEXT NOT NULL
+);
+-- Every repository the last sync listed, so the dashboard can tell same-named ones apart and
+-- leave archived ones and forks out.
+CREATE TABLE IF NOT EXISTS repositories (
+    platform TEXT NOT NULL,
+    repo_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    -- The GitHub owner, or the Azure DevOps project.
+    owner TEXT NOT NULL,
+    is_archived INTEGER NOT NULL,
+    is_fork INTEGER NOT NULL,
+    PRIMARY KEY (platform, repo_id)
 );
 CREATE TABLE IF NOT EXISTS people (
     id TEXT PRIMARY KEY,
@@ -57,4 +71,4 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_attempt TEXT,
     last_error TEXT
 );
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;

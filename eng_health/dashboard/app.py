@@ -118,7 +118,7 @@ def main() -> None:
     with top:
         view = _top_bar(settings, store)
 
-    df, names = load(settings, store)
+    df, names, repos = load(settings, store)
     github = store is None or bool(settings.github_owner)
     raw, failures = load_pipelines(store) if github else (pd.DataFrame(), pd.DataFrame())
     if df.empty and raw.empty:
@@ -144,10 +144,14 @@ def main() -> None:
 
     now, tz = pd.Timestamp.now(tz="UTC"), _browser_timezone()
     with bar:
-        period, chosen = filters.bar(df, names, now, tz)
+        period, chosen = filters.bar(df, names, repos, now, tz)
     jobs = pl.prepare(raw) if not raw.empty else raw
-    if chosen.repositories and not jobs.empty:
-        jobs = jobs[jobs["repository"].isin(chosen.repositories)]
+    if not jobs.empty:
+        # The same repository filter as the PRs': runs are all GitHub's.
+        repo = "github:" + jobs["repo_id"]
+        jobs = jobs[
+            repo.isin(chosen.repositories) if chosen.repositories else ~repo.isin(chosen.hidden)
+        ]
     no_ci = (
         "Pipelines come from GitHub Actions. Connect GitHub in Settings to see them."
         if not github

@@ -69,6 +69,15 @@ class WritableStore(Store):
                 [tuple(r.values()) for r in rows],
             )
 
+    def upsert_repositories(self, repos: Iterable[dict[str, Any]]) -> None:
+        """Rows shaped like the `repositories` table in schema.sql."""
+        with self._write() as c:
+            c.executemany(
+                "INSERT OR REPLACE INTO repositories VALUES "
+                "(:platform, :repo_id, :name, :owner, :is_archived, :is_fork)",
+                list(repos),
+            )
+
     def upsert_test_failures(self, rows: Iterable[tuple[str, int, str]]) -> None:
         with self._write() as c:
             c.executemany("INSERT OR IGNORE INTO test_failures VALUES (?, ?, ?)", list(rows))

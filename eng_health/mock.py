@@ -24,7 +24,16 @@ PEOPLE = [
     ("Ivy Chen", "ivy"),
     ("Jack Taylor", "jack"),
 ]
-AZURE_REPOS = ["UserService", "PaymentAPI", "WebApp", "AuthService", "ReportingEngine", "Platform"]
+# Azure DevOps repositories and the project each one is in.
+PROJECTS = {
+    "UserService": "Identity",
+    "AuthService": "Identity",
+    "PaymentAPI": "Payments",
+    "WebApp": "Web",
+    "ReportingEngine": "Data",
+    "Platform": "Platform",
+}
+AZURE_REPOS = list(PROJECTS)
 GITHUB_REPOS = ["mobile-app", "docs-site", "data-pipeline"]
 TITLES = [
     "Add user authentication feature",
@@ -49,6 +58,26 @@ INFRA_TITLES = [
     "Update Helm chart values",
     "Add Bicep module for storage",
 ]
+
+
+def mock_repositories() -> list[dict[str, Any]]:
+    """Rows shaped like eng-health's `repositories` table, with one archived repository that
+    no longer gets PRs."""
+    azure = [("azure_devops", r, PROJECTS[r], 0) for r in AZURE_REPOS]
+    github = [("github", r, "demo", 0) for r in [*GITHUB_REPOS]] + [
+        ("github", "legacy-portal", "demo", 1)
+    ]
+    return [
+        {
+            "platform": platform,
+            "repo_id": f"{platform[:2]}-{name}",
+            "name": name,
+            "owner": owner,
+            "is_archived": archived,
+            "is_fork": 0,
+        }
+        for platform, name, owner, archived in azure + github
+    ]
 
 
 def mock_pull_requests(
@@ -208,8 +237,8 @@ def mock_pipelines(
                 failed = test_fails and name in ("test", "e2e") and attempt == 1
                 jobs.append(
                     {
-                        "key": f"github:{repo}:{run_id}:{attempt}:{name}",
-                        "repo_id": repo,
+                        "key": f"github:gi-{repo}:{run_id}:{attempt}:{name}",
+                        "repo_id": f"gi-{repo}",  # as mock_pull_requests names it
                         "repository": repo,
                         "pipeline": workflow,
                         "run_id": run_id,
@@ -232,5 +261,7 @@ def mock_pipelines(
             start += timedelta(minutes=30)
         if test_fails:
             pool = (FLAKY_TESTS[2:] if age < 6 else FLAKY_TESTS[:2]) if flaky else BROKEN_TESTS
-            failures.append({"repo_id": repo, "run_id": run_id, "test_id": rng.choice(pool)})
+            failures.append(
+                {"repo_id": f"gi-{repo}", "run_id": run_id, "test_id": rng.choice(pool)}
+            )
     return jobs, failures

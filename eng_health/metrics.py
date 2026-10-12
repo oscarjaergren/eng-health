@@ -37,6 +37,7 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
             {
                 "key": pr.key,
                 "platform": pr.platform,
+                "repo_id": pr.repo_id,
                 "repository": pr.repository,
                 "number": pr.number,
                 "title": pr.title,
@@ -74,7 +75,27 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
     df["lines"] = df["additions"] + df["deletions"]
     df["size"] = pd.cut(df["lines"], SIZE_EDGES, labels=SIZE_LABELS)
     df["is_bot"] = df["author"].str.contains(BOTS, case=False)
+    # Repository names repeat across Azure DevOps projects and platforms; ids don't.
+    df["repo"] = df["platform"] + ":" + df["repo_id"]
     return df
+
+
+def name_repositories(df: pd.DataFrame, repos: pd.DataFrame) -> pd.DataFrame:
+    """`df` with each repository named so no two share a name: "owner/name" where a name is
+    used by more than one, the owner being the GitHub owner or Azure DevOps project. `repos` is
+    the store's repositories table; repositories missing from it use their platform instead."""
+    owners = dict(zip(repos["platform"] + ":" + repos["repo_id"], repos["owner"], strict=True))
+    pairs = df[["repo", "repository", "platform"]].drop_duplicates("repo")
+    shared = pairs["repository"].duplicated(keep=False)
+    names = {
+        key: f"{owners.get(key) or PLATFORM_NAMES.get(platform, platform)}/{name}"
+        if twice
+        else name
+        for key, name, platform, twice in zip(
+            pairs["repo"], pairs["repository"], pairs["platform"], shared, strict=True
+        )
+    }
+    return df.assign(repository=df["repo"].map(names))
 
 
 # Common review-size thresholds: past a few hundred lines, reviews get shallower and slower.
@@ -83,7 +104,7 @@ SIZE_LABELS = ["XS (≤10)", "S (≤100)", "M (≤400)", "L (≤1000)", "XL (>10
 
 
 _COLUMNS = [
-    "key", "platform", "repository", "number", "title", "author", "state", "is_draft",
+    "key", "platform", "repo_id", "repository", "number", "title", "author", "state", "is_draft",
     "is_infrastructure", "additions", "deletions", "changed_files", "details_complete",
     "created_at", "closed_at", "first_review_at",
     "url", "reviewers", "approvers", "rejecters", "comment_counts", "comments", "first_responses",
@@ -93,7 +114,10 @@ _COLUMNS = [
 @dataclass(frozen=True)
 class Filters:
     platforms: tuple[str, ...] = ()
+    # Repository keys, "platform:repo_id". None chosen means every one but `hidden`: archived
+    # ones and forks, which only count when chosen.
     repositories: tuple[str, ...] = ()
+    hidden: tuple[str, ...] = ()
     authors: tuple[str, ...] = ()
     states: tuple[str, ...] = ()
     include_drafts: bool = True
@@ -105,12 +129,14 @@ def apply_filters(df: pd.DataFrame, f: Filters) -> pd.DataFrame:
     mask = pd.Series(True, index=df.index)
     for col, wanted in (
         ("platform", f.platforms),
-        ("repository", f.repositories),
+        ("repo", f.repositories),
         ("author", f.authors),
         ("state", f.states),
     ):
         if wanted:
             mask &= df[col].isin(wanted)
+    if not f.repositories:
+        mask &= ~df["repo"].isin(f.hidden)
     if not f.include_drafts:
         mask &= ~df["is_draft"]
     if not f.include_bots:
@@ -126,6 +152,40 @@ def merged_in(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.Da
 
 def opened_in(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     return df[between(df["created_at"], start, end)]
+
+
+def activity(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp, by: str) -> pd.Series:
+    """PRs opened or merged in (start, end], per value of `by`, such as "repo" or "author"."""
+    merged = (df["state"] == State.MERGED.value) & between(df["closed_at"], start, end)
+    return df.loc[between(df["created_at"], start, end) | merged, by].value_counts()
+
+
+def repo_options(
+    df: pd.DataFrame, repos: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp
+) -> pd.DataFrame:
+    """Every repository with PRs or in `repos` (the store's table), by key: its name, PRs in
+    (start, end], and its status, "archived", "fork" or "". Most active first; archived ones and
+    forks last, because they only count when chosen."""
+    names = dict(zip(df["repo"], df["repository"], strict=True))
+    keys = repos["platform"] + ":" + repos["repo_id"]
+    status = dict(
+        zip(
+            keys,
+            np.where(
+                repos["is_archived"] == 1, "archived", np.where(repos["is_fork"] == 1, "fork", "")
+            ),
+            strict=True,
+        )
+    )
+    for key, name, owner in zip(keys, repos["name"], repos["owner"], strict=True):
+        if key not in names:  # no PRs yet
+            names[key] = f"{owner}/{name}" if name in names.values() else name
+    out = pd.DataFrame({"name": pd.Series(names, dtype="str")})
+    out["prs"] = activity(df, start, end, "repo").reindex(out.index, fill_value=0).astype(int)
+    out["status"] = [status.get(k, "") for k in out.index]
+    out["hidden"] = out["status"] != ""
+    out = out.sort_values(["hidden", "prs", "name"], ascending=[True, False, True])
+    return out.drop(columns="hidden")
 
 
 def review_status(df: pd.DataFrame) -> pd.Series:

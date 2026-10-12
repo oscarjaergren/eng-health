@@ -61,6 +61,9 @@ fn repos() -> Vec<Repo> {
             platform: Platform::Github,
             id: id.into(),
             name: name.into(),
+            owner: String::new(),
+            archived: false,
+            fork: false,
             raw: serde_json::Value::Null,
         })
         .into()
@@ -219,11 +222,15 @@ async fn first_sync_saves_everything_and_keeps_same_numbers_apart() {
     );
     assert_eq!(*fake.since_seen.lock().unwrap(), [None, None]);
     assert_eq!(comments(&env).len(), 2);
-    let name: String = rusqlite::Connection::open(env.dir.path().join("db.sqlite"))
-        .unwrap()
+    let db = rusqlite::Connection::open(env.dir.path().join("db.sqlite")).unwrap();
+    let name: String = db
         .query_row("SELECT name FROM people WHERE id = 'bob'", [], |r| r.get(0))
         .unwrap();
     assert_eq!(name, "BOB");
+    let listed: i64 = db
+        .query_row("SELECT COUNT(*) FROM repositories", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(listed, 2, "the dashboard needs every listed repository");
 }
 
 #[tokio::test]

@@ -76,6 +76,11 @@ class Store:
     def test_failures(self) -> pd.DataFrame:
         return self._query("SELECT * FROM test_failures")
 
+    def repositories(self) -> pd.DataFrame:
+        """Every repository the last sync listed: platform, repo_id, name, owner, is_archived
+        and is_fork. Empty until the engine that writes it has synced."""
+        return self._query("SELECT * FROM repositories")
+
     def _query(self, sql: str) -> pd.DataFrame:
         with self._conn() as c:
             return pd.read_sql_query(sql, c)

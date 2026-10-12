@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from eng_health.mock import mock_pipelines, mock_pull_requests
+from eng_health.mock import mock_pipelines, mock_pull_requests, mock_repositories
 from eng_health.store import SCHEMA_VERSION, SchemaError, Store
 
 from .helpers import NOW, make_pr
@@ -54,9 +54,16 @@ def test_sample_data_fits_the_schema(tmp_path: Path) -> None:
     db.upsert(prs, people)
     db.upsert_jobs(jobs)
     db.upsert_test_failures((f["repo_id"], f["run_id"], f["test_id"]) for f in failures)
+    repos = mock_repositories()
+    db.upsert_repositories(repos)
 
     assert len(db.pull_requests()) == len(prs)
     stored = db.pipeline_jobs()
     assert len(stored) == len(jobs)  # keys are unique
     assert set(stored.columns) == set(jobs[0])  # no column missing or extra
     assert not db.test_failures().empty
+    assert db.repositories().to_dict("records") == repos
+    # The sample PRs and runs belong to the sample repositories.
+    keys = {(r["platform"], r["repo_id"]) for r in repos}
+    assert {(p.platform, p.repo_id) for p in prs} <= keys
+    assert {("github", j["repo_id"]) for j in jobs} <= keys

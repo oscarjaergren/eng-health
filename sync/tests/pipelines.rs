@@ -197,6 +197,9 @@ async fn enterprise_rest_base_is_derived_from_graphql_url() {
         platform: eng_health::Platform::Github,
         id: "7".into(),
         name: "web".into(),
+        owner: String::new(),
+        archived: false,
+        fork: false,
         raw: Value::Null,
     };
     assert!(gh.runs(&repo, Utc::now()).await.unwrap().is_empty());

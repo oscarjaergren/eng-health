@@ -7,11 +7,13 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::model::{Platform, PullRequest, Timestamp};
+use crate::model::{Platform, PullRequest, Repo, Timestamp};
 use crate::pipelines::Job;
 
 /// The version at the end of `schema.sql`; a test checks they agree.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
+/// The last version whose records changed shape. A database older than it is re-synced in full.
+const RECORDS_CHANGED: i64 = 3;
 
 const SCHEMA: &str = include_str!("../schema.sql");
 
@@ -68,7 +70,7 @@ impl Store {
             conn.execute("DROP TABLE IF EXISTS pipeline_jobs", [])?;
         }
         conn.execute_batch(SCHEMA)?;
-        if found < SCHEMA_VERSION {
+        if found < RECORDS_CHANGED {
             // Records changed shape. Forgetting the sync windows makes the next sync list every
             // PR again, and sources refetch any record missing the new fields.
             conn.execute("UPDATE sync_state SET last_sync = NULL", [])?;
@@ -105,6 +107,36 @@ impl Store {
         }
         tx.commit()?;
         Ok(prs.len())
+    }
+
+    /// Replace one platform's repositories with the ones just listed.
+    pub fn save_repositories(
+        &mut self,
+        platform: Platform,
+        repos: &[Repo],
+    ) -> Result<(), StoreError> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "DELETE FROM repositories WHERE platform = ?1",
+            [platform.as_str()],
+        )?;
+        {
+            let mut put =
+                tx.prepare_cached("INSERT INTO repositories VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?;
+            for r in repos {
+                put.execute(params![
+                    platform.as_str(),
+                    r.id,
+                    r.name,
+                    r.owner,
+                    r.archived,
+                    r.fork
+                ])?;
+            }
+        }
+        bump(&tx)?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn pull_requests(
@@ -173,7 +205,10 @@ impl Store {
 
     pub fn clear(&mut self) -> Result<(), StoreError> {
         let tx = self.conn.transaction()?;
-        tx.execute_batch("DELETE FROM pull_requests; DELETE FROM people; DELETE FROM sync_state;")?;
+        tx.execute_batch(
+            "DELETE FROM pull_requests; DELETE FROM people; DELETE FROM repositories; \
+             DELETE FROM sync_state;",
+        )?;
         bump(&tx)?;
         tx.commit()?;
         Ok(())
