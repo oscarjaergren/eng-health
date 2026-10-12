@@ -11,31 +11,35 @@ import streamlit as st
 from .. import metrics, sync
 from ..config import Settings
 from ..mock import ALIASES as MOCK_ALIASES
-from ..mock import mock_pipelines, mock_pull_requests
+from ..mock import mock_pipelines, mock_pull_requests, mock_repositories
 from ..models import PLATFORM_NAMES
 from ..store import Store
 
 log = logging.getLogger(__name__)
 
 
+Loaded = tuple[pd.DataFrame, dict[str, str], pd.DataFrame]
+
+
 @st.cache_data(show_spinner=False)
-def _load_store(
-    db_path: str, version: int, aliases: tuple[tuple[str, str], ...]
-) -> tuple[pd.DataFrame, dict[str, str]]:
+def _load_store(db_path: str, version: int, aliases: tuple[tuple[str, str], ...]) -> Loaded:
     store = Store(db_path)
-    prs = store.pull_requests()
+    prs, repos = store.pull_requests(), store.repositories()
     log.info("loaded %d PRs from %s (revision %d)", len(prs), db_path, version)
-    return metrics.to_frame(prs, dict(aliases)), store.people()
+    df = metrics.name_repositories(metrics.to_frame(prs, dict(aliases)), repos)
+    return df, store.people(), repos
 
 
 @st.cache_data(show_spinner=False)
-def _load_mock(day: str) -> tuple[pd.DataFrame, dict[str, str]]:
+def _load_mock(day: str) -> Loaded:
     prs, people = mock_pull_requests()
+    repos = pd.DataFrame(mock_repositories())
     log.info("generated %d sample PRs for %s", len(prs), day)
-    return metrics.to_frame(prs, MOCK_ALIASES), people
+    return metrics.name_repositories(metrics.to_frame(prs, MOCK_ALIASES), repos), people, repos
 
 
-def load(settings: Settings, store: Store | None) -> tuple[pd.DataFrame, dict[str, str]]:
+def load(settings: Settings, store: Store | None) -> Loaded:
+    """PRs, display names, and the repositories table."""
     if store is None:
         # Keyed by day so the sample data stays anchored to "now".
         return _load_mock(datetime.now(UTC).date().isoformat())

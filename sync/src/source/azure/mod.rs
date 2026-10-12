@@ -161,11 +161,18 @@ impl Source for Azure {
             .value
             .into_iter()
             .filter(|r| !r.is_disabled)
-            .map(|r| Repo {
-                platform: Platform::AzureDevops,
-                raw: json!({ "webUrl": r.web_url, "project": { "id": r.project.map(|p| p.id) } }),
-                id: r.id,
-                name: r.name,
+            .map(|r| {
+                let (project_id, project) = r.project.map(|p| (p.id, p.name)).unzip();
+                Repo {
+                    platform: Platform::AzureDevops,
+                    raw: json!({ "webUrl": r.web_url, "project": { "id": project_id } }),
+                    id: r.id,
+                    name: r.name,
+                    owner: project.unwrap_or_default(),
+                    // Azure DevOps has no archiving; disabled repositories are skipped above.
+                    archived: false,
+                    fork: r.is_fork,
+                }
             })
             .collect())
     }

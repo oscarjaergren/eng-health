@@ -77,6 +77,10 @@ Setting only half of a platform's pair is reported as an error rather than ignor
   were reset by later pushes.
 - **Comments**: text comments by people. System messages and bots are left out, and so are
   authors' replies on their own PRs unless you switch that on.
+- **Repositories**: archived repositories and forks are left out unless you pick them in the
+  Repository filter, which lists the busiest first and searches as you type. Two repositories with
+  the same name, in different Azure DevOps projects or on both platforms, are shown as
+  `project/name` and never counted together.
 - **Infrastructure PRs**: titles that mention Terraform, Helm, Bicep, Kubernetes and similar
   are hidden by default, and so are Dependabot and Renovate PRs. Toggles in the filter bar
   bring them back.

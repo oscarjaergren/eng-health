@@ -94,6 +94,12 @@ pub struct Repo {
     pub platform: Platform,
     pub id: String,
     pub name: String,
+    /// Where it lives: the GitHub owner, or the Azure DevOps project. Two repositories in
+    /// different projects can share a name.
+    pub owner: String,
+    /// Read-only on GitHub. Its PRs are kept, but the dashboard leaves them out by default.
+    pub archived: bool,
+    pub fork: bool,
     /// Fields only one platform needs, such as Azure DevOps `webUrl` and project id.
     pub raw: serde_json::Value,
 }

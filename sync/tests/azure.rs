@@ -32,6 +32,9 @@ fn repo() -> Repo {
         platform: Platform::AzureDevops,
         id: "r1".into(),
         name: "api".into(),
+        owner: String::new(),
+        archived: false,
+        fork: false,
         raw: json!({"webUrl": "https://dev.azure.com/org/p/_git/api", "project": {"id": "p1"}}),
     }
 }
@@ -49,7 +52,7 @@ fn list(items: &[Value]) -> ResponseTemplate {
 }
 
 #[tokio::test]
-async fn repositories_skip_disabled_ones_and_keep_project_and_url() {
+async fn repositories_skip_disabled_ones_and_keep_project_fork_and_url() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/org/_apis/git/repositories"))
@@ -57,7 +60,8 @@ async fn repositories_skip_disabled_ones_and_keep_project_and_url() {
         // Basic auth with an empty user name: base64(":pat")
         .and(header("authorization", "Basic OnBhdA=="))
         .respond_with(list(&[
-            json!({"id": "r1", "name": "api", "webUrl": "https://x/_git/api", "project": {"id": "p1"}}),
+            json!({"id": "r1", "name": "api", "webUrl": "https://x/_git/api", "isFork": true,
+                   "project": {"id": "p1", "name": "Payments"}}),
             json!({"id": "r2", "name": "old", "isDisabled": true, "project": {"id": "p1"}}),
         ]))
         .mount(&server)
@@ -66,6 +70,7 @@ async fn repositories_skip_disabled_ones_and_keep_project_and_url() {
     assert_eq!(repos.len(), 1);
     assert_eq!(repos[0].raw["project"]["id"], "p1");
     assert_eq!(repos[0].raw["webUrl"], "https://x/_git/api");
+    assert_eq!((repos[0].owner.as_str(), repos[0].fork), ("Payments", true));
 }
 
 #[tokio::test]

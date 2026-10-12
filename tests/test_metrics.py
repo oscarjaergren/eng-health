@@ -79,6 +79,61 @@ def test_people_count_what_happened_in_the_period() -> None:
     assert "carol" not in people.index  # nothing in the period
 
 
+def repo_row(
+    repo_id: str, name: str, owner: str, archived: int = 0, fork: int = 0
+) -> dict[str, object]:
+    return {
+        "platform": "azure_devops",
+        "repo_id": repo_id,
+        "name": name,
+        "owner": owner,
+        "is_archived": archived,
+        "is_fork": fork,
+    }
+
+
+def test_same_named_repositories_stay_apart() -> None:
+    azure = {"platform": "azure_devops"}
+    df = frame(
+        pr(1, **azure, repo_id="a", repository="web"),
+        pr(2, **azure, repo_id="b", repository="web"),
+        pr(3, **azure, repo_id="c", repository="api"),
+    )
+    repos = pd.DataFrame([repo_row("a", "web", "Payments"), repo_row("b", "web", "Identity")])
+    named = metrics.name_repositories(df, repos)
+    assert named["repository"].tolist() == ["Payments/web", "Identity/web", "api"]
+    chosen = metrics.Filters(repositories=("azure_devops:a",))
+    assert metrics.apply_filters(named, chosen)["number"].tolist() == [1]
+
+
+def test_archived_repositories_and_forks_count_only_when_chosen() -> None:
+    df = frame(pr(1, repo_id="live"), pr(2, repo_id="old"), pr(3, repo_id="copy"))
+    hidden = ("github:old", "github:copy")
+    assert metrics.apply_filters(df, metrics.Filters(hidden=hidden))["number"].tolist() == [1]
+    chosen = metrics.Filters(repositories=("github:old",), hidden=hidden)
+    assert metrics.apply_filters(df, chosen)["number"].tolist() == [2]
+
+
+def test_repository_options_put_the_busy_ones_first_and_hidden_ones_last() -> None:
+    now = pd.Timestamp(T0) + pd.Timedelta(days=10)
+    recent = {"created_at": T0 + timedelta(days=9), "closed_at": None, "state": State.OPEN}
+    df = frame(
+        pr(1, repo_id="a", repository="quiet"),  # before the period
+        pr(2, repo_id="b", repository="busy", **recent),
+        pr(3, repo_id="b", repository="busy", **recent),
+        pr(4, repo_id="c", repository="some", **recent),
+        pr(5, repo_id="d", repository="old", **recent),
+    )
+    repos = pd.DataFrame(
+        [repo_row("d", "old", "o", archived=1), repo_row("e", "empty", "o", fork=1)]
+    )
+    repos["platform"] = "github"
+    options = metrics.repo_options(df, repos, now - pd.Timedelta(days=7), now)
+    assert options["name"].tolist() == ["busy", "some", "quiet", "old", "empty"]
+    assert options["prs"].tolist() == [2, 1, 0, 1, 0]
+    assert options["status"].tolist() == ["", "", "", "archived", "fork"]
+
+
 def test_aliases_merge_identities() -> None:
     df = frame(
         pr(1, comment_counts={"bob": 1, "bob@example.com": 2}),

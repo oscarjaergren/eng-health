@@ -171,6 +171,8 @@ async fn run<S: Source>(
         Err(e) => return Ok(Err(e)),
     };
     report.repositories = repos.len();
+    let listed = repos.clone();
+    db(store, move |s| s.save_repositories(platform, &listed)).await?;
     tracing::info!(
         "{platform}: {} repositories, listing PRs since {since:?}",
         repos.len()

@@ -89,6 +89,15 @@ def test_clear_filters_resets_them() -> None:
     assert "state" not in at.query_params
 
 
+def test_the_repository_search_filters_by_id() -> None:
+    at = run("shipping")
+    at.segmented_control(key="period").set_value("12m").run()
+    at.multiselect(key="repo|0").set_value(["github:gi-docs-site"]).run()
+    assert at.query_params["repo"] == "github:gi-docs-site"  # one value comes back unwrapped
+    names = re.findall(r'<span class="c-t">([^<]*)</span>', text(at))
+    assert names == ["docs-site"]  # the By repository table
+
+
 def test_a_chip_starts_from_the_url() -> None:
     at = AppTest.from_file(APP, default_timeout=60)
     at.query_params["state"] = "all"  # nothing ticked, which is every state

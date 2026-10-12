@@ -3,19 +3,20 @@ filtered view can be shared."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 import pandas as pd
 import streamlit as st
 
+from .. import metrics
 from ..metrics import Filters
 from ..models import PLATFORM_NAMES
 from ..period import PERIODS, Period
 from .charts import esc, html, md
 
 STATES = {"open": "Open", "merged": "Merged", "abandoned": "Abandoned"}
-# Each chip opens a checklist. A checkbox's key is "<chip>|<option>|<round>", so its state is
-# the filter; Clear filters starts a new round (see _clear).
+# Each chip opens a checklist (`_chip`), or a search list for the long ones (`_pick`). A widget's
+# key is "<chip>|...|<round>", so its state is the filter; Clear filters starts a new round.
 CHIPS = {"platform": "Platform", "repo": "Repository", "author": "Author", "state": "State"}
 CHIP_DEFAULTS = {"state": ["open", "merged"]}
 TOGGLES = {"drafts": True, "bots": False, "infra": False}
@@ -66,6 +67,50 @@ def _chip(name: str, options: list[str], label: Callable[[str], str] = str) -> l
     return chosen
 
 
+def _pick(
+    name: str, options: list[str], label: Callable[[str], str], notes: Mapping[str, str]
+) -> list[str]:
+    """A chip whose popover is a search list of `options`, in the order given, each with its
+    note ("12 PRs"). None picked means all of them."""
+    key = f"{name}|{st.session_state.get('round', 0)}"
+    picked = st.session_state.get(key)
+    if picked is None:  # not drawn yet: from the URL
+        picked = st.query_params.get_all(name)
+    chosen = [o for o in picked if o in options]
+    summary = (
+        "All"
+        if not chosen
+        else ", ".join(label(o) for o in chosen)
+        if len(chosen) <= 2
+        else f"{len(chosen)} selected"
+    )
+    with st.popover(
+        f":gray[{CHIPS[name]}] {md(summary)}",
+        type="primary" if chosen else "secondary",
+        key=f"chip-{name}",
+        help=", ".join(label(o) for o in chosen) if len(chosen) > 2 else None,
+    ):
+        # The current choice as the default too, for the same reason as `_chip`'s checkboxes.
+        st.multiselect(
+            CHIPS[name],
+            options,
+            default=chosen,
+            key=key,
+            format_func=lambda o: f"{label(o)} · {notes[o]}",
+            placeholder=f"Search {CHIPS[name].lower()}…",
+            label_visibility="collapsed",
+        )
+    if chosen:
+        st.query_params[name] = chosen
+    elif name in st.query_params:
+        del st.query_params[name]
+    return chosen
+
+
+def _prs(n: int) -> str:
+    return f"{n} PR{'s' if n != 1 else ''}" if n else "no PRs"
+
+
 def _span(period: Period, now: pd.Timestamp, tz: str) -> str:
     """The period's dates, in fixed-width slots so the chips after them don't move."""
     end = now.tz_convert(tz)
@@ -78,13 +123,14 @@ def _span(period: Period, now: pd.Timestamp, tz: str) -> str:
 
 
 def bar(
-    df: pd.DataFrame, names: dict[str, str], now: pd.Timestamp, tz: str
+    df: pd.DataFrame, names: dict[str, str], repos: pd.DataFrame, now: pd.Timestamp, tz: str
 ) -> tuple[Period, Filters]:
+    """`repos` is the store's repositories table."""
     # Two rows, so a chip growing or Clear filters appearing never rewraps the bar.
     chips_row = st.container(horizontal=True, vertical_alignment="center", gap="xsmall")
     toggles_row = st.container(horizontal=True, vertical_alignment="center")
     with chips_row:
-        period, chosen = _chips(df, names, now, tz)
+        period, chosen, hidden = _chips(df, names, repos, now, tz)
     with toggles_row:
         drafts = st.toggle("Drafts", value=True, key="drafts", bind="query-params")
         bots = st.toggle("Dependabot & Renovate PRs", value=False, key="bots", bind="query-params")
@@ -104,10 +150,11 @@ def bar(
         st.button(
             "Clear filters", type="tertiary", on_click=_clear, key="clear", disabled=not changed
         )
-    platforms, repos, authors, states = chosen
+    platforms, chosen_repos, authors, states = chosen
     return period, Filters(
         platforms=tuple(platforms),
-        repositories=tuple(repos),
+        repositories=tuple(chosen_repos),
+        hidden=hidden,
         authors=tuple(authors),
         states=tuple(states),
         include_drafts=drafts,
@@ -117,8 +164,8 @@ def bar(
 
 
 def _chips(
-    df: pd.DataFrame, names: dict[str, str], now: pd.Timestamp, tz: str
-) -> tuple[Period, tuple[list[str], list[str], list[str], list[str]]]:
+    df: pd.DataFrame, names: dict[str, str], repos: pd.DataFrame, now: pd.Timestamp, tz: str
+) -> tuple[Period, tuple[list[str], list[str], list[str], list[str]], tuple[str, ...]]:
     period = PERIODS[
         st.segmented_control(
             "Period",
@@ -138,11 +185,21 @@ def _chips(
     chosen_platforms = (
         _chip("platform", platforms, PLATFORM_NAMES.__getitem__) if len(platforms) > 1 else []
     )
-    repos = _chip("repo", sorted(df["repository"].unique()))
-    authors = _chip(
-        "author",
-        sorted(df["author"].unique(), key=lambda p: str(names.get(p, p)).lower()),
-        lambda p: names.get(p, p),
-    )
+    start, end = period.window(now)
+    options = metrics.repo_options(df, repos, start, end)
+    repo_notes = {
+        k: status or _prs(n)
+        for k, n, status in zip(options.index, options["prs"], options["status"], strict=True)
+    }
+    repo_names = dict(zip(options.index.astype(str), options["name"].astype(str), strict=True))
+    chosen_repos = _pick("repo", list(options.index), repo_names.__getitem__, repo_notes)
+
+    def person(p: str) -> str:
+        return names.get(p, p)
+
+    prs = metrics.activity(df, start, end, "author")
+    authors = sorted(df["author"].unique(), key=lambda p: (-prs.get(p, 0), person(p).lower()))
+    chosen_authors = _pick("author", authors, person, {p: _prs(prs.get(p, 0)) for p in authors})
     states = _chip("state", list(STATES), STATES.__getitem__)
-    return period, (chosen_platforms, repos, authors, states)
+    hidden = tuple(options.index[options["status"] != ""])
+    return period, (chosen_platforms, chosen_repos, chosen_authors, states), hidden

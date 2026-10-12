@@ -58,6 +58,10 @@ pub(crate) struct RepoNode {
     pub database_id: i64,
     pub name: String,
     pub is_private: Option<bool>,
+    #[serde(default)]
+    pub is_archived: bool,
+    #[serde(default)]
+    pub is_fork: bool,
     pub default_branch_ref: Option<BranchRef>,
 }
 

@@ -18,6 +18,8 @@ pub(crate) struct RepoInfo {
     #[serde(default)]
     pub is_disabled: bool,
     #[serde(default)]
+    pub is_fork: bool,
+    #[serde(default)]
     pub web_url: String,
     #[serde(default)]
     pub project: Option<ProjectRef>,
@@ -26,6 +28,8 @@ pub(crate) struct RepoInfo {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct ProjectRef {
     pub id: String,
+    #[serde(default)]
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
