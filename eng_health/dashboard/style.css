@@ -3,7 +3,9 @@
 
 /* Streamlit's own header (menu, running indicator) has no place in the design. */
 header[data-testid="stHeader"] { display: none; }
-[data-testid="stMainBlockContainer"] { padding-top: 0; max-width: 1320px; }
+/* Room for the scrollbar even when the page is short, so content doesn't shift sideways. */
+[data-testid="stMain"] { scrollbar-gutter: stable; }
+[data-testid="stMainBlockContainer"] { padding: 0 2rem 4rem; max-width: 1320px; }
 /* Markdown containers pull up by a paragraph's margin; the HTML blocks have none to cancel. */
 [data-testid="stMarkdownContainer"]:has(> div) { margin-bottom: 0; }
 
@@ -45,8 +47,9 @@ header[data-testid="stHeader"] { display: none; }
 .st-key-people_sort button[aria-checked="true"] { background: #fff !important; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
 .st-key-period button[aria-checked="true"] p,
 .st-key-people_sort button[aria-checked="true"] p { color: #1C1B19; }
-.span-range { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.span-range span { color: #8A877F; margin-left: 12px; }
+.span-range { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; display: flex; }
+.span-range span { display: inline-block; width: 104px; }
+.span-range .vs { width: 124px; color: #8A877F; }
 .vrule { display: inline-block; width: 1px; height: 18px; background: #E6E3DC; margin: 0 4px; }
 
 /* Filter chips: small buttons that open a checklist; a chip that is set is outlined. */
@@ -56,7 +59,15 @@ header[data-testid="stHeader"] { display: none; }
 }
 [class*="st-key-chip-"] button:hover { border-color: #1C1B19; background: transparent; color: #1C1B19; }
 [class*="st-key-chip-"] button[kind*="primary"] { background: #F2F0EB; border-color: #1C1B19; }
-[class*="st-key-chip-"] button p { font-size: 13px; }
+[class*="st-key-chip-"] button p { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Fixed widths, so picking options never pushes the chips after it; long choices truncate. */
+[class*="st-key-chip-"] button { justify-content: space-between; }
+.st-key-chip-platform button { width: 150px; }
+.st-key-chip-repo button { width: 190px; }
+.st-key-chip-author button { width: 170px; }
+.st-key-chip-state button { width: 170px; }
+/* Clear filters keeps its place while there is nothing to clear. */
+.st-key-clear button:disabled { visibility: hidden; }
 
 /* Small bordered buttons: the top bar, inbox rows, and Settings. */
 .st-key-sync_now button, .st-key-settings button, .st-key-sample button,
@@ -71,7 +82,8 @@ header[data-testid="stHeader"] { display: none; }
 .st-key-crumb button p, .crumb { font-family: 'Geist Mono', monospace; font-size: 13px; color: #6E6C66; }
 .crumb b { font-weight: 400; color: #1C1B19; }
 .st-key-crumb button { padding: 0; min-height: 0; }
-.answer { font-size: 16px; color: #4A4843; max-width: 760px; text-wrap: pretty; }
+/* Two lines kept for the answer, so the numbers below don't jump as filters change its length. */
+.answer { font-size: 16px; line-height: 1.5; color: #4A4843; max-width: 760px; text-wrap: pretty; min-height: 3em; }
 
 /* White cards on the grey page. */
 [class*="st-key-card-"] { background: #fff; border-radius: 10px; padding: 18px 20px; }
@@ -84,7 +96,8 @@ header[data-testid="stHeader"] { display: none; }
 [class*="st-key-go-"] div, [class*="st-key-go-"] button { width: 100%; height: 100%; }
 [class*="st-key-go-"] button { opacity: 0; cursor: pointer; }
 .kpi-label { font-size: 13px; color: #6E6C66; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kpi-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 6px 0 8px; }
+/* A fixed height, so a blank number or delta doesn't change the strip's height. */
+.kpi-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 6px 0 8px; height: 28px; }
 .kpi-value { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
 .tone-green { color: #007E46; }
 .tone-red { color: #BD4334; }

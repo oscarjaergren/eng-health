@@ -67,6 +67,7 @@ class Context:
     now: pd.Timestamp
     tz: str
     no_ci: str  # why `jobs` is empty
+    has_ci: bool  # whether there are runs at all, before the filters
 
     def name(self, person: str) -> str:
         return self.names.get(person, person)
@@ -350,8 +351,12 @@ def today(c: Context) -> None:
     )
     tiles = [(c.pr.change("wait"), "review"), (c.pr.change("ttm"), "review")]
     tiles.append((c.pr.change("merged"), "shipping"))
-    if not c.jobs.empty:
-        tiles += [(c.ci.change("failure"), "ci"), (c.ci.change("cost"), "cost")]
+    if c.has_ci:
+        # Kept, blank, when the filters leave no runs, so the other numbers don't move.
+        for key, view in (("failure", "ci"), ("cost", "cost")):
+            label, unit, _ = digest.METRICS[key]
+            blank = Change(label, None, None, unit)
+            tiles.append((blank if c.jobs.empty else c.ci.change(key), view))
     _kpis([change for change, _ in tiles], [view for _, view in tiles])
     st.space("small")
 
@@ -493,6 +498,8 @@ def review(c: Context) -> None:
     answer = (
         f"The first review arrives in {_value(now['wait'], ' h')} at the median, and merging "
         f"takes {_value(now['ttm'], ' h')}."
+        if now["wait"] is not None and now["ttm"] is not None
+        else f"Too few reviews and merges in {c.last} for a median."
     )
     depth = c.sizes.loc[c.sizes.index.isin(_LARGE), "Comments per 100 lines"]
     if len(depth) and (depth < 1).all():

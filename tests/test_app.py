@@ -77,12 +77,15 @@ def test_handled_items_move_to_cleared_and_back() -> None:
 def test_clear_filters_resets_them() -> None:
     at = run()
     at.toggle(key="bots").set_value(True).run()
-    at.checkbox(key="state|abandoned").check().run()
+    at.checkbox(key="state|abandoned|0").check().run()
     assert at.query_params["state"] == ["open", "merged", "abandoned"]
     at.button(key="clear").click().run()
     assert not at.toggle(key="bots").value
-    states = [at.checkbox(key=f"state|{s}").value for s in ("open", "merged", "abandoned")]
+    states = [at.checkbox(key=f"state|{s}|1").value for s in ("open", "merged", "abandoned")]
     assert states == [True, True, False]
+    assert "state" not in at.query_params
+    # The checkboxes from before Clear filters are gone, so their old values can't come back.
+    at.toggle(key="drafts").set_value(False).run()
     assert "state" not in at.query_params
 
 
@@ -90,7 +93,7 @@ def test_a_chip_starts_from_the_url() -> None:
     at = AppTest.from_file(APP, default_timeout=60)
     at.query_params["state"] = "all"  # nothing ticked, which is every state
     at.run()
-    assert not any(at.checkbox(key=f"state|{s}").value for s in ("open", "merged", "abandoned"))
+    assert not any(at.checkbox(key=f"state|{s}|0").value for s in ("open", "merged", "abandoned"))
 
 
 def test_live_mode_with_empty_store_offers_first_sync(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -107,7 +107,7 @@ def main() -> None:
 
     with st.container(key="header"):
         top = st.container(horizontal=True, vertical_alignment="center")
-        bar = st.container(horizontal=True, vertical_alignment="center", gap="xsmall")
+        bar = st.container(gap="xsmall")
     # Set by the buttons' callbacks, so the sync runs before the data below is read.
     request = st.session_state.pop("sync_request", None)
     if store is not None and request:
@@ -164,5 +164,6 @@ def main() -> None:
             now=now,
             tz=tz,
             no_ci=no_ci,
+            has_ci=not raw.empty,
         )
     )
