@@ -116,6 +116,8 @@ async fn full_listing_pages_until_a_short_page() {
         Mock::given(path(PRS))
             .and(query_param("searchCriteria.status", "all"))
             .and(query_param("$skip", skip))
+            // Requests with query parameters of their own still say which API version.
+            .and(query_param("api-version", "7.1"))
             .respond_with(list(
                 &(0..count).map(|i| pr(i, "completed")).collect::<Vec<_>>(),
             ))
