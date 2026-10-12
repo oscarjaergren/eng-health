@@ -61,7 +61,7 @@ def mock_pull_requests(
     numbers = dict.fromkeys(repos, 0)
     people = {f"{login}@example.com": name for name, login in PEOPLE}
     people.update({login: login for _, login in PEOPLE})
-    people[BOT[1]] = BOT[0]
+    people[BOT[1]] = people[f"{BOT[1]}@example.com"] = BOT[0]
 
     prs = []
     for _ in range(count):
