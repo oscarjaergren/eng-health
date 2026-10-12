@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from eng_health.mock import mock_pipelines, mock_pull_requests, mock_repositories
+from eng_health.models import Team
 from eng_health.store import SCHEMA_VERSION, SchemaError, Store
 
 from .helpers import NOW, make_pr
@@ -18,12 +19,16 @@ def test_reads_pull_requests_people_and_sync_state(tmp_path: Path) -> None:
     db.upsert([make_pr(5, title="in web"), make_pr(5, repo_id="2", title="in api")], {"a": "A"})
     db.record_sync("github", NOW, succeeded=True)
     db.set_me("github", "alice")
+    db.add_team("github", "web", "Web", ["alice", "bob"], ["1"])
 
     store = Store(tmp_path / "db.sqlite")
     assert sorted(pr.title for pr in store.pull_requests()) == ["in api", "in web"]
     assert store.pull_requests("azure_devops") == []
     assert store.people() == {"a": "A"}
     assert store.me() == {"github": "alice"}
+    assert store.teams() == [
+        Team("github:web", "Web", frozenset({"alice", "bob"}), frozenset({"github:1"}))
+    ]
     state = store.sync_state("github")
     assert (state.last_sync, state.last_error) == (NOW, None)
     assert store.sync_state("azure_devops").last_sync is None

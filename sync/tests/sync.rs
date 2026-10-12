@@ -19,7 +19,7 @@ use eng_health::Store;
 use eng_health::parse_time;
 use eng_health::{Event, OVERLAP, Options, sync_platform};
 use eng_health::{People, Source, SourceError};
-use eng_health::{Platform, PullRequest, Repo, State, Timestamp};
+use eng_health::{Platform, PullRequest, Repo, State, Team, Timestamp};
 use tempfile::TempDir;
 
 #[derive(Clone)]
@@ -87,6 +87,15 @@ impl Source for Fake {
 
     async fn viewer(&self) -> Result<Option<String>, SourceError> {
         Ok(Some("bob".into()))
+    }
+
+    async fn teams(&self) -> Result<Vec<Team>, SourceError> {
+        Ok(vec![Team {
+            id: "web-team".into(),
+            name: "Web".into(),
+            members: vec!["bob".into()],
+            repos: vec!["1".into()],
+        }])
     }
 
     async fn pull_requests(
@@ -243,6 +252,15 @@ async fn first_sync_saves_everything_and_keeps_same_numbers_apart() {
         )
         .unwrap();
     assert_eq!(me, "bob");
+    let team: (String, String, String) = db
+        .query_row(
+            "SELECT t.name, m.identity, r.repo_id FROM teams t \
+             JOIN team_members m USING (platform, team_id) JOIN team_repos r USING (platform, team_id)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(team, ("Web".into(), "bob".into(), "1".into()));
 }
 
 #[tokio::test]

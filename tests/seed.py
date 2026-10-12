@@ -78,6 +78,20 @@ class WritableStore(Store):
                 list(repos),
             )
 
+    def add_team(
+        self, platform: str, team_id: str, name: str, members: Iterable[str], repos: Iterable[str]
+    ) -> None:
+        with self._write() as c:
+            c.execute("INSERT INTO teams VALUES (?, ?, ?)", (platform, team_id, name))
+            c.executemany(
+                "INSERT INTO team_members VALUES (?, ?, ?)",
+                [(platform, team_id, m) for m in members],
+            )
+            c.executemany(
+                "INSERT INTO team_repos VALUES (?, ?, ?)",
+                [(platform, team_id, r) for r in repos],
+            )
+
     def set_me(self, platform: str, identity: str) -> None:
         with self._write() as c:
             c.execute("INSERT OR REPLACE INTO me VALUES (?, ?)", (platform, identity))

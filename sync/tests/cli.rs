@@ -101,7 +101,8 @@ async fn json_progress_and_a_populated_database() {
         (report["repositories"].as_u64(), report["saved"].as_u64()),
         (Some(1), Some(1))
     );
-    assert_eq!(report["requests"].as_u64(), Some(3)); // repositories, viewer, pull requests
+    // Repositories, viewer, teams (unmocked: a warning, not a failure) and pull requests.
+    assert_eq!(report["requests"].as_u64(), Some(4));
     assert!(
         events[..events.len() - 1]
             .iter()

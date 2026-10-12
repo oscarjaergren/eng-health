@@ -5,7 +5,7 @@ use std::future::Future;
 
 use chrono::{DateTime, Utc};
 
-use crate::model::{Platform, PullRequest, Repo, Timestamp};
+use crate::model::{Platform, PullRequest, Repo, Team, Timestamp};
 
 pub(crate) mod azure;
 pub(crate) mod github;
@@ -53,6 +53,9 @@ pub trait Source: Send + Sync {
     /// Who the credentials belong to, as PR records name them: what "Mine" in the dashboard
     /// is about. `None` when the platform doesn't say.
     fn viewer(&self) -> impl Future<Output = Result<Option<String>, SourceError>> + Send;
+
+    /// Teams with their members and, where the platform links them, repositories.
+    fn teams(&self) -> impl Future<Output = Result<Vec<Team>, SourceError>> + Send;
 
     /// PRs changed since `since` (all of them when `None`).
     fn pull_requests(

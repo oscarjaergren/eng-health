@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use crate::config::{GitHubSettings, OwnerType};
 use crate::http::Http;
-use crate::model::{Platform, PullRequest, Repo};
+use crate::model::{Platform, PullRequest, Repo, Team};
 use crate::rules::{identity, parse_time};
 use crate::source::{People, Source, SourceError};
 
@@ -61,6 +61,38 @@ query($login: String!, $cursor: String) {
 }";
 
 const VIEWER: &str = "query { viewer { login } }";
+
+// membership: ALL counts child teams' members too, as GitHub's team page does.
+const TEAMS: &str = "
+query($login: String!, $cursor: String) {
+  organization(login: $login) {
+    teams(first: 50, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        slug name
+        members(first: 100, membership: ALL) { pageInfo { hasNextPage endCursor } nodes { login } }
+        repositories(first: 100) { pageInfo { hasNextPage endCursor } nodes { databaseId } }
+      }
+    }
+  }
+}";
+
+/// The next page of one team's members or repositories: one list at a time, because a cursor
+/// belongs to one list.
+fn team_more(field: &str) -> String {
+    let (args, nodes) = if field == "members" {
+        (", membership: ALL", "login")
+    } else {
+        ("", "databaseId")
+    };
+    format!(
+        "query($login: String!, $slug: String!, $cursor: String) {{
+  organization(login: $login) {{ team(slug: $slug) {{
+    {field}(first: 100, after: $cursor{args}) {{ pageInfo {{ hasNextPage endCursor }} nodes {{ {nodes} }} }}
+  }} }}
+}}"
+    )
+}
 
 const PULLS: &str = "
 query($owner: String!, $name: String!, $cursor: String, $pageSize: Int!, $nested: Int!) {
@@ -187,6 +219,33 @@ impl GitHub {
             .await
     }
 
+    /// A team's members (logins) or repositories (ids): the first page as listed, then the rest.
+    async fn team_list(
+        &self,
+        slug: &str,
+        field: &str,
+        first: &Value,
+    ) -> Result<Vec<String>, SourceError> {
+        let mut out = Vec::new();
+        let mut page = first.clone();
+        loop {
+            out.extend(page["nodes"].as_array().into_iter().flatten().filter_map(
+                |n| match field {
+                    "members" => n["login"].as_str().map(|l| identity(Some(l))),
+                    _ => n["databaseId"].as_i64().map(|id| id.to_string()),
+                },
+            ));
+            if page["pageInfo"]["hasNextPage"] != true {
+                return Ok(out);
+            }
+            let vars = json!({
+                "login": self.settings.owner, "slug": slug, "cursor": page["pageInfo"]["endCursor"],
+            });
+            let data: Value = self.query(&team_more(field), vars).await?;
+            page = data["organization"]["team"][field].clone();
+        }
+    }
+
     async fn fetch_one(
         &self,
         repo: &Repo,
@@ -246,6 +305,34 @@ impl Source for GitHub {
     async fn viewer(&self) -> Result<Option<String>, SourceError> {
         let data: Value = self.query(VIEWER, json!({})).await?;
         Ok(data["viewer"]["login"].as_str().map(|l| identity(Some(l))))
+    }
+
+    async fn teams(&self) -> Result<Vec<Team>, SourceError> {
+        if self.settings.owner_type == OwnerType::User {
+            return Ok(Vec::new()); // only organisations have teams
+        }
+        let mut teams = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let vars = json!({ "login": self.settings.owner, "cursor": cursor });
+            let data: Value = self.query(TEAMS, vars).await?;
+            let page = &data["organization"]["teams"];
+            for node in page["nodes"].as_array().into_iter().flatten() {
+                let slug = node["slug"].as_str().unwrap_or_default();
+                teams.push(Team {
+                    id: slug.to_owned(),
+                    name: node["name"].as_str().unwrap_or(slug).to_owned(),
+                    members: self.team_list(slug, "members", &node["members"]).await?,
+                    repos: self
+                        .team_list(slug, "repositories", &node["repositories"])
+                        .await?,
+                });
+            }
+            if page["pageInfo"]["hasNextPage"] != true {
+                return Ok(teams);
+            }
+            cursor = page["pageInfo"]["endCursor"].as_str().map(str::to_owned);
+        }
     }
 
     async fn pull_requests(

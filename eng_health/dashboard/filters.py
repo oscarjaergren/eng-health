@@ -33,6 +33,19 @@ def _clear() -> None:
         st.session_state[key] = value
 
 
+def picked(name: str) -> bool:
+    """Whether a chip has a choice of its own, as opposed to following the scope."""
+    return name in st.query_params
+
+
+def forget(name: str) -> None:
+    """Drop one chip's choice, for the ✕ on a repository page. A new round, as Clear filters
+    starts, gives every chip new widgets; the others take their choice back from the URL."""
+    st.session_state["round"] = st.session_state.get("round", 0) + 1
+    if name in st.query_params:
+        del st.query_params[name]
+
+
 def _chip(name: str, options: list[str], label: Callable[[str], str] = str) -> list[str]:
     """A chip whose checklist picks some of `options`; none picked means all of them."""
     keys = {o: f"{name}|{o}|{st.session_state.get('round', 0)}" for o in options}

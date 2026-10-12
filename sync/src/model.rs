@@ -89,6 +89,18 @@ impl<'de> Deserialize<'de> for Timestamp {
     }
 }
 
+/// A team as the platform defines it, so the dashboard can scope to it without anyone setting
+/// teams up again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Team {
+    pub id: String,
+    pub name: String,
+    /// Identities, named as PR records name people.
+    pub members: Vec<String>,
+    /// Repository ids. Azure DevOps teams have none; the dashboard goes by where members work.
+    pub repos: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Repo {
     pub platform: Platform,

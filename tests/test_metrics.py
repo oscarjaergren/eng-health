@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 
 from eng_health import metrics
-from eng_health.models import PullRequest, State
+from eng_health.models import PullRequest, State, Team
 from eng_health.period import Period
 
 T0 = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
@@ -149,6 +149,28 @@ def test_mine_is_where_i_opened_reviewed_or_still_have_a_pr_open() -> None:
         "github:reviewed",
         "github:still-open",
     }
+
+
+def test_scopes_put_mine_and_my_teams_first_and_skip_empty_teams() -> None:
+    now = T0 + timedelta(days=10)
+    df = frame(
+        pr(1, repo_id="web", author="me", created_at=T0 + timedelta(days=9)),
+        pr(2, repo_id="api", author="ann", created_at=T0 + timedelta(days=9)),
+    )
+    teams = [
+        Team("github:zed", "Zed", frozenset({"me"}), frozenset({"github:web"})),
+        Team("azure_devops:ops", "Ops", frozenset({"ann"}), frozenset()),  # goes by where ann works
+        Team("azure_devops:zed", "Zed", frozenset({"ann"}), frozenset()),
+        Team("github:idle", "Idle", frozenset({"nobody"}), frozenset()),
+    ]
+    found = metrics.scopes(df, {"me"}, teams, now)
+    assert list(found) == [
+        "mine", "team:github:zed", "all", "team:azure_devops:ops", "team:azure_devops:zed",
+    ]  # fmt: skip
+    assert found["team:azure_devops:ops"] == ("Ops", {"github:api"})
+    assert found["team:azure_devops:zed"][0] == "Zed (Azure DevOps)"
+    assert found["all"] == ("All repositories", None)
+    assert list(metrics.scopes(df, set(), [], now)) == ["all"]
 
 
 def test_aliases_merge_identities() -> None:

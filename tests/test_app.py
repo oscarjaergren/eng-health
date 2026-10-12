@@ -95,8 +95,10 @@ def test_the_repository_search_filters_by_id() -> None:
     at.segmented_control(key="period").set_value("12m").run()
     at.multiselect(key="repo|0").set_value(["github:gi-docs-site"]).run()
     assert at.query_params["repo"] == "github:gi-docs-site"  # one value comes back unwrapped
-    names = re.findall(r'<span class="c-t">([^<]*)</span>', text(at))
-    assert names == ["docs-site"]  # the By repository table
+    rows = re.findall(r'<a class="c-t" href="([^"]*)" target="_self">([^<]*)</a>', text(at))
+    # The By repository table, its one row linking to the repository's page.
+    assert [name for _, name in rows] == ["docs-site"]
+    assert "repo=github%3Agi-docs-site" in rows[0][0]
 
 
 def test_the_scope_starts_on_mine_and_remembers_a_change(tmp_path: Path) -> None:
@@ -106,6 +108,21 @@ def test_the_scope_starts_on_mine_and_remembers_a_change(tmp_path: Path) -> None
     assert json.loads((tmp_path / "dashboard.json").read_text()) == {"scope": "all"}
     # A new visit opens where the last one left off.
     assert run().selectbox(key="scope").value == "all"
+
+
+def test_a_team_scope_and_a_repository_page() -> None:
+    at = run("shipping")
+    at.segmented_control(key="period").set_value("12m").run()
+    at.selectbox(key="scope").set_value("team:github:mobile").run()
+    rows = re.findall(r'<a class="c-t" href="[^"]*" target="_self">([^<]*)</a>', text(at))
+    assert rows == ["mobile-app"]  # the team's one repository
+
+    at.selectbox(key="scope").set_value("all").run()
+    at.multiselect(key="repo|0").set_value(["github:gi-docs-site"]).run()
+    assert "docs-site" in text(at)  # the crumb
+    at.button(key="unpick").click().run()
+    assert "repo" not in at.query_params
+    assert len(re.findall(r'<a class="c-t"', text(at))) > 1  # every repository again
 
 
 def test_without_knowing_who_you_are_there_is_no_scope(

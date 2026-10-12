@@ -15,7 +15,7 @@ mod store;
 mod sync;
 
 pub use config::{AzureSettings, GitHubSettings, OwnerType, Settings};
-pub use model::{Platform, PullRequest, Repo, State, Timestamp};
+pub use model::{Platform, PullRequest, Repo, State, Team, Timestamp};
 pub use pipelines::{
     Job, MODULE_KEY as PIPELINES_KEY, failed_tests, failures_in, sync as sync_pipelines,
 };

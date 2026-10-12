@@ -12,7 +12,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from .models import PLATFORM_NAMES, PullRequest, State
+from .models import PLATFORM_NAMES, PullRequest, State, Team
 from .period import Period, between, sparklines
 
 # Dependency update bots: their PRs follow no human review process, so they are left out by default.
@@ -169,6 +169,44 @@ def mine(df: pd.DataFrame, me: Collection[str], now: datetime) -> set[str]:
         dtype=bool,
     )
     return set(df.loc[authored | responded, "repo"])
+
+
+def team_repos(df: pd.DataFrame, team: Team, now: datetime) -> set[str]:
+    """A team's repository keys: its own on GitHub, or, for a team that owns none (every Azure
+    DevOps team), wherever its members are "Mine" would find them."""
+    return set(team.repos) or mine(df, team.members, now)
+
+
+Scopes = dict[str, tuple[str, set[str] | None]]
+
+
+def scopes(df: pd.DataFrame, me: Collection[str], teams: Iterable[Team], now: datetime) -> Scopes:
+    """What the dashboard can be about: key -> (label, repository keys, or None for all).
+    Mine and your teams first, then all repositories, then everyone else's teams. Empty ones
+    are left out."""
+    mine_ = mine(df, me, now) if me else set()
+    found: Scopes = {"mine": ("Mine", mine_)} if mine_ else {}
+    yours: list[Team] = []
+    others: list[Team] = []
+    for t in sorted(teams, key=lambda t: t.name.lower()):
+        (yours if t.members & set(me) else others).append(t)
+
+    def add(team: Team) -> None:
+        repos = team_repos(df, team, now)
+        if not repos:
+            return
+        label = team.name
+        if any(label == name for name, _ in found.values()):  # the same name on both platforms
+            platform = team.key.split(":", 1)[0]
+            label = f"{team.name} ({PLATFORM_NAMES.get(platform, platform)})"
+        found[f"team:{team.key}"] = (label, repos)
+
+    for t in yours:
+        add(t)
+    found["all"] = ("All repositories", None)
+    for t in others:
+        add(t)
+    return found
 
 
 def activity(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp, by: str) -> pd.Series:

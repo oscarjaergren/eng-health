@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
@@ -51,15 +53,13 @@ def _sync_status(settings: Settings, store: Store) -> str:
     return f"Synced {relative(min(synced))}" if len(synced) == len(states) else "Not synced yet"
 
 
-SCOPES = {"mine": "Mine", "all": "All repositories"}
-
-
 def _remember_scope(settings: Settings) -> None:
     prefs.save(settings.data_dir, scope=st.session_state["scope"])
 
 
-def _scope(settings: Settings, scopes: list[str]) -> str:
+def _scope(settings: Settings, labels: dict[str, str]) -> str:
     """Whose repositories the dashboard is about. The choice is remembered between visits."""
+    scopes = list(labels)
     if len(scopes) == 1:
         return scopes[0]
     remembered = prefs.load(settings.data_dir).get("scope", scopes[0])
@@ -70,18 +70,33 @@ def _scope(settings: Settings, scopes: list[str]) -> str:
             scopes,
             # The current value as the default too, so the box keeps it across reruns.
             index=scopes.index(current if current in scopes else scopes[0]),
-            format_func=SCOPES.__getitem__,
+            format_func=labels.__getitem__,
             key="scope",
             bind="query-params",
             on_change=_remember_scope,
             args=(settings,),
             label_visibility="collapsed",
-            width=170,
+            width=190,
         )
     )
 
 
-def _top_bar(settings: Settings, store: Store | None, scopes: list[str]) -> tuple[str, str]:
+def _repo_links(df: pd.DataFrame, jobs: pd.DataFrame) -> Callable[[str], str | None]:
+    """Repository name -> a link to the same view about just that repository, keeping the
+    rest of the URL. A link rather than a button so it opens in a new tab too."""
+    keys = dict(zip(df["repository"], df["repo"], strict=True))
+    if not jobs.empty:  # repositories with runs but no PRs
+        keys = dict(zip(jobs["repository"], "github:" + jobs["repo_id"], strict=True)) | keys
+    params = {k: st.query_params.get_all(k) for k in st.query_params}
+
+    def link(name: str) -> str | None:
+        key = keys.get(name)
+        return f"?{urlencode(params | {'repo': [key]}, doseq=True)}" if key else None
+
+    return link
+
+
+def _top_bar(settings: Settings, store: Store | None, scopes: dict[str, str]) -> tuple[str, str]:
     with st.container(key="brand", width="content"):
         st.markdown("eng·health")
     scope = _scope(settings, scopes)
@@ -146,11 +161,11 @@ def main() -> None:
             "Each batch of PRs is saved as it arrives, so stopping a sync keeps its progress."
         )
         run_sync(settings, full=request == "full", reset=request == "reset")
-    df, names, repos, me = load(settings, store)
+    df, names, repos, me, teams = load(settings, store)
     now, tz = pd.Timestamp.now(tz="UTC"), _browser_timezone()
-    mine = metrics.mine(df, me, now)
+    scopes = metrics.scopes(df, me, teams, now)
     with top:
-        view, scope = _top_bar(settings, store, ["mine", "all"] if mine else ["all"])
+        view, scope = _top_bar(settings, store, {k: label for k, (label, _) in scopes.items()})
 
     github = store is None or bool(settings.github_owner)
     raw, failures = load_pipelines(store) if github else (pd.DataFrame(), pd.DataFrame())
@@ -176,8 +191,10 @@ def main() -> None:
         )
 
     with bar:
-        in_scope = tuple(sorted(mine)) if scope == "mine" else ()
-        period, chosen = filters.bar(df, names, repos, now, tz, in_scope, SCOPES[scope])
+        label, in_scope = scopes[scope]
+        period, chosen = filters.bar(
+            df, names, repos, now, tz, tuple(sorted(in_scope or ())), label
+        )
     jobs = pl.prepare(raw) if not raw.empty else raw
     if not jobs.empty:
         # The same repository filter as the PRs': runs are all GitHub's.
@@ -202,5 +219,12 @@ def main() -> None:
             tz=tz,
             no_ci=no_ci,
             has_ci=not raw.empty,
+            repo_link=_repo_links(df, raw),
+            picked=tuple(
+                dict(zip(df["repo"], df["repository"], strict=True)).get(k, k)
+                for k in chosen.repositories
+            )
+            if filters.picked("repo")
+            else (),
         )
     )
