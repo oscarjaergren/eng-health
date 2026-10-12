@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pandas as pd
 
 from eng_health import metrics
 from eng_health.models import PullRequest, State
+from eng_health.period import Period
 
 T0 = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
 
@@ -44,39 +45,38 @@ def test_cycle_and_first_review_hours() -> None:
     assert df["first_review_hours"].tolist()[0] == 2
 
 
-def test_filters_default_to_excluding_infrastructure() -> None:
-    df = frame(pr(1), pr(2, is_infrastructure=True), pr(3, is_draft=True))
-    assert metrics.apply_filters(df, metrics.Filters())["number"].tolist() == [1, 3]
-    f = metrics.Filters(include_infrastructure=True, include_drafts=False)
-    assert metrics.apply_filters(df, f)["number"].tolist() == [1, 2]
-
-
-def test_date_filter_uses_local_day() -> None:
-    late = datetime(2026, 9, 1, 23, 30, tzinfo=UTC)  # already 2 September in Berlin
-    df = frame(pr(1, created_at=late))
-    utc = metrics.Filters(start=date(2026, 9, 2), tz="UTC")
-    berlin = metrics.Filters(start=date(2026, 9, 2), tz="Europe/Berlin")
-    assert metrics.apply_filters(df, utc).empty
-    assert len(metrics.apply_filters(df, berlin)) == 1
-
-
-def test_reviewer_activity_and_own_comments() -> None:
+def test_filters_hide_bots_and_infrastructure_by_default() -> None:
     df = frame(
-        pr(1, approvers=["bob"], comment_counts={"bob": 2, "alice": 3},
-           first_responses={"bob": T0 + timedelta(hours=4)}),
-        pr(2, author="bob", rejecters=["carol"], comment_counts={"carol": 1},
-           first_responses={"carol": T0 + timedelta(hours=1)}),
-        pr(3, author="dave"),
+        pr(1),
+        pr(2, author="dependabot[bot]"),
+        pr(3, is_draft=True),
+        pr(4, author="Renovate"),
+        pr(5, is_infrastructure=True),
+    )
+    assert metrics.apply_filters(df, metrics.Filters())["number"].tolist() == [1, 3]
+    f = metrics.Filters(include_bots=True, include_drafts=False, include_infrastructure=True)
+    assert metrics.apply_filters(df, f)["number"].tolist() == [1, 2, 4, 5]
+
+
+def test_people_count_what_happened_in_the_period() -> None:
+    now = pd.Timestamp(T0) + pd.Timedelta(days=10)
+    df = frame(
+        # Bob reviewed this one inside the period; alice's replies on her own PR don't count.
+        pr(1, created_at=T0 + timedelta(days=8), closed_at=T0 + timedelta(days=9),
+           additions=10, deletions=5, comment_counts={"bob": 2, "alice": 3},
+           first_responses={"bob": T0 + timedelta(days=8, hours=1)}),
+        pr(2, author="bob", platform="azure_devops"),  # merged before the period, no size
+        pr(3, author="carol", state=State.OPEN, closed_at=None),
     )  # fmt: skip
-    act = metrics.reviewer_activity(df)
-    assert act.loc["bob", "Approvals"] == 1
-    assert act.loc["bob", "Comments"] == 2
-    assert act.loc["alice", "Comments"] == 0  # replies on her own PR
-    assert act.loc["carol", "Change requests"] == 1
-    assert act.loc["bob", "Median response (h)"] == 4
-    with_own = metrics.reviewer_activity(df, exclude_own_comments=False)
-    assert with_own.loc["alice", "Comments"] == 3
-    assert metrics.non_reviewers(act).index.tolist() == ["alice", "dave"]
+    assert df["comments"].tolist() == [2, 0, 0]
+    people = metrics.people(df, Period(7, "7 days", "D", 7), now, "UTC")
+    alice, bob = people.loc["alice"].to_dict(), people.loc["bob"].to_dict()
+    assert (alice["Opened"], alice["Merged"], alice["Reviews"]) == (1, 1, 0)
+    assert (alice["Lines added"], alice["Lines deleted"], alice["Net"]) == (10, 5, 5)
+    assert (bob["Opened"], bob["Merged"], bob["Reviews"]) == (0, 0, 1)
+    assert pd.isna(bob["Lines added"])  # not reported, rather than 0
+    assert alice["Trend"][-3:] == [0.0, 1.0, 0.0]  # merged the day before now
+    assert "carol" not in people.index  # nothing in the period
 
 
 def test_aliases_merge_identities() -> None:
@@ -87,27 +87,24 @@ def test_aliases_merge_identities() -> None:
     assert df["comment_counts"][0] == {"bob@example.com": 3}
 
 
-def test_stale_open_ignores_drafts_and_recent() -> None:
+def test_waiting_skips_drafts_and_new_prs_and_says_where_review_stands() -> None:
     now = T0 + timedelta(days=10)
+    opened = {"state": State.OPEN, "closed_at": None}
     df = frame(
-        pr(1, state=State.OPEN, closed_at=None),
-        pr(2, state=State.OPEN, closed_at=None, is_draft=True),
-        pr(3, state=State.OPEN, closed_at=None, created_at=now - timedelta(days=1)),
+        pr(1, **opened),
+        pr(2, **opened, is_draft=True),
+        pr(3, **opened, created_at=now - timedelta(days=1)),
+        pr(4, **opened, rejecters=["bob"]),
+        pr(5, **opened, rejecters=["bob"], approvers=["carol"]),  # approved since
+        pr(6, **opened, first_responses={"bob": T0 + timedelta(hours=1)}),
     )
-    assert metrics.stale_open(df, now, 7)["title"].tolist() == ["PR 1"]
-
-
-def test_monthly_flow_counts_merges_in_the_month_they_closed() -> None:
-    df = frame(pr(1, closed_at=datetime(2026, 10, 2, tzinfo=UTC)), pr(2))
-    flow = metrics.monthly_flow(df)
-    assert flow.loc["2026-09-01", "Opened"] == 2
-    assert flow.loc["2026-09-01", "Merged"] == 1
-    assert flow.loc["2026-10-01", "Merged"] == 1
-
-
-def test_summary_counts_merged_without_review() -> None:
-    df = frame(pr(1), pr(2, approvers=["bob"]))
-    assert metrics.summary(df)["merged_without_review"] == 1
+    waiting = metrics.waiting(df, now).set_index("title")["status"].to_dict()
+    assert waiting == {
+        "PR 1": "No review",
+        "PR 4": "Changes requested",
+        "PR 5": "Approved, not merged",
+        "PR 6": "Commented",
+    }
 
 
 def test_export_table_uses_display_names() -> None:
@@ -116,7 +113,7 @@ def test_export_table_uses_display_names() -> None:
     assert (row["Platform"], row["Author"], row["Approved by"]) == ("GitHub", "Alice", "Bob")
 
 
-def test_size_buckets_depth_and_volume() -> None:
+def test_size_buckets_and_depth() -> None:
     # (additions, deletions): 10 lines is XS, 11 is S, 1000 is L, 1001 is XL.
     sizes = {1: (6, 4), 2: (11, 0), 3: (900, 100), 4: (1000, 1)}
     prs = [pr(n, additions=a, deletions=d, changed_files=1) for n, (a, d) in sizes.items()]
@@ -129,7 +126,3 @@ def test_size_buckets_depth_and_volume() -> None:
     table = metrics.by_size(df)
     assert table["PRs"].tolist() == [1, 1, 1, 1]
     assert table.loc["L (≤1000)", "Comments per 100 lines"] == 0.5
-
-    volume = metrics.author_volume(df).loc["alice"]
-    assert (volume["PRs"], volume["Lines added"], volume["Lines deleted"]) == (4, 1917, 105)
-    assert volume["Largest PR (lines)"] == 1001

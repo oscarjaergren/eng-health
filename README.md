@@ -1,14 +1,14 @@
 # eng-health
 
 A Streamlit dashboard for engineering health across Azure DevOps and GitHub. It opens on
-**This week**: the headline numbers for pull requests and CI against the week before, and
-what moved most, such as a workflow that got slower or a test that started failing
-intermittently.
+**Today**: the headline numbers against the period before, and an inbox of what needs a look,
+such as PRs waiting on review, a test that started failing intermittently or a workflow that
+got slower.
 
-The **Pull requests** view shows how long PRs take to get reviewed and merged, how big they
-are, which are waiting, and who is doing the reviewing. The **Pipelines** view covers GitHub
-Actions: failure rate, slow workflows, CI minutes and their cost, time lost to reruns, and
-flaky jobs and tests.
+Each number opens a view that answers one question. **Shipping**: are we shipping? **Review**:
+is review the bottleneck? **CI**: is CI slowing us down? **Cost**: what is it costing?
+**People**: who is doing what? The period (7, 30 or 90 days, or 12 months) and the filters
+apply to every view.
 
 ## Try it with sample data
 
@@ -22,8 +22,8 @@ With no credentials in `.env` the dashboard shows generated sample data. Open
 ## Use your own data
 
 **Connect with your CLI logins** (no tokens to create). Sign in with `gh auth login` and/or
-`az login`, start the dashboard with `mise run dev` (below), open **Connect** in the sidebar,
-pick an account or organisation and press **Sync now**. Nothing secret is saved: the choice
+`az login`, start the dashboard with `mise run dev` (below), open **Settings** (the gear in
+the top bar), pick an account or organisation and press **Sync now**. Nothing secret is saved: the choice
 goes in `connections.json` in the data folder, and each sync asks `gh` or `az` for a fresh
 token. `mise run sync` uses the same connections.
 
@@ -78,7 +78,8 @@ Setting only half of a platform's pair is reported as an error rather than ignor
 - **Comments**: text comments by people. System messages and bots are left out, and so are
   authors' replies on their own PRs unless you switch that on.
 - **Infrastructure PRs**: titles that mention Terraform, Helm, Bicep, Kubernetes and similar
-  are hidden by default. A sidebar toggle brings them back.
+  are hidden by default, and so are Dependabot and Renovate PRs. Toggles in the filter bar
+  bring them back.
 - **PR size**: lines added plus lines deleted, leaving out lock files, generated and minified
   code, snapshots and vendored folders (the list is `is_noise` in `sync/src/rules.rs`). Sizes
   are bucketed XS (≤10 lines), S (≤100), M (≤400), L (≤1000) and XL. A PR with more than 100
@@ -90,12 +91,13 @@ Setting only half of a platform's pair is reported as an error rather than ignor
 Filters are kept in the page URL, so a filtered view can be shared as a link. Dates and
 times are shown in your browser's time zone.
 
-This week compares the last 7 days with the 7 before. A workflow is listed under "What
-moved" when its median run time or its CI minutes change by 20% or more, with at least 3 runs
-or 30 minutes in each week; a test is listed the first week it fails and then passes on the
-same commit.
+Every number covers the period you pick and compares it with the one before; charts split it
+into days, weeks or months. Today lists open PRs that have waited 2 days or more, tests that
+became flaky in the period, and workflows whose median run time or CI minutes changed by 20% or
+more, with at least 3 runs or 30 minutes in each period. ✓ marks an item handled for the rest
+of the browser session.
 
-Pipelines (GitHub Actions, last 90 days):
+CI and Cost (GitHub Actions, last 90 days):
 
 - **Failure rate**: finished runs on the default branch whose final attempt failed.
   Cancelled runs are left out.
@@ -130,8 +132,8 @@ runs on the host, because pyarrow crashes inside the Flatpak sandbox.
 - `sync/` is the `eng-health` command: GitHub over GraphQL (a page of PRs arrives with its
   reviews and comments), Azure DevOps over REST, and the incremental sync into SQLite.
 - `eng_health/` is the dashboard: `store.py` reads the database, `metrics.py` holds
-  the calculations behind every chart (without Streamlit), `dashboard/` has one module per
-  tab, `sync.py` runs the sync engine, and `mock.py` makes the sample data.
+  the calculations behind every chart (without Streamlit), `dashboard/views.py` draws the six
+  views, `sync.py` runs the sync engine, and `mock.py` makes the sample data.
 - The two sides share the database schema, `sync/schema.sql`, which both run on open
   (versioned with `PRAGMA user_version`), and the PR record format. `testdata/` pins that
   format: raw API payloads with the records they must produce. After an intended rule

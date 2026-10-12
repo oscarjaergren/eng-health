@@ -7,7 +7,10 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
+from .period import Period, between, sparklines
+
 FAILED = ("failure", "timed_out")
+FLAKY_TEST_COLUMNS = ["repository", "pipeline", "test_id", "flaky_runs", "first_seen", "last_seen"]
 RUN = ["repository", "pipeline", "run_id"]
 
 
@@ -45,14 +48,33 @@ def attempts(jobs: pd.DataFrame) -> pd.DataFrame:
     a["conclusion"] = np.select([a["failed"], a["cancelled"]], ["failure", "cancelled"], "success")
     a["minutes"] = _minutes(a, "started", "finished")
     a["final"] = a["attempt"] == a.groupby(RUN)["attempt"].transform("max")
-    a["week"] = a["started"].dt.tz_localize(None).dt.to_period("W").dt.start_time
     return a
 
 
-def failure_rate(att: pd.DataFrame) -> pd.DataFrame:
-    """Share of finished runs on the default branch that failed, per workflow and week."""
+def failure_rate(att: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str) -> pd.DataFrame:
+    """Percent of finished runs on the default branch that failed: a row per bucket, a column
+    per workflow."""
     done = att[att["final"] & att["is_default_branch"] & (att["conclusion"] != "cancelled")]
-    return done.groupby(["week", "pipeline"], as_index=False).agg(failed=("failed", "mean"))
+    return period.each(
+        now,
+        tz,
+        lambda a, b: (
+            done[between(done["started"], a, b)].groupby("pipeline")["failed"].mean() * 100
+        ),
+    )
+
+
+def run_times(
+    att: pd.DataFrame, pipeline: str, period: Period, now: pd.Timestamp, tz: str
+) -> pd.DataFrame:
+    """Median and 90th percentile minutes of one workflow's successful runs, per bucket."""
+    ok = att[att["final"] & (att["conclusion"] == "success") & (att["pipeline"] == pipeline)]
+
+    def stats(a: pd.Timestamp, b: pd.Timestamp) -> dict[str, float]:
+        m = ok.loc[between(ok["started"], a, b), "minutes"]
+        return {"Median": m.median(), "p90": m.quantile(0.9)}
+
+    return period.each(now, tz, stats)
 
 
 def durations(att: pd.DataFrame) -> pd.DataFrame:
@@ -65,18 +87,20 @@ def durations(att: pd.DataFrame) -> pd.DataFrame:
     return out.sort_values("Median (min)", ascending=False)
 
 
-def job_durations(jobs: pd.DataFrame) -> pd.DataFrame:
+def slowest_jobs(jobs: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str) -> pd.DataFrame:
+    """Per job, from its successful runs: median and 90th percentile minutes in the period, the
+    median's change on the period before, and the median per bucket."""
     ok = jobs[jobs["conclusion"] == "success"]
-    g = ok.groupby(["pipeline", "name"])["minutes"]
+    keys = ["pipeline", "name"]
+
+    def median(a: pd.Timestamp, b: pd.Timestamp) -> pd.Series:
+        return ok[between(ok["started_at"], a, b)].groupby(keys)["minutes"].median()
+
+    g = ok[between(ok["started_at"], *period.window(now))].groupby(keys)["minutes"]
     out = pd.DataFrame({"Median (min)": g.median(), "90th pct (min)": g.quantile(0.9)})
+    out["Change"] = out["Median (min)"] / median(*period.window(now, back=1)).reindex(out.index) - 1
+    out["Trend"] = sparklines(period.each(now, tz, median), out.index)
     return out.sort_values("Median (min)", ascending=False)
-
-
-def rerun_cost(att: pd.DataFrame) -> pd.DataFrame:
-    """Hours spent in attempts that were later re-run, per workflow and week."""
-    redone = att[~att["final"]]
-    out = redone.groupby(["week", "pipeline"], as_index=False).agg(minutes=("minutes", "sum"))
-    return out.assign(hours=out["minutes"] / 60).drop(columns="minutes")
 
 
 def flaky_jobs(jobs: pd.DataFrame) -> pd.DataFrame:
@@ -91,6 +115,7 @@ def flaky_jobs(jobs: pd.DataFrame) -> pd.DataFrame:
     out = fails.groupby(["repository", "pipeline", "name"]).agg(
         flaky_runs=("run_id", "nunique"),
         minutes_lost=("minutes", "sum"),
+        first_seen=("started_at", "min"),
         last_seen=("started_at", "max"),
         example=("url", "last"),
     )
@@ -110,31 +135,57 @@ def flaky_tests(failures: pd.DataFrame, att: pd.DataFrame) -> pd.DataFrame:
     same_commit_ok = pd.MultiIndex.from_frame(f[["pipeline", "commit_sha"]]).isin(passed_keys)
     flaky = f[retried_ok | same_commit_ok]
     out = flaky.groupby(["repository", "pipeline", "test_id"]).agg(
-        flaky_runs=("run_id", "nunique"), last_seen=("started", "max")
+        flaky_runs=("run_id", "nunique"),
+        first_seen=("started", "min"),
+        last_seen=("started", "max"),
     )
     return out.sort_values("flaky_runs", ascending=False).reset_index()
 
 
 def billed(jobs: pd.DataFrame, prices: Mapping[str, float]) -> pd.DataFrame:
-    """Jobs with billable minutes and estimated cost. GitHub rounds each job up to a whole minute
-    and bills every attempt on every branch; public repositories run free on standard runners."""
+    """Jobs with billable minutes and estimated cost, and whether their attempt was re-run.
+    GitHub rounds each job up to a whole minute and bills every attempt on every branch; public
+    repositories run free on standard runners."""
     minutes = np.ceil(jobs["minutes"].fillna(0).clip(lower=0))
     price = jobs["runner"].map(prices).fillna(0) * jobs["is_private"]
-    week = jobs["started_at"].dt.tz_localize(None).dt.to_period("W").dt.start_time
-    return jobs.assign(billed=minutes, cost=minutes * price, week=week)
+    rerun = jobs["attempt"] < jobs.groupby(RUN)["attempt"].transform("max")
+    return jobs.assign(billed=minutes, cost=minutes * price, rerun=rerun)
 
 
-def minutes_by_workflow(b: pd.DataFrame, now: pd.Timestamp, days: int = 28) -> pd.DataFrame:
-    """Billed minutes and cost per workflow, for the last `days` against the `days` before."""
-    recent = b["started_at"] >= now - pd.Timedelta(days=days)
-    before = ~recent & (b["started_at"] >= now - pd.Timedelta(days=2 * days))
-    keys = ["repository", "pipeline"]
-    out = pd.DataFrame(
-        {
-            "Minutes": b[recent].groupby(keys)["billed"].sum(),
-            "Before": b[before].groupby(keys)["billed"].sum(),
-            "Est. cost ($)": b[recent].groupby(keys)["cost"].sum(),
-        }
+def minutes_by_pipeline(
+    billed: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str
+) -> pd.DataFrame:
+    """Billed minutes: a row per bucket, a column per workflow."""
+    return period.each(
+        now,
+        tz,
+        lambda a, b: (
+            billed[between(billed["started_at"], a, b)].groupby("pipeline")["billed"].sum()
+        ),
     ).fillna(0)
-    out["Change"] = (out["Minutes"] - out["Before"]) / out["Before"].where(out["Before"] > 0)
-    return out.sort_values("Minutes", ascending=False).reset_index()
+
+
+def cost_by_repository(
+    billed: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str
+) -> pd.DataFrame:
+    """Per repository: billed minutes and estimated cost in the period, the share of all minutes,
+    the change in minutes on the period before, and minutes per bucket."""
+
+    def window(back: int) -> pd.DataFrame:
+        b = billed[between(billed["started_at"], *period.window(now, back))]
+        return b.groupby("repository")[["billed", "cost"]].sum()
+
+    now_, before = window(0), window(1)
+    out = pd.DataFrame({"Minutes": now_["billed"], "Est. cost ($)": now_["cost"]})
+    out["Share"] = out["Minutes"] / out["Minutes"].sum()
+    was = before["billed"].reindex(out.index)
+    out["Change"] = (out["Minutes"] - was) / was.where(was > 0)
+    trend = period.each(
+        now,
+        tz,
+        lambda a, b: (
+            billed[between(billed["started_at"], a, b)].groupby("repository")["billed"].sum()
+        ),
+    )
+    out["Trend"] = sparklines(trend.fillna(0), out.index)
+    return out.rename_axis("repository").sort_values("Minutes", ascending=False)

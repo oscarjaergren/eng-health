@@ -1,0 +1,32 @@
+# The dashboard's look: warm greys, one ink colour and the Geist typefaces. Streamlit reads this
+# from the directory it is started in, the repo root (or /app in the image).
+
+[client]
+# Hides the deploy button and developer menu, which mean nothing for a local dashboard.
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#1C1B19"
+backgroundColor = "#F4F3EF"
+secondaryBackgroundColor = "#EEECE7"
+textColor = "#1C1B19"
+linkColor = "#1C1B19"
+borderColor = "#E6E3DC"
+dataframeBorderColor = "#EFEDE8"
+dataframeHeaderBackgroundColor = "#FAF9F6"
+showWidgetBorder = true
+baseRadius = "6px"
+# From Google Fonts; without a connection the browser falls back to its sans-serif and monospace.
+font = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap, sans-serif"
+codeFont = "'Geist Mono':https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap, monospace"
+baseFontSize = 15
+headingFontSizes = ["2.125rem", "1.875rem", "1.0625rem"]
+headingFontWeights = [600, 600, 600]
+metricValueFontSize = "1.625rem"
+metricValueFontWeight = 500
+greenColor = "#007E46"
+redColor = "#BD4334"
+orangeColor = "#C78B28"
+grayColor = "#8A877F"
+chartCategoricalColors = ["#1C1B19", "#C4493A", "#D09945", "#8F8B82", "#C9C5BB"]

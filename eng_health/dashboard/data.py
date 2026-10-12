@@ -11,7 +11,7 @@ import streamlit as st
 from .. import metrics, sync
 from ..config import Settings
 from ..mock import ALIASES as MOCK_ALIASES
-from ..mock import mock_pull_requests
+from ..mock import mock_pipelines, mock_pull_requests
 from ..models import PLATFORM_NAMES
 from ..store import Store
 
@@ -41,6 +41,34 @@ def load(settings: Settings, store: Store | None) -> tuple[pd.DataFrame, dict[st
         return _load_mock(datetime.now(UTC).date().isoformat())
     # `version` is only there to change the cache key after a sync.
     return _load_store(str(store.path), store.version(), tuple(sorted(settings.aliases.items())))
+
+
+@st.cache_data(show_spinner=False)
+def _load_pipelines(db_path: str, version: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    # `version` changes the cache key after a sync.
+    store = Store(db_path)
+    jobs, failures = store.pipeline_jobs(), store.test_failures()
+    log.info(
+        "loaded %d pipeline jobs and %d test failures (revision %d)",
+        len(jobs),
+        len(failures),
+        version,
+    )
+    return jobs, failures
+
+
+@st.cache_data(show_spinner=False)
+def _sample_pipelines(day: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    jobs, failures = mock_pipelines()
+    log.info("generated %d sample pipeline jobs for %s", len(jobs), day)
+    return pd.DataFrame(jobs), pd.DataFrame(failures)
+
+
+def load_pipelines(store: Store | None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Jobs and test failures: sample data without a store."""
+    if store is None:
+        return _sample_pipelines(datetime.now(UTC).date().isoformat())
+    return _load_pipelines(str(store.path), store.version())
 
 
 def run_sync(settings: Settings, *, full: bool = False, reset: bool = False) -> None:

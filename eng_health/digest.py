@@ -1,21 +1,45 @@
-"""The last 7 days against the 7 before: the headline numbers, and what moved most."""
+"""The period's headline numbers against the period before, and what moved most."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
 from . import metrics
 from . import pipelines as pl
-from .models import State
+from .period import Period, between
 
-WEEK = pd.Timedelta(days=7)
-# A mover has to change by this much, over at least MIN_RUNS runs in each week, to get a line.
+# A mover has to change by this much, over at least MIN_RUNS runs in each period, to get a line.
 MOVE = 0.2
 MIN_RUNS = 3
 MIN_MINUTES = 30
+
+# key: (label, unit, lower_is_better). None when neither direction is good news.
+METRICS: dict[str, tuple[str, str, bool | None]] = {
+    "opened": ("PRs opened", "", None),
+    "merged": ("PRs merged", "", False),
+    "open": ("Open now", "", True),
+    "size": ("Median PR size", " lines", True),
+    "wait": ("Wait for first review", " h", True),
+    "ttm": ("Time to merge", " h", True),
+    "depth": ("Comments per 100 lines", "", False),
+    "unreviewed": ("Merged without review", "", True),
+    "authors": ("Active contributors", "", None),
+    "per_person": ("PRs merged per person", "", None),
+    "added": ("Lines added", "", None),
+    "deleted": ("Lines deleted", "", None),
+    "failure": ("Default-branch failures", "%", True),
+    "rerun_hours": ("Lost to reruns", " h", True),
+    "flaky": ("Flaky jobs", "", True),
+    "minutes": ("CI minutes", "", True),
+    "cost": ("Est. CI cost", "$", True),
+    "rerun_cost": ("Spent on reruns", "$", True),
+}
+
+Stats = dict[str, float | None]
 
 
 @dataclass(frozen=True)
@@ -24,8 +48,9 @@ class Change:
     now: float | None
     before: float | None
     unit: str = ""
-    # None when neither direction is good news, such as PRs opened.
     lower_is_better: bool | None = True
+    # One value per chart bucket, for a sparkline.
+    trend: tuple[float, ...] = ()
 
     @property
     def ratio(self) -> float | None:
@@ -34,151 +59,133 @@ class Change:
         return (self.now - self.before) / self.before
 
 
-def _num(x: float) -> float | None:
+@dataclass(frozen=True)
+class Numbers:
+    """Stats for the period, the period before, and each chart bucket."""
+
+    now: Stats
+    before: Stats
+    trend: pd.DataFrame
+
+    def change(self, key: str) -> Change:
+        label, unit, lower_is_better = METRICS[key]
+        trend = tuple(self.trend[key].dropna().astype(float)) if key in self.trend else ()
+        return Change(label, self.now[key], self.before[key], unit, lower_is_better, trend)
+
+
+def numbers(
+    stats: Callable[[pd.Timestamp, pd.Timestamp], Stats], period: Period, now: pd.Timestamp, tz: str
+) -> Numbers:
+    return Numbers(
+        stats(*period.window(now)), stats(*period.window(now, back=1)), period.each(now, tz, stats)
+    )
+
+
+def _num(x: Any) -> float | None:
+    """A pandas reduction as a float, or None for NaN and NA."""
     return None if pd.isna(x) else float(x)
 
 
-def _two(values: Iterable[float | None]) -> tuple[float | None, float | None]:
-    """This week's value and last week's, from an iterable over the two weeks."""
-    now, before = values
-    return now, before
+def pr_stats(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> Stats:
+    """PR numbers for (start, end]. `open` counts what was still open at `end`."""
+    opened = metrics.opened_in(df, start, end)
+    merged = metrics.merged_in(df, start, end)
+    sized = merged[merged["lines"].notna()]
+    lines = sized["lines"].sum()
+    reviewed = merged["approvers"].map(len).gt(0) | merged["first_review_at"].notna()
+    still_open = (df["created_at"] <= end) & ~(df["closed_at"] <= end)
+    return {
+        "opened": float(len(opened)),
+        "merged": float(len(merged)),
+        "open": float(still_open.sum()),
+        "wait": _num(opened["first_review_hours"].median()),
+        "wait_p75": _num(opened["first_review_hours"].quantile(0.75)),
+        "ttm": _num(merged["cycle_hours"].median()),
+        "ttm_p75": _num(merged["cycle_hours"].quantile(0.75)),
+        "size": _num(sized["lines"].median()),
+        "depth": _num(100 * sized["comments"].sum() / lines) if lines else None,
+        "unreviewed": float((~reviewed).sum()),
+        "authors": float(pd.concat([opened["author"], merged["author"]]).nunique()),
+        "per_person": _num(merged["author"].value_counts().median()),
+        "added": float(sized["additions"].sum()) if len(sized) else None,
+        "deleted": float(sized["deletions"].sum()) if len(sized) else None,
+    }
 
 
-def _weeks(times: pd.Series, now: pd.Timestamp) -> tuple[pd.Series, pd.Series]:
-    """Masks for the last 7 days and the 7 before."""
-    this = (times > now - WEEK) & (times <= now)
-    last = (times > now - 2 * WEEK) & (times <= now - WEEK)
-    return this, last
-
-
-def _waiting(df: pd.DataFrame, at: pd.Timestamp) -> float:
-    """Open, non-draft PRs at `at` that had waited over two days without a response."""
-    open_then = (df["created_at"] < at - pd.Timedelta(days=2)) & (
-        df["closed_at"].isna() | (df["closed_at"] > at)
-    )
-    unanswered = df["first_review_at"].isna() | (df["first_review_at"] > at)
-    return float((open_then & unanswered & ~df["is_draft"]).sum())
-
-
-def pr_changes(df: pd.DataFrame, now: pd.Timestamp) -> list[Change]:
-    others = metrics.comment_rows(df).groupby("key")["comments"].sum()
-    merged = df[df["state"] == State.MERGED.value]
-    merged = merged.assign(comments=merged["key"].map(others).fillna(0))
-    opened_weeks = _weeks(df["created_at"], now)
-    merged_weeks = _weeks(merged["closed_at"], now)
-
-    def median(
-        frame: pd.DataFrame, masks: tuple[pd.Series, pd.Series], col: str
-    ) -> list[float | None]:
-        return [_num(frame.loc[m, col].median()) for m in masks]
-
-    def depth(m: pd.Series) -> float | None:
-        week = merged[m & merged["lines"].notna()]
-        lines = week["lines"].sum()
-        return _num(100 * week["comments"].sum() / lines) if lines else None
-
-    return [
-        Change("PRs opened", *_two(float(m.sum()) for m in opened_weeks), lower_is_better=None),
-        Change("PRs merged", *_two(float(m.sum()) for m in merged_weeks), lower_is_better=False),
-        Change(
-            "Wait for first review", *_two(median(df, opened_weeks, "first_review_hours")), " h"
-        ),
-        Change("Time to merge", *_two(median(merged, merged_weeks, "cycle_hours")), " h"),
-        Change("Waiting over 2 days", _waiting(df, now), _waiting(df, now - WEEK)),
-        Change("Median PR size", *_two(median(merged, merged_weeks, "lines")), " lines"),
-        Change(
-            "Comments per 100 lines", *_two(depth(m) for m in merged_weeks), lower_is_better=False
-        ),
-    ]
-
-
-def _flaky_tests(failures: pd.DataFrame, att: pd.DataFrame, runs: pd.Series) -> set[str]:
-    f = failures[failures["run_id"].isin(runs)]
-    return set() if f.empty else set(pl.flaky_tests(f, att)["test_id"])
-
-
-def ci_changes(
-    jobs: pd.DataFrame, failures: pd.DataFrame, prices: Mapping[str, float], now: pd.Timestamp
-) -> list[Change]:
-    """`jobs` as `pipelines.prepare` returns them."""
-    att = pl.attempts(jobs)
-    final = att[att["final"]]
-    run_weeks = _weeks(final["started"], now)
+def ci_stats(
+    att: pd.DataFrame, billed: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp
+) -> Stats:
+    """CI numbers for runs started in (start, end]. `billed` as `pipelines.billed` returns it."""
+    a = att[between(att["started"], start, end)]
+    final = a[a["final"]]
     done = final[final["is_default_branch"] & (final["conclusion"] != "cancelled")]
-    billed = pl.billed(jobs, prices)
-    billed_weeks = _weeks(billed["started_at"], now)
-    redone = att[~att["final"]]
-    return [
-        Change("Runs", *_two(float(m.sum()) for m in run_weeks), lower_is_better=None),
-        Change(
-            "Failure rate (default branch)",
-            *_two(_num(done.loc[m, "failed"].mean() * 100) for m in _weeks(done["started"], now)),
-            "%",
-        ),
-        Change("CI minutes", *_two(float(billed.loc[m, "billed"].sum()) for m in billed_weeks)),
-        Change(
-            "Estimated cost", *_two(float(billed.loc[m, "cost"].sum()) for m in billed_weeks), "$"
-        ),
-        Change(
-            "Lost to reruns",
-            *_two(
-                float(redone.loc[m, "minutes"].sum() / 60) for m in _weeks(redone["started"], now)
-            ),
-            " h",
-        ),
-        Change(
-            "Flaky tests",
-            *_two(
-                float(len(_flaky_tests(failures, att, final.loc[m, "run_id"]))) for m in run_weeks
-            ),
-        ),
-    ]
+    passed = final["conclusion"] == "success"
+    b = billed[between(billed["started_at"], start, end)]
+    return {
+        "passed": float((passed & (final["attempt"] == 1)).sum()),
+        "passed_on_rerun": float((passed & (final["attempt"] > 1)).sum()),
+        "failed": float((final["conclusion"] == "failure").sum()),
+        "failure": _num(done["failed"].mean() * 100),
+        "rerun_hours": float(a.loc[~a["final"], "minutes"].sum() / 60),
+        "flaky": float(len(pl.flaky_jobs(b))),
+        "minutes": float(b["billed"].sum()),
+        "cost": float(b["cost"].sum()),
+        "rerun_cost": float(b.loc[b["rerun"], "cost"].sum()),
+    }
+
+
+@dataclass(frozen=True)
+class Move:
+    title: str
+    detail: str
+    change: float  # relative: 1.0 is double
+    tag: str
+    worse: bool
 
 
 def movers(
-    jobs: pd.DataFrame, failures: pd.DataFrame, prices: Mapping[str, float], now: pd.Timestamp
-) -> list[str]:
-    """Plain sentences for what changed most, biggest first."""
-    found: list[tuple[float, str]] = []
-    att = pl.attempts(jobs)
+    att: pd.DataFrame, billed: pd.DataFrame, period: Period, now: pd.Timestamp
+) -> list[Move]:
+    """Workflows whose run time or CI minutes changed by MOVE or more, biggest change first."""
+    this, last = period.window(now), period.window(now, back=1)
+    found: list[Move] = []
     ok = att[att["final"] & (att["conclusion"] == "success")]
-    billed = pl.billed(jobs, prices)
     for (repo, pipeline), runs in ok.groupby(["repository", "pipeline"]):
-        name = f"{pipeline} ({repo})"
-        this, last = (runs.loc[m, "minutes"] for m in _weeks(runs["started"], now))
-        if len(this) >= MIN_RUNS and len(last) >= MIN_RUNS:
-            change = this.median() / last.median() - 1
+        now_min, before_min = (
+            runs.loc[between(runs["started"], *w), "minutes"] for w in (this, last)
+        )
+        if len(now_min) >= MIN_RUNS and len(before_min) >= MIN_RUNS:
+            a, b = float(before_min.median()), float(now_min.median())
+            if abs(b / a - 1) >= MOVE:
+                detail = f"{repo} · median {a:.1f} → {b:.1f} min"
+                tag = "Slower" if b > a else "Faster"
+                found.append(Move(f"{pipeline} run time", detail, b / a - 1, tag, b > a))
+    for (repo, pipeline), jobs in billed.groupby(["repository", "pipeline"]):
+        now_used, used = (
+            float(jobs.loc[between(jobs["started_at"], *w), "billed"].sum()) for w in (this, last)
+        )
+        if not now_used and used >= MIN_MINUTES:
+            detail = f"{repo} · used {used:,.0f} minutes the {period.name} before"
+            found.append(Move(f"{pipeline} didn't run", detail, -1.0, "Stopped", True))
+        elif max(now_used, used) >= MIN_MINUTES and used:
+            change = now_used / used - 1
             if abs(change) >= MOVE:
-                found.append(
-                    (
-                        abs(change),
-                        f"{name} runs {abs(change):.0%} {'slower' if change > 0 else 'faster'}: "
-                        f"median {last.median():.1f} → {this.median():.1f} min",
-                    )
-                )
-        b = billed[(billed["repository"] == repo) & (billed["pipeline"] == pipeline)]
-        now_min, before_min = (b.loc[m, "billed"].sum() for m in _weeks(b["started_at"], now))
-        if not now_min and before_min >= MIN_MINUTES:
-            found.append(
-                (1.0, f"{name} didn't run (it used {before_min:,.0f} minutes the week before)")
-            )
-        elif max(now_min, before_min) >= MIN_MINUTES and before_min:
-            change = now_min / before_min - 1
-            if abs(change) >= MOVE:
-                found.append(
-                    (
-                        abs(change),
-                        f"{name} used {abs(change):.0%} {'more' if change > 0 else 'fewer'} CI "
-                        f"minutes: {before_min:,.0f} → {now_min:,.0f}",
-                    )
-                )
+                detail = f"{repo} · {used:,.0f} → {now_used:,.0f}"
+                tag = "More minutes" if change > 0 else "Fewer minutes"
+                found.append(Move(f"{pipeline} minutes", detail, change, tag, change > 0))
+    return sorted(found, key=lambda m: -abs(m.change))
 
+
+def new_flaky_tests(
+    failures: pd.DataFrame, att: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp
+) -> pd.DataFrame:
+    """Tests flaky in runs started in (start, end] that had never been flaky before."""
     final = att[att["final"]]
-    this, _ = _weeks(final["started"], now)
-    earlier = final.loc[final["started"] <= now - WEEK, "run_id"]
-    new = _flaky_tests(failures, att, final.loc[this, "run_id"]) - _flaky_tests(
-        failures, att, earlier
-    )
-    # New flakiness outranks any percentage: it is a fresh problem, not a drift.
-    found += [(float("inf"), f"New flaky test: {t}") for t in sorted(new)]
-    return [text for _, text in sorted(found, key=lambda f: -f[0])]
+
+    def flaky(runs: pd.Series) -> pd.DataFrame:
+        f = failures[failures["run_id"].isin(runs)] if len(failures) else failures
+        return pl.flaky_tests(f, att) if len(f) else pd.DataFrame(columns=pl.FLAKY_TEST_COLUMNS)
+
+    now = flaky(final.loc[between(final["started"], start, end), "run_id"])
+    before = flaky(final.loc[final["started"] <= start, "run_id"])
+    return now[~now["test_id"].isin(before["test_id"])]

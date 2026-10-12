@@ -1,0 +1,141 @@
+/* The design's look on top of Streamlit's widgets. Elements are found by their key, which
+   Streamlit adds as an st-key-<key> class; colours and fonts come from .streamlit/config.toml. */
+
+/* Streamlit's own header (menu, running indicator) has no place in the design. */
+header[data-testid="stHeader"] { display: none; }
+[data-testid="stMainBlockContainer"] { padding-top: 0; max-width: 1320px; }
+/* Markdown containers pull up by a paragraph's margin; the HTML blocks have none to cancel. */
+[data-testid="stMarkdownContainer"]:has(> div) { margin-bottom: 0; }
+
+/* The white header, sticky and full width. Streamlit wraps it in a box of its own height, so
+   the wrapper is what sticks. The shadows paint the background and the bottom border past the
+   page's side margins without widening the page. */
+[data-testid="stLayoutWrapper"]:has(> .st-key-header) { position: sticky; top: 0; z-index: 100; }
+.st-key-header {
+  background: #fff; padding: 10px 0 8px;
+  box-shadow: 0 0 0 100vmax #fff, 0 1px 0 100vmax #E6E3DC;
+  clip-path: inset(0 -100vmax -1px);
+  margin-bottom: 1.25rem;
+}
+.st-key-brand p { font-family: 'Geist Mono', monospace; font-weight: 500; font-size: 14px; margin-right: 1.5rem; }
+
+/* View tabs: plain text, the current one a dark pill. */
+.st-key-view [role="radiogroup"] { gap: 4px; }
+.st-key-view button[role="radio"] {
+  border: none !important; background: transparent; color: #6E6C66;
+  border-radius: 6px !important; padding: 6px 12px; min-height: 0;
+}
+.st-key-view button[role="radio"]:hover { background: #F2F0EB; color: #1C1B19; }
+/* !important: Streamlit's own selected style is more specific. */
+.st-key-view button[aria-checked="true"],
+.st-key-view button[aria-checked="true"]:hover { background: #1C1B19 !important; }
+.st-key-view button[aria-checked="true"] p { color: #fff !important; }
+
+/* Period, and People's sort: a grey track with the choice raised in white. */
+.st-key-period [role="radiogroup"],
+.st-key-people_sort [role="radiogroup"] { background: #EEECE7; padding: 2px; border-radius: 7px; gap: 2px; }
+.st-key-period button[role="radio"],
+.st-key-people_sort button[role="radio"] {
+  border: none !important; background: transparent; color: #6E6C66;
+  border-radius: 5px !important; padding: 3px 10px; min-height: 0;
+}
+.st-key-period button[role="radio"] p,
+.st-key-people_sort button[role="radio"] p { font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 500; }
+.st-key-period button[aria-checked="true"],
+.st-key-people_sort button[aria-checked="true"] { background: #fff !important; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+.st-key-period button[aria-checked="true"] p,
+.st-key-people_sort button[aria-checked="true"] p { color: #1C1B19; }
+.span-range { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.span-range span { color: #8A877F; margin-left: 12px; }
+.vrule { display: inline-block; width: 1px; height: 18px; background: #E6E3DC; margin: 0 4px; }
+
+/* Filter chips: small buttons that open a checklist; a chip that is set is outlined. */
+[class*="st-key-chip-"] button {
+  min-height: 0; padding: 4px 10px; font-size: 13px; background: transparent;
+  border: 1px solid #E6E3DC; color: #1C1B19;
+}
+[class*="st-key-chip-"] button:hover { border-color: #1C1B19; background: transparent; color: #1C1B19; }
+[class*="st-key-chip-"] button[kind*="primary"] { background: #F2F0EB; border-color: #1C1B19; }
+[class*="st-key-chip-"] button p { font-size: 13px; }
+
+/* Small bordered buttons: the top bar, inbox rows, and Settings. */
+.st-key-sync_now button, .st-key-settings button, .st-key-sample button,
+[class*="st-key-row-"] button, [class*="st-key-row-"] a {
+  min-height: 0; padding: 5px 12px; font-size: 13px; background: #fff;
+}
+.st-key-sample button { border-style: dashed; border-color: #C9C5BB; color: #4A4843; }
+[class*="st-key-row-"] button p, [class*="st-key-row-"] a p,
+.st-key-sync_now button p, .st-key-sample button p { font-size: 13px; }
+
+/* A view's heading: breadcrumb, question, answer. */
+.st-key-crumb button p, .crumb { font-family: 'Geist Mono', monospace; font-size: 13px; color: #6E6C66; }
+.crumb b { font-weight: 400; color: #1C1B19; }
+.st-key-crumb button { padding: 0; min-height: 0; }
+.answer { font-size: 16px; color: #4A4843; max-width: 760px; text-wrap: pretty; }
+
+/* White cards on the grey page. */
+[class*="st-key-card-"] { background: #fff; border-radius: 10px; padding: 18px 20px; }
+
+/* A strip of numbers: one card, cells divided by rules, each cell a link when it has a button. */
+[class*="st-key-strip"] { background: #fff; border: 1px solid #E6E3DC; border-radius: 10px; overflow: hidden; }
+[class*="st-key-cell-"] { position: relative; padding: 16px 20px; gap: 6px; border-right: 1px solid #EFEDE8; min-width: 150px; }
+[class*="st-key-cell-"]:has(button):hover { background: #FAF9F6; }
+[class*="st-key-go-"] { position: absolute; inset: 0; }
+[class*="st-key-go-"] div, [class*="st-key-go-"] button { width: 100%; height: 100%; }
+[class*="st-key-go-"] button { opacity: 0; cursor: pointer; }
+.kpi-label { font-size: 13px; color: #6E6C66; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 6px 0 8px; }
+.kpi-value { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
+.tone-green { color: #007E46; }
+.tone-red { color: #BD4334; }
+.tone-gray { color: #6E6C66; }
+.delta { font-size: 13px; white-space: nowrap; }
+svg.spark { display: block; overflow: visible; }
+
+/* Inbox groups: a white list, rows divided by rules. */
+[class*="st-key-group-"] { background: #fff; border: 1px solid #E6E3DC; border-radius: 8px; overflow: hidden; gap: 0; }
+[class*="st-key-row-"] { padding: 12px 16px; border-top: 1px solid #EFEDE8; }
+[class*="st-key-row-"]:hover { background: #FAF9F6; }
+.item { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot-red { background: #C4493A; } .dot-orange { background: #C78B28; } .dot-gray { background: #C9C5BB; }
+.item-title { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-meta { font-size: 13px; color: #6E6C66; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag { font-size: 12px; color: #4A4843; background: #F2F0EB; padding: 3px 8px; border-radius: 4px; white-space: nowrap; }
+.tag-hot { color: #A13124; background: #FFE8E3; }
+.age { font-family: 'Geist Mono', monospace; font-size: 13px; color: #6E6C66; min-width: 48px; text-align: right; }
+.count { font-family: 'Geist Mono', monospace; font-size: 13px; color: #6E6C66; margin-left: 8px; }
+.cleared { display: flex; gap: 10px; font-size: 14px; color: #6E6C66; margin: 2px 0 8px; }
+.empty { border: 1px dashed #C9C5BB; border-radius: 8px; padding: 40px; text-align: center; color: #6E6C66; font-size: 15px; }
+
+/* Review load: two thin bars per person. */
+.load { display: grid; grid-template-columns: 96px minmax(0, 1fr) 56px; gap: 12px; align-items: center; margin: 4px 0; font-size: 13px; }
+.load i { display: block; height: 6px; border-radius: 3px; margin: 3px 0; }
+.load code, .legend { font-family: 'Geist Mono', monospace; font-size: 12px; color: #6E6C66; }
+.legend { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; font-family: inherit; }
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+
+/* Tables: a header row on grey, then rows of typed cells. */
+/* Flush with the card's sides and bottom. A negative bottom margin would get the last row
+   clipped, so the card drops its bottom padding instead. */
+.tbl { overflow-x: auto; margin: 4px -20px 0; }
+[class*="st-key-card-"]:has(.tbl) { padding-bottom: 0; }
+.tbl-row { display: grid; gap: 16px; align-items: center; min-height: 46px; padding: 6px 20px; border-top: 1px solid #EFEDE8; min-width: 760px; }
+.tbl-head { min-height: 0; padding: 8px 20px; background: #FAF9F6; font-size: 12px; color: #6E6C66; }
+.tbl-row > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-t { font-size: 14px; font-weight: 500; }
+.c-m { font-family: 'Geist Mono', monospace; font-size: 12px; color: #6E6C66; }
+.c-st { font-family: 'Geist Mono', monospace; font-size: 12px; color: #4A4843; padding-left: 20px; }
+.c-n, .r { text-align: right; }
+.c-n { font-family: 'Geist Mono', monospace; font-size: 13px; font-variant-numeric: tabular-nums; }
+.c-n.na { color: #8A877F; font-size: 12px; }
+.c-spark { display: flex; justify-content: flex-end; }
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.card-head b { font-size: 15px; font-weight: 600; }
+.card-head .note { font-size: 13px; color: #6E6C66; }
+.card-head .fill { flex: 1; }
+
+/* Settings: each data source has a monogram. */
+.source { display: flex; align-items: center; gap: 12px; }
+.mono { width: 36px; height: 36px; border-radius: 8px; background: #F2F0EB; display: flex; align-items: center; justify-content: center; font-family: 'Geist Mono', monospace; font-size: 13px; font-weight: 500; flex: none; }
+.source small { display: block; font-size: 13px; color: #6E6C66; }

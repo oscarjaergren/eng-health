@@ -1,23 +1,23 @@
-"""Streamlit entry point."""
+"""Streamlit entry point: the top bar, the filter bar, then the chosen view."""
 
 from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
-from streamlit.delta_generator import DeltaGenerator
 
 from .. import metrics
+from .. import pipelines as pl
 from ..config import ConfigError, Settings
-from ..models import PLATFORM_NAMES
 from ..store import SchemaError, Store
-from . import connect, digest_page, pipelines_page
-from .data import load, relative, run_sync
-from .filters import sidebar_filters
-from .tabs import flow, overview, people, size, table, timing
+from . import connect, filters
+from .data import load, load_pipelines, relative, run_sync
+from .views import RENDER, VIEWS, Context
 
 # Module level, so it runs once per process rather than on every rerun.
 load_dotenv()
@@ -25,7 +25,12 @@ logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+# Clear filters resets widgets through Session State, which this logger reports with a stack
+# trace every time, although Streamlit then uses the reset value as intended.
+logging.getLogger("streamlit.elements.lib.policies").setLevel(logging.ERROR)
 log = logging.getLogger(__name__)
+
+_STYLE = Path(__file__).parent / "style.css"
 
 
 def _browser_timezone() -> str:
@@ -37,47 +42,51 @@ def _browser_timezone() -> str:
     return tz
 
 
-def _data_source(settings: Settings, store: Store | None) -> DeltaGenerator | None:
-    """Draw the sidebar's data section. Returns a slot for the sync status, which
-    is filled after any sync this run so it is never stale."""
-    st.sidebar.header("Data")
+def _sync_status(settings: Settings, store: Store) -> str:
+    states = [store.sync_state(p) for p in settings.platforms]
+    if any(s.last_error for s in states):
+        return ":red[Last sync failed: see Settings]"
+    synced = [s.last_sync for s in states if s.last_sync]
+    # The platform synced longest ago is the one the numbers might be stale for.
+    return f"Synced {relative(min(synced))}" if len(synced) == len(states) else "Not synced yet"
+
+
+def _top_bar(settings: Settings, store: Store | None) -> str:
+    with st.container(key="brand", width="content"):
+        st.markdown("eng·health")
+    # A segmented control rather than st.navigation: AppTest can only switch to file pages.
+    view: str = st.segmented_control(
+        "View",
+        list(VIEWS),
+        format_func=VIEWS.__getitem__,
+        default="today",
+        required=True,
+        key="view",
+        bind="query-params",
+        label_visibility="collapsed",
+    )
+    st.space("stretch")
     if store is None:
-        why = "MOCK_MODE is on" if settings.mock else "no credentials are configured"
-        st.sidebar.info(
-            f"Showing generated sample data because {why}. Connect GitHub or Azure DevOps below."
+        why = "MOCK_MODE is on" if settings.mock else "nothing is connected"
+        st.button(
+            "Sample data · Connect",
+            help=f"Showing sample data because {why}.",
+            key="sample",
+            on_click=connect.show,
         )
-        return None
-
-    status = st.sidebar.container()
-    if st.sidebar.button("Sync now", type="primary", width="stretch"):
-        st.session_state["sync_request"] = "incremental"
-    with st.sidebar.expander("More sync options"):
-        st.caption("Sync fetches only what changed. These re-read everything and can take a while.")
-        if st.button("Re-read all PRs", width="stretch"):
-            st.session_state["sync_request"] = "full"
-        confirm = st.checkbox("I want to delete the local data")
-        if st.button("Delete local data and resync", disabled=not confirm, width="stretch"):
-            st.session_state["sync_request"] = "reset"
-    return status
-
-
-def _sync_status(settings: Settings, store: Store, slot: DeltaGenerator) -> None:
-    owners = {"azure_devops": settings.azure_organization, "github": settings.github_owner}
-    for platform in settings.platforms:
-        state = store.sync_state(platform)
-        slot.markdown(f"**{PLATFORM_NAMES[platform]}** · {owners[platform]}")
-        slot.caption(f"Last synced {relative(state.last_sync)}")
-        if state.last_error:
-            slot.error(f"Last sync failed: {state.last_error}", icon=None)
-    if settings.github_owner:
-        state = store.sync_state("github:pipelines")
-        slot.caption(f"Pipelines synced {relative(state.last_sync)}")
-        if state.last_error:
-            slot.error(f"Last pipelines sync failed: {state.last_error}", icon=None)
+    else:
+        st.caption(_sync_status(settings, store), width="content")
+        st.button("Sync now", key="sync_now", on_click=connect.request_sync, args=("incremental",))
+    st.button(":material/settings:", help="Settings", key="settings", on_click=connect.show)
+    if st.session_state.get("settings_open"):
+        connect.drawer(settings, store)
+    return view
 
 
 def main() -> None:
     st.set_page_config(page_title="Engineering health", page_icon="📊", layout="wide")
+    # Read on every run, so an edit shows on the next rerun without restarting.
+    st.markdown(f"<style>{_STYLE.read_text()}</style>", unsafe_allow_html=True)
 
     try:
         settings = Settings.from_env()
@@ -95,39 +104,35 @@ def main() -> None:
     except SchemaError as e:
         st.error(str(e))
         st.stop()
-    slot = _data_source(settings, store)
-    connect.render(settings)
 
+    with st.container(key="header"):
+        top = st.container(horizontal=True, vertical_alignment="center")
+        bar = st.container(horizontal=True, vertical_alignment="center", gap="xsmall")
+    # Set by the buttons' callbacks, so the sync runs before the data below is read.
     request = st.session_state.pop("sync_request", None)
     if store is not None and request:
         st.caption(
             "Each batch of PRs is saved as it arrives, so stopping a sync keeps its progress."
         )
         run_sync(settings, full=request == "full", reset=request == "reset")
-    if store is not None and slot is not None:
-        _sync_status(settings, store, slot)
+    with top:
+        view = _top_bar(settings, store)
 
-    view = st.sidebar.radio("View", ["This week", "Pull requests", "Pipelines"], horizontal=True)
-    github = bool(settings.github_owner)
-    if view == "Pipelines":
-        pipelines_page.render(store, github=github, prices=settings.ci_prices)
-        return
-    if view == "This week":
-        digest_page.render(
-            load(settings, store)[0], store, github=github, prices=settings.ci_prices
-        )
-        return
-
-    st.title("Pull request analytics")
     df, names = load(settings, store)
-    if df.empty:
+    github = store is None or bool(settings.github_owner)
+    raw, failures = load_pipelines(store) if github else (pd.DataFrame(), pd.DataFrame())
+    if df.empty and raw.empty:
         st.info(
-            "No pull requests synced yet. The first sync reads every PR and can take "
-            "several minutes on a large organisation."
+            "Nothing synced yet. The first sync reads every PR and can take several minutes on "
+            "a large organisation."
         )
-        if st.button("Sync now", type="primary", key="first_sync"):
-            st.session_state["sync_request"] = "full"
-            st.rerun()
+        st.button(
+            "Sync now",
+            type="primary",
+            key="first_sync",
+            on_click=connect.request_sync,
+            args=("full",),
+        )
         return
 
     incomplete = int((~df["details_complete"]).sum())
@@ -137,24 +142,27 @@ def main() -> None:
             "The next sync retries them."
         )
 
-    tz = _browser_timezone()
-    filters = sidebar_filters(df, names, tz)
-    filtered = metrics.apply_filters(df, filters)
-    st.sidebar.caption(f"{len(filtered)} of {len(df)} PRs match")
-    if filtered.empty:
-        st.info("No pull requests match these filters.")
-        return
-
-    tabs = st.tabs(["Overview", "Flow", "Size", "People", "Timing", "Data"])
-    with tabs[0]:
-        overview.render(filtered, tz)
-    with tabs[1]:
-        flow.render(filtered, names, tz)
-    with tabs[2]:
-        size.render(filtered, tz)
-    with tabs[3]:
-        people.render(filtered, names)
-    with tabs[4]:
-        timing.render(filtered, tz)
-    with tabs[5]:
-        table.render(filtered, names)
+    now, tz = pd.Timestamp.now(tz="UTC"), _browser_timezone()
+    with bar:
+        period, chosen = filters.bar(df, names, now, tz)
+    jobs = pl.prepare(raw) if not raw.empty else raw
+    if chosen.repositories and not jobs.empty:
+        jobs = jobs[jobs["repository"].isin(chosen.repositories)]
+    no_ci = (
+        "Pipelines come from GitHub Actions. Connect GitHub in Settings to see them."
+        if not github
+        else "No pipeline runs match. A sync fetches the last 90 days of GitHub Actions runs."
+    )
+    RENDER[view](
+        Context(
+            prs=metrics.apply_filters(df, chosen),
+            names=names,
+            jobs=jobs,
+            failures=failures,
+            prices=settings.ci_prices,
+            period=period,
+            now=now,
+            tz=tz,
+            no_ci=no_ci,
+        )
+    )
