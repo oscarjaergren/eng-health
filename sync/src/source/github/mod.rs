@@ -316,7 +316,13 @@ impl Source for GitHub {
         loop {
             let vars = json!({ "login": self.settings.owner, "cursor": cursor });
             let data: Value = self.query(TEAMS, vars).await?;
-            let page = &data["organization"]["teams"];
+            // Missing when the token can't see the organisation's teams: an error, not "none".
+            let page = data.pointer("/organization/teams").ok_or_else(|| {
+                SourceError::Api(format!(
+                    "github: no teams visible for {}",
+                    self.settings.owner
+                ))
+            })?;
             for node in page["nodes"].as_array().into_iter().flatten() {
                 let slug = node["slug"].as_str().unwrap_or_default();
                 teams.push(Team {

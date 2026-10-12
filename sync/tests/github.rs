@@ -153,10 +153,14 @@ async fn teams_come_with_all_their_members_and_repositories() {
                 }]
             }}}}),
         ))
+        // Asked once: asking again would be a loop that missed the last page.
+        .up_to_n_times(1)
         .mount(&server)
         .await;
     Mock::given(body_string_contains("team(slug"))
         .and(body_string_contains("members(first"))
+        .and(body_string_contains("membership: ALL"))
+        .and(body_string_contains("nodes { login }"))
         .and(body_partial_json(
             json!({"variables": {"slug": "payments", "cursor": "m1"}}),
         ))
