@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use eng_health::github::GitHub;
 use eng_health::{GitHubSettings, OwnerType};
 use eng_health::{Platform, Repo, Team};
@@ -35,6 +35,11 @@ fn repo() -> Repo {
         fork: false,
         raw: Value::Null,
     }
+}
+
+/// A `since` before every PR here, so a listing reads all of them.
+fn long_ago() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap()
 }
 
 fn pr(number: i64, updated: &str) -> Value {
@@ -215,6 +220,7 @@ async fn listing_stops_at_prs_older_than_since() {
             &[
                 pr(3, "2026-09-05T00:00:00Z"),
                 pr(2, "2026-09-02T00:00:00Z"),
+                pr(4, "2026-09-01T00:00:00Z"), // exactly at since: still wanted
                 pr(1, "2026-08-01T00:00:00Z"),
             ],
             Some("c1"),
@@ -229,28 +235,55 @@ async fn listing_stops_at_prs_older_than_since() {
 
     let since = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
     let items = client(&server, OwnerType::Org)
-        .pull_requests(&repo(), Some(since))
+        .pull_requests(&repo(), since)
         .await
         .unwrap();
     assert_eq!(
         items.iter().map(|i| i.node.number).collect::<Vec<_>>(),
-        [3, 2]
+        [3, 2, 4]
     );
 }
 
 #[tokio::test]
-async fn full_listing_reads_every_page() {
+async fn a_spent_budget_stops_the_listing_until_it_resets() {
     let server = MockServer::start().await;
-    Mock::given(body_partial_json(json!({"variables": {"cursor": null}})))
-        .respond_with(pulls_page(&[pr(2, "2026-09-02T00:00:00Z")], Some("c1")))
-        .mount(&server)
-        .await;
+    let page = |cursor: Option<&str>, next: Option<&str>| {
+        Mock::given(body_partial_json(json!({"variables": {"cursor": cursor}}))).respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"data": {
+                // Too little left for another page, and the reset an hour away.
+                "rateLimit": {"cost": 4, "remaining": 6, "resetAt": (Utc::now() + chrono::Duration::hours(1)).to_rfc3339()},
+                "repository": {"pullRequests": {
+                    "pageInfo": {"hasNextPage": next.is_some(), "endCursor": next},
+                    "nodes": [pr(1, "2026-09-02T00:00:00Z")]
+                }}
+            }})),
+        )
+    };
+    page(None, Some("c1")).mount(&server).await;
+    page(Some("c1"), None).expect(0).mount(&server).await;
+    let err = client(&server, OwnerType::Org)
+        .pull_requests(&repo(), long_ago())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, SourceError::Api(m) if m.contains("rate limit resets")));
+}
+
+#[tokio::test]
+async fn a_listing_reads_every_page_back_to_since() {
+    let server = MockServer::start().await;
+    // 10 review threads a PR, not 30: GitHub prices the page at 4 points instead of 9.
+    Mock::given(body_partial_json(
+        json!({"variables": {"cursor": null, "nested": 30, "threads": 10}}),
+    ))
+    .respond_with(pulls_page(&[pr(2, "2026-09-02T00:00:00Z")], Some("c1")))
+    .mount(&server)
+    .await;
     Mock::given(body_partial_json(json!({"variables": {"cursor": "c1"}})))
         .respond_with(pulls_page(&[pr(1, "2020-01-01T00:00:00Z")], None))
         .mount(&server)
         .await;
     let gh = client(&server, OwnerType::Org);
-    let items = gh.pull_requests(&repo(), None).await.unwrap();
+    let items = gh.pull_requests(&repo(), long_ago()).await.unwrap();
     assert_eq!(items.len(), 2);
     assert_eq!(gh.requests(), 2);
 }
@@ -275,7 +308,7 @@ async fn truncated_lists_are_completed_with_a_follow_up_query() {
         .push(json!({"createdAt": "2026-09-01T11:00:00Z", "author": {"__typename": "User", "login": "carol"}}));
     Mock::given(body_string_contains("pullRequest(number"))
         .and(body_partial_json(
-            json!({"variables": {"number": 9, "nested": 100}}),
+            json!({"variables": {"number": 9, "nested": 100, "threads": 100}}),
         ))
         .respond_with(
             ResponseTemplate::new(200)
@@ -285,7 +318,11 @@ async fn truncated_lists_are_completed_with_a_follow_up_query() {
         .await;
 
     let gh = client(&server, OwnerType::Org);
-    let item = gh.pull_requests(&repo(), None).await.unwrap().remove(0);
+    let item = gh
+        .pull_requests(&repo(), long_ago())
+        .await
+        .unwrap()
+        .remove(0);
     assert!(!item.complete);
     let item = gh.complete(&repo(), item).await.unwrap();
     assert!(item.complete);
@@ -304,7 +341,11 @@ async fn failed_follow_up_leaves_the_pr_incomplete() {
         .mount(&server)
         .await;
     let gh = client(&server, OwnerType::Org);
-    let item = gh.pull_requests(&repo(), None).await.unwrap().remove(0);
+    let item = gh
+        .pull_requests(&repo(), long_ago())
+        .await
+        .unwrap()
+        .remove(0);
     let item = gh.complete(&repo(), item).await.unwrap();
     assert!(!item.complete);
     // 1 listing + 5 attempts at the follow-up
@@ -337,7 +378,7 @@ async fn graphql_errors_are_reported() {
         .mount(&server)
         .await;
     let err = client(&server, OwnerType::Org)
-        .pull_requests(&repo(), None)
+        .pull_requests(&repo(), long_ago())
         .await
         .unwrap_err();
     assert!(matches!(err, SourceError::Api(m) if m.contains("Could not resolve")));
@@ -361,7 +402,7 @@ async fn waits_out_a_rate_limit_then_retries() {
         .mount(&server)
         .await;
     let gh = client(&server, OwnerType::Org);
-    let items = gh.pull_requests(&repo(), None).await.unwrap();
+    let items = gh.pull_requests(&repo(), long_ago()).await.unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(gh.requests(), 2);
 }
@@ -379,6 +420,11 @@ async fn transient_server_errors_are_retried() {
         .mount(&server)
         .await;
     let gh = client(&server, OwnerType::Org);
-    assert!(gh.pull_requests(&repo(), None).await.unwrap().is_empty());
+    assert!(
+        gh.pull_requests(&repo(), long_ago())
+            .await
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(gh.requests(), 3);
 }

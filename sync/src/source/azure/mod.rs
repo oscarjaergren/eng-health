@@ -232,45 +232,35 @@ impl Source for Azure {
     async fn pull_requests(
         &self,
         repo: &Repo,
-        since: Option<DateTime<Utc>>,
+        since: DateTime<Utc>,
     ) -> Result<Vec<Item>, SourceError> {
-        let prs = match since {
-            None => {
-                self.paged(repo, &[("searchCriteria.status", "all".to_owned())])
-                    .await?
+        // minTime filters on creation date unless told otherwise, which would miss older PRs
+        // that closed since the last sync. So: every open PR, plus anything closed since then.
+        let mut prs = self
+            .paged(repo, &[("searchCriteria.status", "active".to_owned())])
+            .await?;
+        let closed = self
+            .paged(
+                repo,
+                &[
+                    ("searchCriteria.status", "all".to_owned()),
+                    ("searchCriteria.queryTimeRangeType", "closed".to_owned()),
+                    (
+                        "searchCriteria.minTime",
+                        since.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                    ),
+                ],
+            )
+            .await?;
+        for pr in closed {
+            match prs
+                .iter_mut()
+                .find(|p| p.pull_request_id == pr.pull_request_id)
+            {
+                Some(existing) => *existing = pr,
+                None => prs.push(pr),
             }
-            Some(since) => {
-                // minTime filters on creation date unless told otherwise, which would
-                // miss older PRs that closed since the last sync. So: every open PR,
-                // plus anything closed since then.
-                let mut prs = self
-                    .paged(repo, &[("searchCriteria.status", "active".to_owned())])
-                    .await?;
-                let closed = self
-                    .paged(
-                        repo,
-                        &[
-                            ("searchCriteria.status", "all".to_owned()),
-                            ("searchCriteria.queryTimeRangeType", "closed".to_owned()),
-                            (
-                                "searchCriteria.minTime",
-                                since.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-                            ),
-                        ],
-                    )
-                    .await?;
-                for pr in closed {
-                    match prs
-                        .iter_mut()
-                        .find(|p| p.pull_request_id == pr.pull_request_id)
-                    {
-                        Some(existing) => *existing = pr,
-                        None => prs.push(pr),
-                    }
-                }
-                prs
-            }
-        };
+        }
         Ok(prs
             .into_iter()
             .map(|pr| Item {

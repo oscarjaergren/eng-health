@@ -140,22 +140,28 @@ async fn an_azure_cli_token_is_sent_as_a_bearer_token() {
 }
 
 #[tokio::test]
-async fn full_listing_pages_until_a_short_page() {
+async fn listing_pages_until_a_short_page() {
     let server = MockServer::start().await;
     for (skip, count) in [("0", 100), ("100", 100), ("200", 5)] {
         Mock::given(path(PRS))
-            .and(query_param("searchCriteria.status", "all"))
+            .and(query_param("searchCriteria.status", "active"))
             .and(query_param("$skip", skip))
             // Requests with query parameters of their own still say which API version.
             .and(query_param("api-version", "7.1"))
             .respond_with(list(
-                &(0..count).map(|i| pr(i, "completed")).collect::<Vec<_>>(),
+                &(0..count).map(|i| pr(i, "active")).collect::<Vec<_>>(),
             ))
             .expect(1)
             .mount(&server)
             .await;
     }
-    let items = client(&server).pull_requests(&repo(), None).await.unwrap();
+    Mock::given(path(PRS))
+        .and(query_param("searchCriteria.status", "all"))
+        .respond_with(list(&[]))
+        .mount(&server)
+        .await;
+    let since = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
+    let items = client(&server).pull_requests(&repo(), since).await.unwrap();
     assert_eq!(items.len(), 205);
 }
 
@@ -178,10 +184,7 @@ async fn incremental_listing_reads_open_prs_and_prs_closed_since() {
         .mount(&server)
         .await;
     let since = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
-    let items = client(&server)
-        .pull_requests(&repo(), Some(since))
-        .await
-        .unwrap();
+    let items = client(&server).pull_requests(&repo(), since).await.unwrap();
     let mut got: Vec<_> = items
         .iter()
         .map(|i| (i.pr.pull_request_id, i.pr.status.clone()))
