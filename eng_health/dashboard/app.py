@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -196,6 +197,9 @@ def main() -> None:
             df, names, repos, now, tz, tuple(sorted(in_scope or ())), label
         )
     jobs = pl.prepare(raw) if not raw.empty else raw
+    # Charts start at the oldest record synced, before any filter, so filtering doesn't move them.
+    ci_period = replace(period, start=jobs["started_at"].min()) if not jobs.empty else period
+    period = replace(period, start=df["created_at"].min())
     if not jobs.empty:
         # The same repository filter as the PRs': runs are all GitHub's.
         repo = "github:" + jobs["repo_id"]
@@ -215,6 +219,7 @@ def main() -> None:
             failures=failures,
             prices=settings.ci_prices,
             period=period,
+            ci_period=ci_period,
             now=now,
             tz=tz,
             no_ci=no_ci,

@@ -11,6 +11,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from eng_health.cli import main as cli
+from eng_health.dashboard.charts import fmt, lines
 from eng_health.dashboard.views import VIEWS
 from eng_health.mock import mock_pull_requests
 from eng_health.period import PERIODS
@@ -52,6 +53,29 @@ def test_sample_data_renders_every_view_in_every_period() -> None:
             at.segmented_control(key="view").set_value(view).run()
             assert not at.exception, (period, view, at.exception)
             assert view == "today" or at.header, (period, view)
+
+
+def test_numbers_read_the_same_everywhere() -> None:
+    hours = (0, 0.01, 0.0712, 1.5, 9.96, 50, 80)
+    assert [fmt(h, " h") for h in hours] == [
+        "0 s",
+        "36 s",
+        "4.3 min",
+        "90 min",
+        "10 h",
+        "50 h",
+        "3.3 d",
+    ]
+    assert [fmt(None), fmt(float("nan"), " min"), fmt(6.162, "$"), fmt(3.333, "%")] == [
+        "–",
+        "–",
+        "$6.16",
+        "3.3%",
+    ]
+    # A chart's hover writes the same; its axis counts in its longest value's unit.
+    fig = lines(pd.DataFrame({"Median": [0.0712, 1.5, None]}), unit=" h")
+    assert list(fig.data[0].customdata) == ["4.3 min", "90 min", "–"]
+    assert (fig.data[0].y[0], fig.layout.yaxis.ticksuffix) == (pytest.approx(4.272), " min")
 
 
 def test_the_url_picks_the_view_and_period() -> None:
