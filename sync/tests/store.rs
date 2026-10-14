@@ -7,8 +7,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use chrono::{Duration, TimeZone, Utc};
+use eng_health::{Bookmark, SCHEMA_VERSION, Store, StoreError, SyncState};
 use eng_health::{Platform, PullRequest, Repo, Team};
-use eng_health::{SCHEMA_VERSION, Store, StoreError, SyncState};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -173,6 +173,90 @@ fn a_schema_from_before_records_changed_forgets_sync_windows() {
 fn a_schema_that_only_gained_tables_keeps_sync_windows() {
     let (_dir, s) = synced_then_opened_as(3);
     assert!(s.sync_state("github").unwrap().last_sync.is_some());
+}
+
+#[test]
+fn bookmarks_are_kept_per_platform_until_forgotten() {
+    let (_d, mut s) = store();
+    let at = Utc.with_ymd_and_hms(2026, 10, 1, 12, 0, 0).unwrap();
+    let mark = |cursor: Option<&str>| Bookmark {
+        synced: at,
+        cursor: cursor.map(str::to_owned),
+    };
+    s.save_bookmark(Platform::Github, "1", &mark(Some("c1")))
+        .unwrap();
+    s.save_bookmark(Platform::Github, "1", &mark(None)).unwrap();
+    s.save_bookmark(Platform::AzureDevops, "1", &mark(Some("")))
+        .unwrap();
+    let github = s.bookmarks(Platform::Github).unwrap();
+    assert_eq!(github.len(), 1);
+    assert_eq!(github["1"], mark(None));
+    s.forget_bookmarks(Platform::Github).unwrap();
+    assert!(s.bookmarks(Platform::Github).unwrap().is_empty());
+    assert_eq!(
+        s.bookmarks(Platform::AzureDevops).unwrap()["1"],
+        mark(Some(""))
+    );
+    s.clear().unwrap();
+    assert!(s.bookmarks(Platform::AzureDevops).unwrap().is_empty());
+}
+
+/// A database synced at `at`, its one repository with no bookmark, opened again as `version`.
+fn synced_with_a_repository_then_opened_as(
+    version: i64,
+    at: chrono::DateTime<Utc>,
+) -> (TempDir, Store) {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("db.sqlite");
+    let mut s = Store::open(&path).unwrap();
+    s.save_repositories(Platform::Github, &[repo("1", "web", false)])
+        .unwrap();
+    s.record_sync("github", at, true, None).unwrap();
+    drop(s);
+    let conn = Connection::open(&path).unwrap();
+    conn.pragma_update(None, "user_version", version).unwrap();
+    drop(conn);
+    (dir, Store::open(&path).unwrap())
+}
+
+#[test]
+fn an_upgrade_bookmarks_each_repository_at_its_platforms_last_sync() {
+    // Before bookmarks, a sync read every repository up to the platform's last sync.
+    let at = Utc.with_ymd_and_hms(2026, 10, 1, 12, 0, 0).unwrap();
+    let (_d, s) = synced_with_a_repository_then_opened_as(6, at);
+    let marks = s.bookmarks(Platform::Github).unwrap();
+    assert_eq!(
+        marks["1"],
+        Bookmark {
+            synced: at,
+            cursor: None
+        }
+    );
+}
+
+#[test]
+fn a_current_database_never_bookmarks_a_repository_it_has_not_read() {
+    let at = Utc.with_ymd_and_hms(2026, 10, 1, 12, 0, 0).unwrap();
+    let (_d, s) = synced_with_a_repository_then_opened_as(SCHEMA_VERSION, at);
+    assert!(s.bookmarks(Platform::Github).unwrap().is_empty());
+}
+
+#[test]
+fn a_schema_from_before_records_changed_forgets_bookmarks() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("db.sqlite");
+    let mut s = Store::open(&path).unwrap();
+    let mark = Bookmark {
+        synced: Utc::now(),
+        cursor: None,
+    };
+    s.save_bookmark(Platform::Github, "1", &mark).unwrap();
+    drop(s);
+    let conn = Connection::open(&path).unwrap();
+    conn.pragma_update(None, "user_version", 2).unwrap();
+    drop(conn);
+    let s = Store::open(&path).unwrap();
+    assert!(s.bookmarks(Platform::Github).unwrap().is_empty());
 }
 
 fn repo(id: &str, name: &str, archived: bool) -> Repo {

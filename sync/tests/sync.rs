@@ -16,16 +16,18 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
 use eng_health::Store;
-use eng_health::parse_time;
-use eng_health::{Event, OVERLAP, Options, sync_platform};
-use eng_health::{People, Source, SourceError};
+use eng_health::{Bookmark, Event, OVERLAP, Options, sync_platform};
+use eng_health::{Page, People, Source, SourceError};
 use eng_health::{Platform, PullRequest, Repo, State, Team, Timestamp};
 use tempfile::TempDir;
+
+/// PRs a page, small so a few PRs make several pages.
+const PAGE: usize = 2;
 
 #[derive(Clone)]
 struct Pr {
     number: i64,
-    updated: &'static str,
+    updated: DateTime<Utc>,
     commenters: Vec<&'static str>,
 }
 
@@ -35,23 +37,44 @@ struct Item {
     complete: bool,
 }
 
+/// What the sync asked for: the repository, how far back, and from where.
+type Ask = (String, DateTime<Utc>, Option<String>);
+
+/// A platform like GitHub: PRs listed most recently changed first, a page at a time.
 #[derive(Default)]
 struct Fake {
     prs: Mutex<HashMap<&'static str, Vec<Pr>>>,
-    since_seen: Mutex<Vec<DateTime<Utc>>>,
+    asked: Mutex<Vec<Ask>>,
     completed: Mutex<Vec<i64>>,
     failing_details: Mutex<Vec<i64>>,
     failing_repos: Mutex<Vec<&'static str>>,
+    /// Pages that fail, by cursor: the API budget running out partway.
+    failing_cursors: Mutex<Vec<&'static str>>,
+    /// Every PR in one page, as Azure DevOps lists them.
+    one_page: AtomicBool,
     auth_broken: AtomicBool,
+}
+
+/// `days` ago, in whole seconds as the store keeps it.
+fn ago(days: i64) -> DateTime<Utc> {
+    DateTime::from_timestamp((Utc::now() - Duration::days(days)).timestamp(), 0).unwrap()
 }
 
 impl Fake {
     fn add(&self, repo: &'static str, number: i64, commenters: &[&'static str]) {
+        self.add_at(repo, number, 1, commenters);
+    }
+
+    fn add_at(&self, repo: &'static str, number: i64, days: i64, commenters: &[&'static str]) {
         self.prs.lock().unwrap().entry(repo).or_default().push(Pr {
             number,
-            updated: "2026-09-02T09:00:00Z",
+            updated: ago(days),
             commenters: commenters.to_vec(),
         });
+    }
+
+    fn asked(&self) -> Vec<Ask> {
+        self.asked.lock().unwrap().clone()
     }
 }
 
@@ -102,30 +125,48 @@ impl Source for Fake {
         &self,
         repo: &Repo,
         since: DateTime<Utc>,
-    ) -> Result<Vec<Item>, SourceError> {
-        self.since_seen.lock().unwrap().push(since);
+        cursor: Option<&str>,
+    ) -> Result<Page<Item>, SourceError> {
+        self.asked
+            .lock()
+            .unwrap()
+            .push((repo.name.clone(), since, cursor.map(str::to_owned)));
         if self
             .failing_repos
             .lock()
             .unwrap()
             .contains(&repo.name.as_str())
+            || cursor.is_some_and(|c| self.failing_cursors.lock().unwrap().contains(&c))
         {
             return Err(SourceError::Api("github: 502".into()));
         }
-        let prs = self
+        let mut prs = self
             .prs
             .lock()
             .unwrap()
             .get(repo.name.as_str())
             .cloned()
             .unwrap_or_default();
-        Ok(prs
-            .into_iter()
-            .map(|pr| Item {
-                pr,
-                complete: false,
-            })
-            .collect())
+        prs.sort_by_key(|p| std::cmp::Reverse(p.updated));
+        let start: usize = cursor.map_or(0, |c| c.parse().unwrap());
+        let size = if self.one_page.load(Ordering::Relaxed) {
+            prs.len()
+        } else {
+            PAGE
+        };
+        let page: Vec<Pr> = prs.iter().skip(start).take(size).cloned().collect();
+        let end = start + page.len();
+        Ok(Page {
+            done: page.last().is_none_or(|p| p.updated < since),
+            next: (end < prs.len()).then(|| end.to_string()),
+            items: page
+                .into_iter()
+                .map(|pr| Item {
+                    pr,
+                    complete: false,
+                })
+                .collect(),
+        })
     }
 
     fn number(item: &Item) -> i64 {
@@ -133,7 +174,7 @@ impl Source for Fake {
     }
 
     fn is_unchanged(&self, item: &Item, cached: &PullRequest) -> bool {
-        cached.details_complete && cached.updated_at == parse_time(Some(item.pr.updated))
+        cached.details_complete && cached.updated_at == Some(Timestamp::new(item.pr.updated))
     }
 
     async fn complete(&self, _repo: &Repo, mut item: Item) -> Result<Item, SourceError> {
@@ -147,7 +188,6 @@ impl Source for Fake {
     }
 
     fn convert(&self, repo: &Repo, item: &Item, people: &mut People) -> PullRequest {
-        let created = parse_time(Some("2026-09-01T09:00:00Z")).unwrap();
         let mut comment_counts = BTreeMap::new();
         if item.complete {
             for who in &item.pr.commenters {
@@ -164,14 +204,14 @@ impl Source for Fake {
             author: "alice".into(),
             state: State::Merged,
             is_draft: false,
-            created_at: created,
+            created_at: Timestamp::new(item.pr.updated),
             closed_at: None,
             url: String::new(),
             is_infrastructure: false,
             additions: None,
             deletions: None,
             changed_files: None,
-            updated_at: parse_time(Some(item.pr.updated)),
+            updated_at: Some(Timestamp::new(item.pr.updated)),
             reviewers: vec![],
             approvers: vec![],
             rejecters: vec![],
@@ -211,11 +251,12 @@ async fn run(fake: &Fake, env: &Env, full: bool) -> eng_health::Report {
     sync_platform(fake, &env.store, &opts).await.unwrap()
 }
 
-/// Whether every listing reached back two years, give or take the test's own runtime.
-fn read_all_history(fake: &Fake) -> bool {
-    let floor = Utc::now() - Duration::days(730);
-    let seen = fake.since_seen.lock().unwrap();
-    !seen.is_empty() && seen.iter().all(|s| (*s - floor).num_seconds().abs() < 60)
+/// Whether `t` is `days` ago, give or take the test's own runtime.
+fn about(t: DateTime<Utc>, days: i64) -> bool {
+    (t - (Utc::now() - Duration::days(days)))
+        .num_seconds()
+        .abs()
+        < 60
 }
 
 fn comments(env: &Env) -> BTreeMap<String, BTreeMap<String, i64>> {
@@ -229,6 +270,29 @@ fn comments(env: &Env) -> BTreeMap<String, BTreeMap<String, i64>> {
         .collect()
 }
 
+fn numbers(env: &Env) -> Vec<i64> {
+    let mut n: Vec<_> = env
+        .store
+        .lock()
+        .unwrap()
+        .pull_requests(None)
+        .unwrap()
+        .iter()
+        .map(|p| p.number)
+        .collect();
+    n.sort_unstable();
+    n
+}
+
+fn bookmark(env: &Env, repo_id: &str) -> Option<Bookmark> {
+    env.store
+        .lock()
+        .unwrap()
+        .bookmarks(Platform::Github)
+        .unwrap()
+        .remove(repo_id)
+}
+
 #[tokio::test]
 async fn first_sync_saves_everything_and_keeps_same_numbers_apart() {
     let (fake, env) = (Fake::default(), env());
@@ -240,9 +304,14 @@ async fn first_sync_saves_everything_and_keeps_same_numbers_apart() {
         (report.repositories, report.listed, report.saved),
         (2, 2, 2)
     );
-    // Two years back, not every PR ever: the dashboard shows 12 months against the 12 before.
-    assert!(read_all_history(&fake));
-    assert_eq!(fake.since_seen.lock().unwrap().len(), 2);
+    // A repository read for the first time starts with its last 90 days.
+    let asked = fake.asked();
+    assert_eq!(asked.len(), 2);
+    assert!(
+        asked
+            .iter()
+            .all(|(_, since, cursor)| about(*since, 90) && cursor.is_none())
+    );
     assert_eq!(comments(&env).len(), 2);
     let db = rusqlite::Connection::open(env.dir.path().join("db.sqlite")).unwrap();
     let name: String = db
@@ -273,6 +342,64 @@ async fn first_sync_saves_everything_and_keeps_same_numbers_apart() {
 }
 
 #[tokio::test]
+async fn recent_work_comes_first_then_history_back_two_years() {
+    let (fake, env) = (Fake::default(), env());
+    for (number, days) in [(1, 1), (2, 10), (3, 100), (4, 400), (5, 800), (6, 900)] {
+        fake.add_at("web", number, days, &[]);
+    }
+    fake.add_at("web", 7, 1000, &[]);
+    fake.add_at("web", 8, 1100, &[]);
+    fake.add_at("api", 1, 1, &[]);
+    let report = run(&fake, &env, false).await;
+    assert!(report.ok(), "{report:?}");
+
+    // Pages of two: 1-2, then 3-4, past 90 days, so the first pass stops there. History goes on
+    // to 5-6, past two years, and stops.
+    assert_eq!(numbers(&env), [1, 1, 2, 3, 4, 5, 6]);
+    let asked = fake.asked();
+    let history: Vec<_> = asked
+        .iter()
+        .filter(|(_, since, _)| about(*since, 730))
+        .collect();
+    assert_eq!(history.len(), 1);
+    assert_eq!(
+        (history[0].0.as_str(), history[0].2.as_deref()),
+        ("web", Some("4"))
+    );
+    // Every repository's recent PRs were read before any older history.
+    assert_eq!(asked.last(), Some(history[0]));
+    assert_eq!(bookmark(&env, "1").unwrap().cursor, None);
+}
+
+#[tokio::test]
+async fn a_sync_that_stops_partway_continues_where_it_stopped() {
+    let (fake, env) = (Fake::default(), env());
+    for (number, days) in [(1, 1), (2, 10), (3, 100), (4, 400), (5, 500)] {
+        fake.add_at("web", number, days, &[]);
+    }
+    fake.failing_cursors.lock().unwrap().push("4");
+    let report = run(&fake, &env, false).await;
+    assert!(!report.ok());
+    assert_eq!(numbers(&env), [1, 2, 3, 4]);
+    assert_eq!(bookmark(&env, "1").unwrap().cursor.as_deref(), Some("4"));
+
+    fake.failing_cursors.lock().unwrap().clear();
+    fake.asked.lock().unwrap().clear();
+    let report = run(&fake, &env, false).await;
+    assert!(report.ok(), "{report:?}");
+    assert_eq!(numbers(&env), [1, 2, 3, 4, 5]);
+    // The recent pages aren't read again: only what changed since, then history from page 3.
+    let web: Vec<_> = fake
+        .asked()
+        .into_iter()
+        .filter(|(repo, ..)| repo == "web")
+        .map(|(_, _, cursor)| cursor)
+        .collect();
+    assert_eq!(web, [None, Some("4".to_owned())]);
+    assert_eq!(bookmark(&env, "1").unwrap().cursor, None);
+}
+
+#[tokio::test]
 async fn resync_does_not_erase_review_data_of_unchanged_prs() {
     let (fake, env) = (Fake::default(), env());
     fake.add("web", 1, &["bob"]);
@@ -297,7 +424,7 @@ async fn changed_pr_is_refetched() {
     {
         let mut prs = fake.prs.lock().unwrap();
         let pr = &mut prs.get_mut("web").unwrap()[0];
-        pr.updated = "2026-09-03T09:00:00Z";
+        pr.updated = ago(0);
         pr.commenters = vec!["carol"];
     }
     run(&fake, &env, false).await;
@@ -341,17 +468,23 @@ async fn incremental_sync_starts_before_the_last_success() {
         .unwrap()
         .last_sync
         .unwrap();
-    fake.since_seen.lock().unwrap().clear();
+    fake.asked.lock().unwrap().clear();
     run(&fake, &env, false).await;
-    assert_eq!(*fake.since_seen.lock().unwrap(), [last - OVERLAP; 2]);
+    let since: Vec<_> = fake
+        .asked()
+        .into_iter()
+        .map(|(_, since, _)| since)
+        .collect();
+    assert_eq!(since, [last - OVERLAP; 2]);
 
-    fake.since_seen.lock().unwrap().clear();
+    // A full sync forgets the bookmarks and starts again from the newest.
+    fake.asked.lock().unwrap().clear();
     run(&fake, &env, true).await;
-    assert!(read_all_history(&fake));
+    assert!(fake.asked().iter().all(|(_, since, _)| about(*since, 90)));
 }
 
 #[tokio::test]
-async fn a_failed_repository_does_not_advance_the_window() {
+async fn a_failed_repository_keeps_its_bookmark_and_the_window() {
     let (fake, env) = (Fake::default(), env());
     run(&fake, &env, false).await;
     let before = env
@@ -361,12 +494,16 @@ async fn a_failed_repository_does_not_advance_the_window() {
         .sync_state("github")
         .unwrap()
         .last_sync;
+    let api = bookmark(&env, "2");
     fake.failing_repos.lock().unwrap().push("api");
     let report = run(&fake, &env, false).await;
     let state = env.store.lock().unwrap().sync_state("github").unwrap();
     assert!(!report.ok());
     assert_eq!(state.last_sync, before);
     assert!(state.last_error.unwrap().contains("api"));
+    // The repository that was read moves on regardless.
+    assert_eq!(bookmark(&env, "2"), api);
+    assert!(bookmark(&env, "1").unwrap().synced > before.unwrap());
 }
 
 #[tokio::test]
@@ -397,12 +534,17 @@ async fn stopping_keeps_saved_work_but_not_the_window() {
     let state = env.store.lock().unwrap().sync_state("github").unwrap();
     assert_eq!(state.last_sync, None);
     assert_eq!(state.last_error.as_deref(), Some("interrupted"));
+    assert_eq!(bookmark(&env, "1"), None);
 }
 
 #[tokio::test]
-async fn progress_events_cover_both_phases() {
+async fn progress_runs_through_the_changes_then_the_history() {
     let (fake, env) = (Fake::default(), env());
-    fake.add("web", 1, &[]);
+    for repo in ["web", "api"] {
+        for (number, days) in [(1, 1), (2, 10), (3, 100), (4, 400), (5, 500)] {
+            fake.add_at(repo, number, days, &[]);
+        }
+    }
     let events = Mutex::new(Vec::new());
     let record = |e: Event| {
         events
@@ -423,6 +565,23 @@ async fn progress_events_cover_both_phases() {
             .iter()
             .all(|e| e["type"] == "progress" && e["platform"] == "github")
     );
-    let last = events.last().unwrap()["fraction"].as_f64().unwrap();
-    assert!((last - 1.0).abs() < 1e-9, "{last}");
+    let fractions: Vec<_> = events
+        .iter()
+        .map(|e| e["fraction"].as_f64().unwrap())
+        .collect();
+    // Each repository's changes are the first half, their history the second.
+    assert_eq!(fractions, [0.25, 0.5, 0.75, 1.0, 1.0]);
+}
+
+#[tokio::test]
+async fn a_page_bigger_than_a_batch_is_saved_whole() {
+    // Azure DevOps lists a repository in one go, so one page can hold thousands of PRs.
+    let (fake, env) = (Fake::default(), env());
+    fake.one_page.store(true, Ordering::Relaxed);
+    for number in 1..=120 {
+        fake.add("web", number, &[]);
+    }
+    let report = run(&fake, &env, false).await;
+    assert_eq!(report.saved, 120);
+    assert_eq!(numbers(&env).len(), 120);
 }

@@ -37,7 +37,9 @@ token. `mise run sync` uses the same connections.
 Syncing is done by the `eng-health` command, a Rust program in `sync/` that the image
 includes. Synced PRs are kept in a SQLite database under `./data`. A sync reads two years
 back, the dashboard's 12 months and the 12 they are compared with; later syncs fetch only what
-changed, so they are quick. To sync on a schedule, run the CLI from cron.
+changed, so they are quick. On a large organisation the first sync can run out of API budget: it
+reads every repository's last 90 days before older history, keeps each page as it arrives, and
+the next sync continues where it stopped. To sync on a schedule, run the CLI from cron.
 
 Without Docker you need [mise](https://mise.jdx.dev/getting-started.html), which installs
 the pinned Python, Rust and tools:

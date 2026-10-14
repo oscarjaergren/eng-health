@@ -161,8 +161,13 @@ async fn listing_pages_until_a_short_page() {
         .mount(&server)
         .await;
     let since = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
-    let items = client(&server).pull_requests(&repo(), since).await.unwrap();
-    assert_eq!(items.len(), 205);
+    let page = client(&server)
+        .pull_requests(&repo(), since, None)
+        .await
+        .unwrap();
+    assert_eq!(page.items.len(), 205);
+    // All of it in one go: nothing comes after, only PRs from further back.
+    assert_eq!((page.next.as_deref(), page.done), (Some(""), true));
 }
 
 #[tokio::test]
@@ -184,7 +189,11 @@ async fn incremental_listing_reads_open_prs_and_prs_closed_since() {
         .mount(&server)
         .await;
     let since = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
-    let items = client(&server).pull_requests(&repo(), since).await.unwrap();
+    let items = client(&server)
+        .pull_requests(&repo(), since, None)
+        .await
+        .unwrap()
+        .items;
     let mut got: Vec<_> = items
         .iter()
         .map(|i| (i.pr.pull_request_id, i.pr.status.clone()))

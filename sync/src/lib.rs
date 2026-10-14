@@ -20,8 +20,8 @@ pub use pipelines::{
     Job, MODULE_KEY as PIPELINES_KEY, failed_tests, failures_in, sync as sync_pipelines,
 };
 pub use rules::parse_time;
-pub use source::{People, Source, SourceError};
-pub use store::{SCHEMA_VERSION, Store, StoreError, SyncState};
+pub use source::{Page, People, Source, SourceError};
+pub use store::{Bookmark, SCHEMA_VERSION, Store, StoreError, SyncState};
 pub use sync::{Event, OVERLAP, Options, Report, sync_platform};
 
 /// Azure DevOps, including the payload types and conversion the tests check directly.

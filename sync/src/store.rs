@@ -11,7 +11,7 @@ use crate::model::{Platform, PullRequest, Repo, Team, Timestamp};
 use crate::pipelines::Job;
 
 /// The version at the end of `schema.sql`; a test checks they agree.
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 /// The last version whose records changed shape. A database older than it is re-synced in full.
 const RECORDS_CHANGED: i64 = 3;
 
@@ -37,6 +37,15 @@ pub enum StoreError {
         key: String,
         source: serde_json::Error,
     },
+}
+
+/// How far one repository's PRs have been read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bookmark {
+    /// Every PR changed since this, less `OVERLAP`, has been read.
+    pub synced: DateTime<Utc>,
+    /// Where older history continues, while some is left to read.
+    pub cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -73,7 +82,16 @@ impl Store {
         if found < RECORDS_CHANGED {
             // Records changed shape. Forgetting the sync windows makes the next sync list every
             // PR again, and sources refetch any record missing the new fields.
-            conn.execute("UPDATE sync_state SET last_sync = NULL", [])?;
+            conn.execute_batch("UPDATE sync_state SET last_sync = NULL; DELETE FROM repo_sync;")?;
+        }
+        if found < 7 {
+            // Bookmarks are new: every repository was read up to its platform's last sync.
+            conn.execute(
+                "INSERT OR IGNORE INTO repo_sync (platform, repo_id, synced) \
+                 SELECT r.platform, r.repo_id, s.last_sync FROM repositories r \
+                 JOIN sync_state s ON s.platform = r.platform WHERE s.last_sync IS NOT NULL",
+                [],
+            )?;
         }
         Ok(Self { conn })
     }
@@ -195,6 +213,58 @@ impl Store {
         .collect()
     }
 
+    /// Each read repository's bookmark, by repository id.
+    pub fn bookmarks(&self, platform: Platform) -> Result<HashMap<String, Bookmark>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT repo_id, synced, cursor FROM repo_sync WHERE platform = ?1")?;
+        let rows = stmt.query_map([platform.as_str()], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let (repo_id, synced, cursor) = row?;
+            // Written by `save_bookmark`, so it parses; one that didn't would read as never read.
+            if let Ok(t) = DateTime::parse_from_rfc3339(&synced) {
+                let synced = t.with_timezone(&Utc);
+                out.insert(repo_id, Bookmark { synced, cursor });
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn save_bookmark(
+        &mut self,
+        platform: Platform,
+        repo_id: &str,
+        mark: &Bookmark,
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT INTO repo_sync VALUES (?1, ?2, ?3, ?4) ON CONFLICT(platform, repo_id) \
+             DO UPDATE SET synced = excluded.synced, cursor = excluded.cursor",
+            params![
+                platform.as_str(),
+                repo_id,
+                Timestamp::new(mark.synced).to_string(),
+                mark.cursor
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Forget how far a platform's repositories were read, so the next sync reads them again.
+    pub fn forget_bookmarks(&mut self, platform: Platform) -> Result<(), StoreError> {
+        self.conn.execute(
+            "DELETE FROM repo_sync WHERE platform = ?1",
+            [platform.as_str()],
+        )?;
+        Ok(())
+    }
+
     /// `key` is a platform (`github`) or platform and module (`github:pipelines`).
     pub fn sync_state(&self, key: &str) -> Result<SyncState, StoreError> {
         let row: Option<(Option<String>, Option<String>, Option<String>)> = self
@@ -247,7 +317,7 @@ impl Store {
         tx.execute_batch(
             "DELETE FROM pull_requests; DELETE FROM people; DELETE FROM repositories; \
              DELETE FROM me; DELETE FROM teams; DELETE FROM team_members; DELETE FROM team_repos; \
-             DELETE FROM sync_state;",
+             DELETE FROM sync_state; DELETE FROM repo_sync;",
         )?;
         bump(&tx)?;
         tx.commit()?;
