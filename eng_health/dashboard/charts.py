@@ -3,6 +3,7 @@ use are styled in style.css."""
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Collection, Sequence
 from html import escape
@@ -24,6 +25,42 @@ _MUTED = "#8A877F"
 _GRID = "#EFEDE8"
 # Bars and lines are labelled by the bucket's local start: a day, a week or a month.
 TICKS = {"D": "%b %-d", "W": "%b %-d", "M": "%b"}
+# The units of a duration, as KPIs and charts name them, in hours.
+DURATIONS = {" h": 1.0, " min": 1 / 60}
+
+
+def _short(n: float) -> str:
+    return f"{n:.1f}".removesuffix(".0") if n < 10 else f"{n:,.0f}"
+
+
+def _time_unit(hours: float) -> tuple[float, str]:
+    """The unit people say a length of time in, as (its hours, its name): 90 min, not 1.5 h."""
+    if hours >= 72:
+        return 24, " d"
+    if hours >= 2:
+        return 1, " h"
+    if hours >= 1 / 60:
+        return 1 / 60, " min"
+    return 1 / 3600, " s"
+
+
+def duration(hours: float) -> str:
+    """A length of time as the page writes it: 40 s, 3.5 min, 90 min, 26 h, 4.2 d."""
+    per, unit = _time_unit(hours)
+    return f"{_short(hours / per)}{unit}"
+
+
+def fmt(v: float | None, unit: str = "") -> str:
+    """A value as the page writes it everywhere: KPIs, tables, sentences and chart hovers."""
+    if v is None or pd.isna(v):
+        return "–"
+    if unit in DURATIONS:
+        return duration(v * DURATIONS[unit])
+    if unit == "$":
+        return f"${v:,.2f}"
+    if unit == "%":
+        return f"{v:.1f}%"
+    return f"{v:,.1f}{unit}" if v % 1 else f"{v:,.0f}{unit}"
 
 
 def md(text: object) -> str:
@@ -90,7 +127,18 @@ def spark(values: Sequence[float], color: str = INK, width: int = 140, height: i
     )
 
 
-def _style(fig: go.Figure, suffix: str, ticks: str | None) -> go.Figure:
+def _values(frame: pd.DataFrame, unit: str) -> tuple[pd.DataFrame, pd.DataFrame, str]:
+    """`frame` as the axis draws it, each value as its hover writes it, and the axis's suffix. A
+    duration axis counts in its longest value's unit, so the longest hover and the axis agree."""
+    text = frame.map(lambda v: fmt(v, unit))
+    if unit not in DURATIONS:
+        return frame, text, "" if unit == "$" else unit
+    hours = frame * DURATIONS[unit]
+    per, suffix = _time_unit(hours.max().max())
+    return hours / per, text, suffix
+
+
+def _style(fig: go.Figure, unit: str, suffix: str, ticks: str | None) -> go.Figure:
     fig.update_layout(
         height=230,
         margin={"l": 0, "r": 0, "t": 4, "b": 0},
@@ -101,14 +149,29 @@ def _style(fig: go.Figure, suffix: str, ticks: str | None) -> go.Figure:
         bargap=0.35,
         hovermode="x unified",
     )
-    # automargin makes room for the tick labels: with theme=None nothing else does.
+    fig.update_traces(hovertemplate="%{customdata}")
+    # automargin makes room for the tick labels: with theme=None nothing else does. Plotly hides a
+    # label that overflows (a line's last bucket) before automargin sees it, unless allowed.
     fig.update_xaxes(
-        showgrid=False, linecolor="#DDD9D0", tickformat=ticks, fixedrange=True, automargin=True
+        showgrid=False,
+        linecolor="#DDD9D0",
+        tickformat=ticks,
+        fixedrange=True,
+        automargin=True,
+        ticklabeloverflow="allow",
     )
+    if ticks and fig.data:
+        # Ticks on buckets only, counted back from the latest: left to plotly, a few months get one
+        # mid-month too, "Jul Jul Aug".
+        buckets = fig.data[0].x
+        fig.update_xaxes(tickvals=buckets[:: -math.ceil(len(buckets) / 7)])
     fig.update_yaxes(
         gridcolor=_GRID,
         zeroline=False,
         ticksuffix=suffix,
+        tickprefix="$" if unit == "$" else "",
+        # An all-zero series otherwise gets an axis from -1.
+        rangemode="nonnegative",
         nticks=4,
         fixedrange=True,
         automargin=True,
@@ -122,15 +185,18 @@ def bars(
     *,
     stack: bool = False,
     highlight: Sequence[object] = (),
-    suffix: str = "",
+    unit: str = "",
     ticks: str | None = None,
 ) -> go.Figure:
-    """A bar per row of `frame` and column; `highlight` reddens those rows of a one-column chart."""
+    """A bar per row of `frame` and column; `highlight` reddens those rows of a one-column chart.
+    `unit` is a KPI's: "%", "$", or a duration's " h" or " min"."""
+    y, text, suffix = _values(frame, unit)
     fig = go.Figure(
         [
             go.Bar(
                 x=frame.index,
-                y=frame[col],
+                y=y[col],
+                customdata=text[col],
                 name=str(col),
                 marker_color=[HOT if x in highlight else color for x in frame.index],
                 marker_cornerradius=2,
@@ -139,7 +205,7 @@ def bars(
         ]
     )
     fig.update_layout(barmode="stack" if stack else "group")
-    return _style(fig, suffix, ticks)
+    return _style(fig, unit, suffix, ticks)
 
 
 def lines(
@@ -147,15 +213,18 @@ def lines(
     colors: Sequence[str] = SERIES,
     *,
     dashed: Sequence[str] = (),
-    suffix: str = "",
+    unit: str = "",
     ticks: str | None = None,
 ) -> go.Figure:
-    """A line per column of `frame`; `dashed` columns are the secondary ones, like a percentile."""
+    """A line per column of `frame`; `dashed` columns are the secondary ones, like a percentile.
+    `unit` as for `bars`."""
+    y, text, suffix = _values(frame, unit)
     fig = go.Figure(
         [
             go.Scatter(
                 x=frame.index,
-                y=frame[col],
+                y=y[col],
+                customdata=text[col],
                 name=str(col),
                 mode="lines",
                 connectgaps=True,
@@ -165,7 +234,7 @@ def lines(
             for col, color in zip(frame.columns, cycle(colors), strict=False)
         ]
     )
-    return _style(fig, suffix, ticks)
+    return _style(fig, unit, suffix, ticks)
 
 
 def _legend(fig: go.Figure) -> list[tuple[str, str]]:

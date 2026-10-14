@@ -19,6 +19,8 @@ class Period:
     # Charts draw the last `buckets` calendar days ("D"), weeks ("W") or months ("M").
     freq: str
     buckets: int
+    # The oldest record synced. Charts start at its bucket instead of drawing empty ones before it.
+    start: pd.Timestamp | None = None
 
     def window(self, now: pd.Timestamp, back: int = 0) -> tuple[pd.Timestamp, pd.Timestamp]:
         """(start, end] of the period, or with back=1 of the one before it."""
@@ -28,7 +30,11 @@ class Period:
     def edges(self, now: pd.Timestamp, tz: str) -> tuple[list[pd.Timestamp], list[pd.Timestamp]]:
         """Each bucket's local start, to label it, and the UTC boundaries between them."""
         local = now.tz_convert(tz).tz_localize(None).to_period(self.freq)
-        starts = [p.start_time for p in pd.period_range(end=local, periods=self.buckets)]
+        periods = pd.period_range(end=local, periods=self.buckets)
+        if not pd.isna(self.start):
+            first = self.start.tz_convert(tz).tz_localize(None).to_period(self.freq)
+            periods = periods[periods >= min(first, local)]
+        starts = [p.start_time for p in periods]
         bounds = [
             s.tz_localize(tz, ambiguous=True, nonexistent="shift_forward").tz_convert("UTC")
             for s in starts

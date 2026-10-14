@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from functools import partial
 from typing import Any
@@ -53,6 +54,11 @@ def test_buckets_are_local_calendar_periods_ending_now() -> None:
     assert edges[-1] == now
     months, _ = PERIODS["12m"].edges(now, "UTC")
     assert (months[0], months[-1]) == (pd.Timestamp("2025-11-01"), pd.Timestamp("2026-10-01"))
+    # Synced history from mid-July: no empty months before it, and never no bucket at all.
+    synced, _ = replace(PERIODS["12m"], start=pd.Timestamp("2026-07-14T09:00Z")).edges(now, "UTC")
+    assert synced == [pd.Timestamp(f"2026-{m:02}-01") for m in (7, 8, 9, 10)]
+    ahead, _ = replace(PERIODS["12m"], start=now + timedelta(days=40)).edges(now, "UTC")
+    assert ahead == [pd.Timestamp("2026-10-01")]
 
 
 def ci_jobs() -> pd.DataFrame:

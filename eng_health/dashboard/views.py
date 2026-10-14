@@ -28,6 +28,7 @@ from .charts import (
     card,
     cell,
     esc,
+    fmt,
     grid,
     head,
     html,
@@ -65,7 +66,8 @@ class Context:
     jobs: pd.DataFrame  # as pipelines.prepare returns them; empty without GitHub
     failures: pd.DataFrame
     prices: Mapping[str, float]
-    period: Period
+    period: Period  # its charts start at the oldest PR
+    ci_period: Period  # the same, starting at the oldest CI run
     now: pd.Timestamp
     tz: str
     no_ci: str  # why `jobs` is empty
@@ -115,7 +117,7 @@ class Context:
     @cached_property
     def ci(self) -> Numbers:
         stats = partial(digest.ci_stats, self.att, self.billed)
-        return digest.numbers(stats, self.period, self.now, self.tz)
+        return digest.numbers(stats, self.ci_period, self.now, self.tz)
 
     @cached_property
     def moves(self) -> list[Move]:
@@ -130,20 +132,6 @@ def go(view: str) -> None:
 
 def _link(view: str, label: str, key: str) -> None:
     st.button(f"{label} →", type="tertiary", on_click=go, args=(view,), key=key)
-
-
-def _value(v: float | None, unit: str) -> str:
-    if v is None:
-        return "–"
-    if unit == "$":
-        return f"${v:,.2f}"
-    if unit == "%":
-        return f"{v:.1f}%"
-    return f"{v:,.1f}{unit}" if v % 1 else f"{v:,.0f}{unit}"
-
-
-def _hours(v: float) -> str:
-    return "–" if pd.isna(v) else f"{v:.1f} h"
 
 
 def _change(ratio: float) -> str:
@@ -182,7 +170,7 @@ def _kpis(changes: Sequence[Change], views: Sequence[str] = ()) -> None:
             with st.container(gap=None, key=f"cell-{i}"):
                 html(
                     f'<div><div class="kpi-label">{esc(c.label)}</div><div class="kpi-row">'
-                    f'<span class="kpi-value">{esc(_value(c.now, c.unit))}</span>'
+                    f'<span class="kpi-value">{esc(fmt(c.now, c.unit))}</span>'
                     f'<span class="delta tone-{tone}">{esc(delta or "")}</span></div>'
                     f"{spark(c.trend, HOT if tone == 'red' else INK)}</div>"
                 )
@@ -477,7 +465,11 @@ def shipping(c: Context) -> None:
                 ticks=c.ticks,
             ),
         ),
-        ("Open PRs", f"at the end of each {unit}", lines(t[["open"]], ticks=c.ticks)),
+        (
+            "Open PRs",
+            f"at the end of each {unit}",
+            lines(t[["open"]].set_axis(["Open"], axis=1), ticks=c.ticks),
+        ),
     ]
     if not c.sizes.empty:
         charts += [
@@ -488,8 +480,12 @@ def shipping(c: Context) -> None:
             ),
             (
                 "Time to merge by size",
-                "median hours",
-                bars(c.sizes[["Median to merge (h)"]], highlight=_LARGE, suffix="h"),
+                "median",
+                bars(
+                    c.sizes[["Median to merge (h)"]].set_axis(["Median to merge"], axis=1),
+                    highlight=_LARGE,
+                    unit=" h",
+                ),
             ),
         ]
     grid(charts)
@@ -504,7 +500,7 @@ def shipping(c: Context) -> None:
                 cell(r["Merged"], "n"),
                 cell(r["Opened"], "n"),
                 cell(r["Open now"], "n"),
-                cell(_hours(r["Median to merge (h)"]), "hot" if hot else "n"),
+                cell(fmt(r["Median to merge (h)"], " h"), "hot" if hot else "n"),
                 trend(r["Trend"], HOT if hot else MID),
             ]
         )
@@ -523,8 +519,8 @@ def review(c: Context) -> None:
         return
     now = c.pr.now
     answer = (
-        f"The first review arrives in {_value(now['wait'], ' h')} at the median, and merging "
-        f"takes {_value(now['ttm'], ' h')}."
+        f"The first review arrives in {fmt(now['wait'], ' h')} at the median, and merging "
+        f"takes {fmt(now['ttm'], ' h')}."
         if now["wait"] is not None and now["ttm"] is not None
         else f"Too few reviews and merges in {c.last} for a median."
     )
@@ -543,23 +539,23 @@ def review(c: Context) -> None:
     charts = [
         (
             "Wait for first review",
-            f"hours, {c.per}",
+            c.per,
             lines(
                 t[["wait_p75", "wait"]].set_axis(["p75", "Median"], axis=1),
                 [LIGHT, INK],
                 dashed=["p75"],
-                suffix="h",
+                unit=" h",
                 ticks=c.ticks,
             ),
         ),
         (
             "Time to merge",
-            f"hours, {c.per}",
+            c.per,
             lines(
                 t[["ttm_p75", "ttm"]].set_axis(["p75", "Median"], axis=1),
                 [LIGHT, HOT],
                 dashed=["p75"],
-                suffix="h",
+                unit=" h",
                 ticks=c.ticks,
             ),
         ),
@@ -664,27 +660,27 @@ def ci(c: Context) -> None:
         (
             "Failure rate by workflow",
             "default branch, % of runs",
-            lines(pl.failure_rate(c.att, c.period, c.now, c.tz), suffix="%", ticks=c.ticks),
+            lines(pl.failure_rate(c.att, c.ci_period, c.now, c.tz), unit="%", ticks=c.ticks),
         )
     ]
     if not slow.empty:
         top = str(slow.index[0])
         median = float(slow["Median (min)"].iloc[0])
-        times = pl.run_times(c.att, top, c.period, c.now, c.tz)
+        times = pl.run_times(c.att, top, c.ci_period, c.now, c.tz)
         was = before["Median (min)"].get(top)
         kpis.append(
             Change(f"{top} median run", median, was, " min", True, tuple(times["Median"].dropna()))
         )
-        answer += f" {top} is the slowest workflow, at {median:.1f} min median."
+        answer += f" {top} is the slowest workflow, at {fmt(median, ' min')} median."
         charts.append(
             (
                 f"{top} run time",
-                "minutes",
+                c.per,
                 lines(
                     times[["p90", "Median"]],
                     [LIGHT, HOT],
                     dashed=["p90"],
-                    suffix="m",
+                    unit=" min",
                     ticks=c.ticks,
                 ),
             )
@@ -705,29 +701,29 @@ def ci(c: Context) -> None:
         ),
         (
             "Time lost to reruns",
-            f"runner hours, {c.per}",
-            bars(t[["rerun_hours"]], suffix="h", ticks=c.ticks),
+            f"runner time, {c.per}",
+            bars(t[["rerun_hours"]].set_axis(["Lost"], axis=1), unit=" h", ticks=c.ticks),
         ),
     ]
     grid(charts)
 
     rows = []
-    slowest = pl.slowest_jobs(c.jobs, c.period, c.now, c.tz).head(10).reset_index()
+    slowest = pl.slowest_jobs(c.jobs, c.ci_period, c.now, c.tz).head(10).reset_index()
     for r in slowest.to_dict("records"):
         worse = r["Change"] > 0.1
         rows.append(
             [
                 cell(r["name"]),
                 cell(r["pipeline"], "m"),
-                cell(f"{r['Median (min)']:.1f}", "n"),
-                cell(f"{r['90th pct (min)']:.1f}", "n"),
+                cell(fmt(r["Median (min)"], " min"), "n"),
+                cell(fmt(r["90th pct (min)"], " min"), "n"),
                 _change(r["Change"]),
                 trend(r["Trend"], HOT if worse else MID),
             ]
         )
     table(
         "Slowest jobs",
-        f"minutes, successful runs, {c.last}",
+        f"successful runs, {c.last}",
         ["Job", "Workflow", "Median", "p90", "Change", "Trend"],
         "minmax(0,2fr) 120px 80px 80px 80px 96px",
         rows,
@@ -763,8 +759,8 @@ def cost(c: Context) -> None:
         c,
         "Cost",
         "What's it costing?",
-        f"{_value(spent.now, '$')} in {c.last}{change}, across {minutes:,.0f} CI minutes. "
-        f"Reruns cost {_value(reruns, '$')} of it. Estimated at list price, before any minutes "
+        f"{fmt(spent.now, '$')} in {c.last}{change}, across {minutes:,.0f} CI minutes. "
+        f"Reruns cost {fmt(reruns, '$')} of it. Estimated at list price, before any minutes "
         "your plan includes.",
     )
     yearly = (spent.now or 0) / c.period.days * 365
@@ -776,7 +772,7 @@ def cost(c: Context) -> None:
             Change("Yearly, at this pace", yearly, None, "$", None),
         ]
     )
-    repos = pl.cost_by_repository(c.billed, c.period, c.now, c.tz)
+    repos = pl.cost_by_repository(c.billed, c.ci_period, c.now, c.tz)
     costs = repos[["Est. cost ($)"]].sort_values("Est. cost ($)", ascending=False)
     grid(
         [
@@ -784,7 +780,7 @@ def cost(c: Context) -> None:
                 "Minutes by workflow",
                 c.per,
                 bars(
-                    pl.minutes_by_pipeline(c.billed, c.period, c.now, c.tz),
+                    pl.minutes_by_pipeline(c.billed, c.ci_period, c.now, c.tz),
                     stack=True,
                     ticks=c.ticks,
                 ),
@@ -792,7 +788,11 @@ def cost(c: Context) -> None:
             (
                 "Cost by repository",
                 f"US dollars, {c.last}",
-                bars(costs, highlight=list(costs.index[:1])),
+                bars(
+                    costs.set_axis(["Est. cost"], axis=1),
+                    highlight=list(costs.index[:1]),
+                    unit="$",
+                ),
             ),
         ]
     )
@@ -800,7 +800,7 @@ def cost(c: Context) -> None:
         [
             linked(str(repo), c.repo_link(str(repo))),
             cell(f"{r['Minutes']:,.0f}", "n"),
-            cell(_value(r["Est. cost ($)"], "$"), "n"),
+            cell(fmt(r["Est. cost ($)"], "$"), "n"),
             cell(f"{r['Share']:.0%}", "n"),
             _change(r["Change"]),
             trend(r["Trend"], HOT if r["Change"] > 0.1 else MID),
@@ -880,7 +880,7 @@ def people(c: Context) -> None:
                     cell(r["Merged"], "n"),
                     cell(r["Reviews"], "n"),
                     *lines_cells,
-                    cell(_hours(r["Median to merge (h)"]), "hot" if hot else "n"),
+                    cell(fmt(r["Median to merge (h)"], " h"), "hot" if hot else "n"),
                     trend(r["Trend"]),
                 ]
             )
