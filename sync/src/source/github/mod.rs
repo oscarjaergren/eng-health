@@ -4,6 +4,7 @@
 mod convert;
 pub(crate) mod types;
 
+use std::sync::Mutex;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -15,7 +16,7 @@ use crate::config::{GitHubSettings, OwnerType};
 use crate::http::Http;
 use crate::model::{Platform, PullRequest, Repo, Team};
 use crate::rules::{identity, parse_time};
-use crate::source::{People, Source, SourceError};
+use crate::source::{Page, People, Source, SourceError};
 
 pub use convert::convert;
 use types::{PrNode, PullData, PullsData, RateLimit, ReposData, Response};
@@ -141,6 +142,8 @@ pub struct GitHub {
     pub(crate) http: Http,
     endpoint: String,
     pub(crate) settings: GitHubSettings,
+    /// The points budget as the last page of PRs left it, shared by every repository's reads.
+    budget: Mutex<Option<RateLimit>>,
 }
 
 impl GitHub {
@@ -165,6 +168,7 @@ impl GitHub {
             http: Http::new("github", headers, false).with_backoff(backoff),
             endpoint: endpoint.to_owned(),
             settings,
+            budget: Mutex::new(None),
         }
     }
 
@@ -210,18 +214,18 @@ impl GitHub {
         }
     }
 
-    /// Pause before the next query if it might not fit in what is left.
-    async fn pace(&self, limit: Option<&RateLimit>) -> Result<(), SourceError> {
-        let Some(limit) = limit else { return Ok(()) };
-        tracing::debug!(
-            "github: that page cost {} points, {} left",
-            limit.cost,
-            limit.remaining
-        );
-        if limit.remaining > limit.cost * 2 {
-            return Ok(());
-        }
-        let reset = DateTime::parse_from_rfc3339(&limit.reset_at).map_or(0, |t| t.timestamp());
+    /// Pause before a page of PRs if the last one left too little budget for it.
+    async fn pace(&self) -> Result<(), SourceError> {
+        let reset = {
+            let budget = self.budget.lock().expect("no thread panics holding it");
+            let Some(limit) = budget.as_ref() else {
+                return Ok(());
+            };
+            if limit.remaining > limit.cost * 2 {
+                return Ok(());
+            }
+            DateTime::parse_from_rfc3339(&limit.reset_at).map_or(0, |t| t.timestamp())
+        };
         self.http
             .wait_for_rate_limit(crate::http::until(reset))
             .await
@@ -354,34 +358,41 @@ impl Source for GitHub {
         &self,
         repo: &Repo,
         since: DateTime<Utc>,
-    ) -> Result<Vec<Item>, SourceError> {
-        let mut out = Vec::new();
-        let mut cursor: Option<String> = None;
-        loop {
-            let vars = json!({
-                "owner": self.settings.owner, "name": repo.name, "cursor": cursor,
-                "pageSize": PAGE_SIZE, "nested": NESTED, "threads": THREADS,
-            });
-            let data: PullsData = self.query(&format!("{PULLS}{PR_FIELDS}"), vars).await?;
-            let page = data
-                .repository
-                .ok_or_else(|| {
-                    SourceError::Api(format!("github: repository {} not found", repo.name))
-                })?
-                .pull_requests;
-            for node in page.nodes {
-                let updated = parse_time(Some(&node.updated_at)).map(crate::model::Timestamp::get);
-                if updated.is_some_and(|u| u < since) {
-                    return Ok(out); // newest first, so nothing older is new
-                }
-                out.push(Item::new(node));
-            }
-            if !page.page_info.has_next_page {
-                return Ok(out);
-            }
-            self.pace(data.rate_limit.as_ref()).await?;
-            cursor = page.page_info.end_cursor;
+        cursor: Option<&str>,
+    ) -> Result<Page<Item>, SourceError> {
+        self.pace().await?;
+        let vars = json!({
+            "owner": self.settings.owner, "name": repo.name, "cursor": cursor,
+            "pageSize": PAGE_SIZE, "nested": NESTED, "threads": THREADS,
+        });
+        let data: PullsData = self.query(&format!("{PULLS}{PR_FIELDS}"), vars).await?;
+        if let Some(limit) = data.rate_limit {
+            tracing::debug!(
+                "github: a page of {} cost {} points, {} left",
+                repo.name,
+                limit.cost,
+                limit.remaining
+            );
+            *self.budget.lock().expect("no thread panics holding it") = Some(limit);
         }
+        let page = data
+            .repository
+            .ok_or_else(|| SourceError::Api(format!("github: repository {} not found", repo.name)))?
+            .pull_requests;
+        // Newest change first: once one is older than `since`, every later page is too. The
+        // older ones on this page stay in it, so a cursor from here skips nothing.
+        let done = page
+            .nodes
+            .last()
+            .is_none_or(|n| parse_time(Some(&n.updated_at)).is_some_and(|u| u.get() < since));
+        Ok(Page {
+            items: page.nodes.into_iter().map(Item::new).collect(),
+            next: page
+                .page_info
+                .end_cursor
+                .filter(|_| page.page_info.has_next_page),
+            done,
+        })
     }
 
     fn number(item: &Item) -> i64 {

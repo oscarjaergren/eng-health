@@ -213,45 +213,55 @@ async fn unknown_owner_is_an_error() {
 }
 
 #[tokio::test]
-async fn listing_stops_at_prs_older_than_since() {
+async fn a_page_reaching_back_past_since_is_the_last_one() {
     let server = MockServer::start().await;
     Mock::given(body_partial_json(json!({"variables": {"cursor": null}})))
         .respond_with(pulls_page(
             &[
                 pr(3, "2026-09-05T00:00:00Z"),
                 pr(2, "2026-09-02T00:00:00Z"),
-                pr(4, "2026-09-01T00:00:00Z"), // exactly at since: still wanted
                 pr(1, "2026-08-01T00:00:00Z"),
             ],
             Some("c1"),
         ))
         .mount(&server)
         .await;
-    Mock::given(body_partial_json(json!({"variables": {"cursor": "c1"}})))
-        .respond_with(pulls_page(&[pr(0, "2026-07-01T00:00:00Z")], None))
-        .expect(0)
-        .mount(&server)
-        .await;
-
     let since = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
-    let items = client(&server, OwnerType::Org)
-        .pull_requests(&repo(), since)
+    let page = client(&server, OwnerType::Org)
+        .pull_requests(&repo(), since, None)
         .await
         .unwrap();
+    // The whole page, PR 1 too: a read that goes further back continues after it, not before.
     assert_eq!(
-        items.iter().map(|i| i.node.number).collect::<Vec<_>>(),
-        [3, 2, 4]
+        page.items.iter().map(|i| i.node.number).collect::<Vec<_>>(),
+        [3, 2, 1]
     );
+    assert_eq!((page.next.as_deref(), page.done), (Some("c1"), true));
 }
 
 #[tokio::test]
-async fn a_spent_budget_stops_the_listing_until_it_resets() {
+async fn a_page_ending_exactly_at_since_is_not_the_last() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(pulls_page(&[pr(4, "2026-09-01T00:00:00Z")], Some("c1")))
+        .mount(&server)
+        .await;
+    let since = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
+    let page = client(&server, OwnerType::Org)
+        .pull_requests(&repo(), since, None)
+        .await
+        .unwrap();
+    assert!(!page.done);
+}
+
+#[tokio::test]
+async fn a_spent_budget_holds_the_next_page_until_it_resets() {
     let server = MockServer::start().await;
     let page = |cursor: Option<&str>, next: Option<&str>| {
         Mock::given(body_partial_json(json!({"variables": {"cursor": cursor}}))).respond_with(
             ResponseTemplate::new(200).set_body_json(json!({"data": {
-                // Too little left for another page, and the reset an hour away.
-                "rateLimit": {"cost": 4, "remaining": 6, "resetAt": (Utc::now() + chrono::Duration::hours(1)).to_rfc3339()},
+                // Two pages' worth is too little, and the reset an hour away.
+                "rateLimit": {"cost": 4, "remaining": 8, "resetAt": (Utc::now() + chrono::Duration::hours(1)).to_rfc3339()},
                 "repository": {"pullRequests": {
                     "pageInfo": {"hasNextPage": next.is_some(), "endCursor": next},
                     "nodes": [pr(1, "2026-09-02T00:00:00Z")]
@@ -261,15 +271,17 @@ async fn a_spent_budget_stops_the_listing_until_it_resets() {
     };
     page(None, Some("c1")).mount(&server).await;
     page(Some("c1"), None).expect(0).mount(&server).await;
-    let err = client(&server, OwnerType::Org)
-        .pull_requests(&repo(), long_ago())
+    let gh = client(&server, OwnerType::Org);
+    let first = gh.pull_requests(&repo(), long_ago(), None).await.unwrap();
+    let err = gh
+        .pull_requests(&repo(), long_ago(), first.next.as_deref())
         .await
         .unwrap_err();
     assert!(matches!(err, SourceError::Api(m) if m.contains("rate limit resets")));
 }
 
 #[tokio::test]
-async fn a_listing_reads_every_page_back_to_since() {
+async fn pages_follow_the_cursor_to_the_end() {
     let server = MockServer::start().await;
     // 10 review threads a PR, not 30: GitHub prices the page at 4 points instead of 9.
     Mock::given(body_partial_json(
@@ -283,8 +295,16 @@ async fn a_listing_reads_every_page_back_to_since() {
         .mount(&server)
         .await;
     let gh = client(&server, OwnerType::Org);
-    let items = gh.pull_requests(&repo(), long_ago()).await.unwrap();
-    assert_eq!(items.len(), 2);
+    let first = gh.pull_requests(&repo(), long_ago(), None).await.unwrap();
+    assert_eq!((first.next.as_deref(), first.done), (Some("c1"), false));
+    let last = gh
+        .pull_requests(&repo(), long_ago(), first.next.as_deref())
+        .await
+        .unwrap();
+    assert_eq!(
+        (last.items[0].node.number, last.next, last.done),
+        (1, None, false)
+    );
     assert_eq!(gh.requests(), 2);
 }
 
@@ -319,9 +339,10 @@ async fn truncated_lists_are_completed_with_a_follow_up_query() {
 
     let gh = client(&server, OwnerType::Org);
     let item = gh
-        .pull_requests(&repo(), long_ago())
+        .pull_requests(&repo(), long_ago(), None)
         .await
         .unwrap()
+        .items
         .remove(0);
     assert!(!item.complete);
     let item = gh.complete(&repo(), item).await.unwrap();
@@ -342,9 +363,10 @@ async fn failed_follow_up_leaves_the_pr_incomplete() {
         .await;
     let gh = client(&server, OwnerType::Org);
     let item = gh
-        .pull_requests(&repo(), long_ago())
+        .pull_requests(&repo(), long_ago(), None)
         .await
         .unwrap()
+        .items
         .remove(0);
     let item = gh.complete(&repo(), item).await.unwrap();
     assert!(!item.complete);
@@ -378,7 +400,7 @@ async fn graphql_errors_are_reported() {
         .mount(&server)
         .await;
     let err = client(&server, OwnerType::Org)
-        .pull_requests(&repo(), long_ago())
+        .pull_requests(&repo(), long_ago(), None)
         .await
         .unwrap_err();
     assert!(matches!(err, SourceError::Api(m) if m.contains("Could not resolve")));
@@ -402,7 +424,11 @@ async fn waits_out_a_rate_limit_then_retries() {
         .mount(&server)
         .await;
     let gh = client(&server, OwnerType::Org);
-    let items = gh.pull_requests(&repo(), long_ago()).await.unwrap();
+    let items = gh
+        .pull_requests(&repo(), long_ago(), None)
+        .await
+        .unwrap()
+        .items;
     assert_eq!(items.len(), 1);
     assert_eq!(gh.requests(), 2);
 }
@@ -421,9 +447,10 @@ async fn transient_server_errors_are_retried() {
         .await;
     let gh = client(&server, OwnerType::Org);
     assert!(
-        gh.pull_requests(&repo(), long_ago())
+        gh.pull_requests(&repo(), long_ago(), None)
             .await
             .unwrap()
+            .items
             .is_empty()
     );
     assert_eq!(gh.requests(), 3);

@@ -41,6 +41,17 @@ pub enum SourceError {
     Api(String),
 }
 
+/// One page of a repository's PRs, the most recently changed first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Page<T> {
+    pub items: Vec<T>,
+    /// Where older PRs continue, while there may be more: a position only the source reads. A
+    /// source that lists by time alone gives an empty one, meaning "ask again from further back".
+    pub next: Option<String>,
+    /// The page reached back past `since`, so later pages hold nothing newer.
+    pub done: bool,
+}
+
 /// The sync loop is generic over this, so each platform keeps its own raw types.
 pub trait Source: Send + Sync {
     /// A pull request as listed, possibly still missing comments and reviews.
@@ -57,12 +68,13 @@ pub trait Source: Send + Sync {
     /// Teams with their members and, where the platform links them, repositories.
     fn teams(&self) -> impl Future<Output = Result<Vec<Team>, SourceError>> + Send;
 
-    /// PRs changed since `since`.
+    /// A page of PRs changed since `since`, starting at `cursor` (the newest when `None`).
     fn pull_requests(
         &self,
         repo: &Repo,
         since: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Vec<Self::Item>, SourceError>> + Send;
+        cursor: Option<&str>,
+    ) -> impl Future<Output = Result<Page<Self::Item>, SourceError>> + Send;
 
     fn number(item: &Self::Item) -> i64;
 

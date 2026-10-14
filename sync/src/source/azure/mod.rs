@@ -16,7 +16,7 @@ use crate::config::AzureSettings;
 use crate::http::Http;
 use crate::model::{Platform, PullRequest, Repo, State, Team};
 use crate::rules::identity;
-use crate::source::{People, Source, SourceError};
+use crate::source::{Page, People, Source, SourceError};
 
 pub use convert::convert;
 use types::{List, PullRequestInfo, RepoInfo, Thread};
@@ -233,7 +233,8 @@ impl Source for Azure {
         &self,
         repo: &Repo,
         since: DateTime<Utc>,
-    ) -> Result<Vec<Item>, SourceError> {
+        _cursor: Option<&str>,
+    ) -> Result<Page<Item>, SourceError> {
         // minTime filters on creation date unless told otherwise, which would miss older PRs
         // that closed since the last sync. So: every open PR, plus anything closed since then.
         let mut prs = self
@@ -261,13 +262,19 @@ impl Source for Azure {
                 None => prs.push(pr),
             }
         }
-        Ok(prs
-            .into_iter()
-            .map(|pr| Item {
-                pr,
-                threads: Threads::NotFetched,
-            })
-            .collect())
+        // Everything since `since` comes at once, so there is no next page, only PRs from
+        // further back: an empty cursor, for a read with an earlier `since`.
+        Ok(Page {
+            items: prs
+                .into_iter()
+                .map(|pr| Item {
+                    pr,
+                    threads: Threads::NotFetched,
+                })
+                .collect(),
+            next: Some(String::new()),
+            done: true,
+        })
     }
 
     fn number(item: &Item) -> i64 {

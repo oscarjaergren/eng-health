@@ -13,6 +13,8 @@
 -- 4: repositories. Every sync lists them anyway, so the next one fills the table.
 -- 5: me. The next sync fills it too.
 -- 6: teams, team_members and team_repos. And again.
+-- 7: repo_sync. The engine fills it from each platform's last sync, so an existing database
+--    doesn't read its history again.
 
 CREATE TABLE IF NOT EXISTS pull_requests (
     key TEXT PRIMARY KEY,
@@ -100,4 +102,15 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_attempt TEXT,
     last_error TEXT
 );
-PRAGMA user_version = 6;
+-- How far each repository's PRs have been read, so a sync that runs out of API budget continues
+-- where it stopped instead of starting over. No row: never read.
+CREATE TABLE IF NOT EXISTS repo_sync (
+    platform TEXT NOT NULL,
+    repo_id TEXT NOT NULL,
+    -- Every PR changed since this, less an hour's overlap, has been read.
+    synced TEXT NOT NULL,
+    -- Where older history continues while some is left to read: opaque to all but the source.
+    cursor TEXT,
+    PRIMARY KEY (platform, repo_id)
+);
+PRAGMA user_version = 7;

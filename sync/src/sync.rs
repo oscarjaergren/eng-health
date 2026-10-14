@@ -1,26 +1,31 @@
 //! Reads changed pull requests from a source into the store.
 //!
-//! Start an hour before the last successful sync, skip PRs whose stored copy
-//! is still accurate, save in batches, and only move the window forward when
-//! every repository was read.
+//! Each repository keeps a bookmark: when it was last read, and where its older history continues
+//! while some is left. A sync reads every repository's changes first (a repository it never read,
+//! its recent PRs), then older history. Each page is saved as it arrives and the bookmark moves
+//! with it, so a sync that runs out of API budget continues where it stopped, not from the top.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use futures::{StreamExt, stream};
 use serde::Serialize;
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::model::{Platform, PullRequest, Repo};
 use crate::source::{People, Source, SourceError};
-use crate::store::{Store, StoreError};
+use crate::store::{Bookmark, Store, StoreError};
 
 /// Re-read a little before the last sync so PRs that changed while it ran are not missed.
 pub const OVERLAP: Duration = Duration::hours(1);
 /// How far back a sync reads: the dashboard's longest view is 12 months, against the 12 before.
 /// Reading every PR ever made would cost a large organisation days of API budget.
 const HISTORY: Duration = Duration::days(2 * 365);
+/// How far back a repository read for the first time goes before any repository's older history,
+/// so the first sync of a large organisation shows recent work first.
+const RECENT: Duration = Duration::days(90);
 const BATCH: usize = 50;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -103,12 +108,6 @@ pub async fn sync_platform<S: Source>(
         ..Report::default()
     };
     let started = Utc::now();
-    let state = db(store, move |s| s.sync_state(platform.as_str())).await?;
-    let floor = started - HISTORY;
-    let since = match state.last_sync {
-        Some(t) if !opts.full => (t - OVERLAP).max(floor),
-        _ => floor,
-    };
     let say = |fraction: f64, message: String| {
         (opts.on_event)(Event::Progress {
             platform: platform.to_string(),
@@ -117,13 +116,13 @@ pub async fn sync_platform<S: Source>(
         });
     };
 
-    let outcome = run(source, store, opts, since, &mut report, &say).await?;
+    let outcome = run(source, store, opts, started, &mut report, &say).await?;
     report.requests = source.requests();
     finish(store, platform.as_str(), started, outcome, opts, report).await
 }
 
-/// Record how a sync went. The window (`last_sync`) only moves forward when
-/// everything was read and nothing was interrupted.
+/// Record how a sync went. `last_sync` only moves forward when everything was read and nothing
+/// was interrupted.
 pub(crate) async fn finish(
     store: &Shared,
     key: &'static str,
@@ -164,7 +163,7 @@ async fn run<S: Source>(
     source: &S,
     store: &Shared,
     opts: &Options<'_>,
-    since: chrono::DateTime<Utc>,
+    started: DateTime<Utc>,
     report: &mut Report,
     say: &(dyn Fn(f64, String) + Sync),
 ) -> Result<Result<(), SourceError>, SyncError> {
@@ -187,99 +186,289 @@ async fn run<S: Source>(
         // Reading teams can need a permission the PR sync doesn't (GitHub's read:org).
         Err(e) => tracing::warn!("{platform}: could not read teams: {e}"),
     }
+    if opts.full {
+        db(store, move |s| s.forget_bookmarks(platform)).await?;
+    }
+    let marks = db(store, move |s| s.bookmarks(platform)).await?;
     tracing::info!(
-        "{platform}: {} repositories, listing PRs since {since}",
-        repos.len()
+        "{platform}: {} repositories, {} read before",
+        repos.len(),
+        marks.len()
     );
-    let cached: HashMap<String, PullRequest> = db(store, move |s| s.pull_requests(Some(platform)))
+    let mut reader = Reader {
+        source,
+        store,
+        opts,
+        cached: cached(store, platform).await?,
+        started,
+        permits: Semaphore::new(opts.workers),
+    };
+
+    let changes = repos
+        .iter()
+        .map(|r| {
+            (
+                r,
+                marks.get(&r.id).cloned().map_or(Pass::First, Pass::Changes),
+            )
+        })
+        .collect();
+    let progress = |done, total, repo: &Repo| {
+        say(
+            0.5 * f64_ratio(done, total),
+            format!("{platform}: read {}", repo.name),
+        );
+    };
+    if let Err(e) = read_all(&reader, changes, report, &progress).await? {
+        return Ok(Err(e));
+    }
+    if reader.stopped() {
+        return Ok(Ok(()));
+    }
+
+    let marks = db(store, move |s| s.bookmarks(platform)).await?;
+    let history: Vec<_> = repos
+        .iter()
+        .filter_map(|r| {
+            marks
+                .get(&r.id)
+                .filter(|m| m.cursor.is_some())
+                .map(|m| (r, Pass::History(m.clone())))
+        })
+        .collect();
+    if !history.is_empty() {
+        // What the first pass saved counts as stored now, so it isn't fetched again.
+        reader.cached = cached(store, platform).await?;
+        let progress = |done, total, repo: &Repo| {
+            say(
+                0.5 + 0.5 * f64_ratio(done, total),
+                format!("{platform}: older PRs of {}", repo.name),
+            );
+        };
+        if let Err(e) = read_all(&reader, history, report, &progress).await? {
+            return Ok(Err(e));
+        }
+    }
+    say(1.0, format!("{platform}: done"));
+    Ok(Ok(()))
+}
+
+async fn cached(
+    store: &Shared,
+    platform: Platform,
+) -> Result<HashMap<String, PullRequest>, SyncError> {
+    Ok(db(store, move |s| s.pull_requests(Some(platform)))
         .await?
         .into_iter()
         .map(|pr| (pr.key(), pr))
-        .collect();
+        .collect())
+}
 
-    // Phase 1: list PRs per repository; keep the new and changed ones.
-    let mut to_complete = Vec::new();
-    let total = repos.len().max(1);
-    let mut listing = stream::iter(&repos)
-        .map(|repo| async move { (repo, source.pull_requests(repo, since).await) })
-        .buffer_unordered(opts.workers);
+/// Read each repository's pass, several at once. Rejected credentials stop them all; any other
+/// failure is one repository's, which is reported while the rest go on.
+async fn read_all<S: Source>(
+    reader: &Reader<'_, S>,
+    passes: Vec<(&Repo, Pass)>,
+    report: &mut Report,
+    progress: &dyn Fn(usize, usize, &Repo),
+) -> Result<Result<(), SourceError>, SyncError> {
+    let total = passes.len();
+    let mut reading = stream::iter(passes)
+        .map(|(repo, pass)| async move { (repo, reader.read(repo, &pass).await) })
+        .buffer_unordered(reader.opts.workers);
     let mut done = 0;
-    while let Some((repo, result)) = listing.next().await {
+    while let Some((repo, result)) = reading.next().await {
+        let (counts, outcome) = result?;
         done += 1;
-        say(
-            0.3 * f64_ratio(done, total),
-            format!("{platform}: listed {}", repo.name),
-        );
-        match result {
-            Ok(items) => {
-                report.listed += items.len();
-                for item in items {
-                    let prev = cached.get(&key(platform, repo, S::number(&item)));
-                    if prev.is_none_or(|p| !source.is_unchanged(&item, p)) {
-                        to_complete.push((repo, item));
-                    }
-                }
-            }
+        progress(done, total, repo);
+        report.listed += counts.listed;
+        report.saved += counts.saved;
+        report.incomplete += counts.incomplete;
+        match outcome {
+            Ok(()) => {}
             Err(e @ SourceError::Auth(_)) => return Ok(Err(e)),
             Err(e) => report.errors.push(format!("{}: {e}", repo.name)),
         }
-        if opts.stop.load(Ordering::Relaxed) {
-            return Ok(Ok(()));
-        }
     }
-    drop(listing);
-    tracing::info!(
-        "{platform}: {} PRs listed, {} new or changed to fetch",
-        report.listed,
-        to_complete.len()
-    );
-
-    // Phase 2: fill in details for those PRs, saving in batches so an
-    // interrupted sync keeps what it already has.
-    let total = to_complete.len().max(1);
-    let mut people = People::new();
-    let mut batch = Vec::with_capacity(BATCH);
-    let mut completing = stream::iter(to_complete)
-        .map(|(repo, item)| async move { (repo, source.complete(repo, item).await) })
-        .buffer_unordered(opts.workers);
-    let mut done = 0;
-    let mut failure = None;
-    while let Some((repo, result)) = completing.next().await {
-        done += 1;
-        let item = match result {
-            Ok(item) => item,
-            Err(e) => {
-                failure = Some(e);
-                break;
-            }
-        };
-        let pr = source.convert(repo, &item, &mut people);
-        report.incomplete += usize::from(!pr.details_complete);
-        batch.push(pr);
-        if batch.len() >= BATCH {
-            report.saved += save(store, &mut batch, &people).await?;
-        }
-        say(
-            0.3 + 0.7 * f64_ratio(done, total),
-            format!("{platform}: {done}/{total} PRs"),
-        );
-        if opts.stop.load(Ordering::Relaxed) {
-            break;
-        }
-    }
-    report.saved += save(store, &mut batch, &people).await?;
-    Ok(failure.map_or(Ok(()), Err))
+    Ok(Ok(()))
 }
 
-async fn save(
-    store: &Shared,
-    batch: &mut Vec<PullRequest>,
-    people: &People,
-) -> Result<usize, SyncError> {
-    if batch.is_empty() {
-        return Ok(0);
+/// Which read of a repository this is: how far back it goes, and what its bookmark says after
+/// each page.
+enum Pass {
+    /// Never read: back from the newest PR, the bookmark following each page.
+    First,
+    /// Read before: what changed since. The bookmark moves once all of it is in.
+    Changes(Bookmark),
+    /// Older history, from the bookmark's cursor.
+    History(Bookmark),
+}
+
+impl Pass {
+    fn since(&self, started: DateTime<Utc>) -> DateTime<Utc> {
+        let since = match self {
+            Self::First => started - RECENT,
+            Self::Changes(mark) => mark.synced - OVERLAP,
+            Self::History(_) => started - HISTORY,
+        };
+        since.max(started - HISTORY)
     }
-    let prs = std::mem::take(batch);
+
+    /// The bookmark once a page is saved, if it moves: `next` is where older PRs continue, and
+    /// `last` says the page was this read's last.
+    fn bookmark(
+        &self,
+        started: DateTime<Utc>,
+        next: Option<String>,
+        last: bool,
+    ) -> Option<Bookmark> {
+        match self {
+            Self::First => Some(Bookmark {
+                synced: started,
+                cursor: next,
+            }),
+            Self::Changes(mark) => last.then(|| Bookmark {
+                synced: started,
+                cursor: mark.cursor.clone(),
+            }),
+            Self::History(mark) => Some(Bookmark {
+                synced: mark.synced,
+                cursor: next.filter(|_| !last),
+            }),
+        }
+    }
+}
+
+#[derive(Default)]
+struct Counts {
+    listed: usize,
+    saved: usize,
+    incomplete: usize,
+}
+
+/// What reading a repository needs, shared by all the repositories a sync reads at once.
+struct Reader<'a, S> {
+    source: &'a S,
+    store: &'a Shared,
+    opts: &'a Options<'a>,
+    cached: HashMap<String, PullRequest>,
+    started: DateTime<Utc>,
+    /// One per request in flight: repositories are read side by side, and so are a page's PRs.
+    permits: Semaphore,
+}
+
+impl<S: Source> Reader<'_, S> {
+    fn stopped(&self) -> bool {
+        self.opts.stop.load(Ordering::Relaxed)
+    }
+
+    async fn permit(&self) -> SemaphorePermit<'_> {
+        self.permits
+            .acquire()
+            .await
+            .expect("the semaphore is never closed")
+    }
+
+    /// One repository's pass, page by page, saving each page and then its bookmark. Returns what
+    /// it read, with the failure that stopped it early, if one did.
+    async fn read(
+        &self,
+        repo: &Repo,
+        pass: &Pass,
+    ) -> Result<(Counts, Result<(), SourceError>), SyncError> {
+        let platform = self.source.platform();
+        let since = pass.since(self.started);
+        let mut cursor = match pass {
+            Pass::History(mark) => mark.cursor.clone(),
+            _ => None,
+        };
+        let mut counts = Counts::default();
+        loop {
+            if self.stopped() {
+                return Ok((counts, Ok(())));
+            }
+            let page = {
+                let _permit = self.permit().await;
+                self.source
+                    .pull_requests(repo, since, cursor.as_deref())
+                    .await
+            };
+            let page = match page {
+                Ok(page) => page,
+                Err(e) => return Ok((counts, Err(e))),
+            };
+            counts.listed += page.items.len();
+            let wanted = page.items.into_iter().filter(|item| {
+                let stored = self.cached.get(&key(platform, repo, S::number(item)));
+                // Older history only fills in what is missing: a PR that changed since shows up
+                // in the changes instead. On Azure DevOps, which can't tell, open PRs would
+                // otherwise be fetched twice.
+                stored.is_none_or(|p| match pass {
+                    Pass::History(_) => !p.details_complete,
+                    _ => !self.source.is_unchanged(item, p),
+                })
+            });
+            if let Err(e) = self.save(repo, wanted, &mut counts).await? {
+                return Ok((counts, Err(e)));
+            }
+            if self.stopped() {
+                return Ok((counts, Ok(()))); // part of the page may be unsaved: the bookmark waits
+            }
+            // Where this read goes on, unless the page was its last. A source answering with the
+            // cursor it was given would otherwise have the same page read forever.
+            let next = page
+                .next
+                .clone()
+                .filter(|n| !page.done && cursor.as_ref() != Some(n));
+            if let Some(mark) = pass.bookmark(self.started, page.next, next.is_none()) {
+                let id = repo.id.clone();
+                db(self.store, move |s| s.save_bookmark(platform, &id, &mark)).await?;
+            }
+            if next.is_none() {
+                return Ok((counts, Ok(())));
+            }
+            cursor = next;
+        }
+    }
+
+    /// Fill in what the listing left out of `items`, a few at a time, and save them in batches.
+    async fn save(
+        &self,
+        repo: &Repo,
+        items: impl Iterator<Item = S::Item>,
+        counts: &mut Counts,
+    ) -> Result<Result<(), SourceError>, SyncError> {
+        let mut people = People::new();
+        let mut batches = stream::iter(items)
+            .map(|item| async move {
+                let _permit = self.permit().await;
+                self.source.complete(repo, item).await
+            })
+            .buffer_unordered(self.opts.workers)
+            .chunks(BATCH);
+        while let Some(batch) = batches.next().await {
+            let mut prs = Vec::with_capacity(batch.len());
+            let mut failure = None;
+            for result in batch {
+                match result {
+                    Ok(item) => prs.push(self.source.convert(repo, &item, &mut people)),
+                    Err(e) => failure = Some(e),
+                }
+            }
+            counts.incomplete += prs.iter().filter(|p| !p.details_complete).count();
+            counts.saved += save(self.store, prs, &people).await?;
+            if let Some(e) = failure {
+                return Ok(Err(e));
+            }
+            if self.stopped() {
+                break;
+            }
+        }
+        Ok(Ok(()))
+    }
+}
+
+async fn save(store: &Shared, prs: Vec<PullRequest>, people: &People) -> Result<usize, SyncError> {
     let people = people.clone();
     db(store, move |s| s.upsert(&prs, &people)).await
 }
