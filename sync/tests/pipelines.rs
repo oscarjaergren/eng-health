@@ -17,7 +17,7 @@ use eng_health::{Event, Options};
 use eng_health::{GitHubSettings, OwnerType};
 use eng_health::{Job, failed_tests, failures_in, sync_pipelines};
 use serde_json::{Value, json};
-use wiremock::matchers::{body_string_contains, method, path, query_param};
+use wiremock::matchers::{body_string_contains, method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn client(server: &MockServer) -> GitHub {
@@ -152,6 +152,114 @@ async fn jobs_from_every_attempt_are_stored_and_reruns_refetched() {
 
     // Same run, same attempt: nothing is fetched again (the jobs mock expects one call).
     assert_eq!(sync(&gh, &store).await.saved, 0);
+}
+
+async fn mount_repos(server: &MockServer, names: &[&str]) {
+    let nodes: Vec<_> = names
+        .iter()
+        .zip(1..)
+        .map(|(name, id)| json!({"databaseId": id, "name": name, "isPrivate": false, "defaultBranchRef": {"name": "main"}}))
+        .collect();
+    Mock::given(body_string_contains("organization(login"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({"data": {"organization": {"repositories": {
+                "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": nodes
+            }}}}),
+        ))
+        .mount(server)
+        .await;
+}
+
+async fn sync_one_at_a_time(gh: &GitHub, store: &Arc<Mutex<Store>>) -> eng_health::Report {
+    let quiet = |_: Event| {};
+    let opts = Options {
+        full: false,
+        workers: 1,
+        stop: Arc::new(AtomicBool::new(false)),
+        on_event: &quiet,
+    };
+    sync_pipelines(gh, store, &opts).await.unwrap()
+}
+
+#[tokio::test]
+async fn a_rejected_token_stops_the_ci_sync_with_one_error() {
+    let server = MockServer::start().await;
+    mount_repos(&server, &["web", "api"]).await;
+    Mock::given(path("/repos/acme/web/actions/runs"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+    Mock::given(path("/repos/acme/api/actions/runs"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+    let (_dir, store) = store();
+    let report = sync_one_at_a_time(&client(&server), &store).await;
+    assert_eq!(report.errors.len(), 1, "{report:?}");
+    assert!(report.errors[0].contains("credentials"));
+}
+
+#[tokio::test]
+async fn a_failing_repository_leaves_the_rest_to_sync() {
+    let server = MockServer::start().await;
+    mount_repos(&server, &["api", "web"]).await;
+    Mock::given(path("/repos/acme/api/actions/runs"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    mount_runs(&server, 1).await;
+    mount_jobs(&server, &[job(1, 1, "success")], 1).await;
+    let (_dir, store) = store();
+    let report = sync_one_at_a_time(&client(&server), &store).await;
+    assert_eq!(report.errors.len(), 1, "{report:?}");
+    assert_eq!(report.saved, 2);
+}
+
+#[tokio::test]
+async fn a_rejected_token_while_fetching_jobs_stops_the_ci_sync() {
+    let server = MockServer::start().await;
+    mount_repo(&server).await;
+    mount_runs(&server, 1).await;
+    Mock::given(path_regex("/jobs$"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+    let (_dir, store) = store();
+    let report = sync_one_at_a_time(&client(&server), &store).await;
+    assert_eq!(report.errors.len(), 1, "{report:?}");
+    assert!(report.errors[0].contains("credentials"));
+}
+
+#[tokio::test]
+async fn a_failing_run_leaves_the_rest_to_sync() {
+    let server = MockServer::start().await;
+    mount_repo(&server).await;
+    mount_runs(&server, 1).await;
+    Mock::given(path("/repos/acme/web/actions/runs/99/jobs"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    Mock::given(path("/repos/acme/web/actions/runs/100/jobs"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"jobs": [job(50, 1, "success")]})),
+        )
+        .mount(&server)
+        .await;
+    let (_dir, store) = store();
+    let report = sync_one_at_a_time(&client(&server), &store).await;
+    assert_eq!(
+        (report.errors.len(), report.incomplete),
+        (1, 1),
+        "{report:?}"
+    );
+    assert!(
+        store
+            .lock()
+            .unwrap()
+            .run_attempts("7")
+            .unwrap()
+            .contains_key(&100)
+    );
 }
 
 #[tokio::test]

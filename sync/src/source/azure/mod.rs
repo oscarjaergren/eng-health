@@ -303,7 +303,7 @@ impl Source for Azure {
         );
         item.threads = match self.json::<List<Thread>>(&url, &[]).await {
             Ok(list) => Threads::Fetched(list.value),
-            Err(e @ SourceError::Auth(_)) => return Err(e),
+            Err(e) if e.stops_the_sync() => return Err(e),
             Err(e) => {
                 tracing::warn!(
                     "azure_devops: {} !{}: {e}",

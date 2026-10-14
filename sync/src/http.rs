@@ -135,10 +135,12 @@ impl Http {
 
     pub(crate) async fn wait_for_rate_limit(&self, wait: Duration) -> Result<(), SourceError> {
         if wait > MAX_RATE_LIMIT_WAIT {
-            return Err(SourceError::Api(format!(
-                "{}: rate limit resets in {} minutes; try later",
+            let reset = chrono::Utc::now() + chrono::TimeDelta::from_std(wait).unwrap_or_default();
+            return Err(SourceError::Budget(format!(
+                "{}: the API budget is used up until {} UTC. The next sync continues where \
+                 this one stopped.",
                 self.label,
-                wait.as_secs() / 60
+                reset.format("%H:%M")
             )));
         }
         tracing::warn!(
@@ -195,4 +197,38 @@ fn rate_limit_wait(status: StatusCode, headers: &HeaderMap) -> Option<Duration> 
 pub(crate) fn until(unix_seconds: i64) -> Duration {
     let secs = unix_seconds - chrono::Utc::now().timestamp() + 1;
     Duration::from_secs(u64::try_from(secs).unwrap_or(1).max(1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn http() -> Http {
+        Http::new("github", HeaderMap::new(), false)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_wait_up_to_the_limit_is_waited_out() {
+        assert_eq!(
+            http().wait_for_rate_limit(MAX_RATE_LIMIT_WAIT).await,
+            Ok(())
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_longer_wait_stops_the_sync_saying_when_the_budget_resets() {
+        let at = || {
+            (chrono::Utc::now() + chrono::TimeDelta::hours(3))
+                .format("until %H:%M UTC")
+                .to_string()
+        };
+        let before = at();
+        let err = http()
+            .wait_for_rate_limit(Duration::from_secs(3 * 3600))
+            .await
+            .unwrap_err();
+        // Either side of a minute turning over while it ran.
+        let said = |m: &str| m.contains(&before) || m.contains(&at());
+        assert!(matches!(&err, SourceError::Budget(m) if said(m)), "{err}");
+    }
 }

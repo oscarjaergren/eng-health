@@ -52,6 +52,7 @@ struct Fake {
     failing_cursors: Mutex<Vec<&'static str>>,
     /// Every PR in one page, as Azure DevOps lists them.
     one_page: AtomicBool,
+    budget_spent: AtomicBool,
     auth_broken: AtomicBool,
 }
 
@@ -139,6 +140,11 @@ impl Source for Fake {
             || cursor.is_some_and(|c| self.failing_cursors.lock().unwrap().contains(&c))
         {
             return Err(SourceError::Api("github: 502".into()));
+        }
+        if self.budget_spent.load(Ordering::Relaxed) {
+            return Err(SourceError::Budget(
+                "github: the API budget is used up until 14:32 UTC.".into(),
+            ));
         }
         let mut prs = self
             .prs
@@ -504,6 +510,18 @@ async fn a_failed_repository_keeps_its_bookmark_and_the_window() {
     // The repository that was read moves on regardless.
     assert_eq!(bookmark(&env, "2"), api);
     assert!(bookmark(&env, "1").unwrap().synced > before.unwrap());
+}
+
+#[tokio::test]
+async fn a_spent_budget_stops_the_sync_with_one_message() {
+    let (fake, env) = (Fake::default(), env());
+    fake.add("web", 1, &[]);
+    fake.add("api", 1, &[]);
+    fake.budget_spent.store(true, Ordering::Relaxed);
+    let report = run(&fake, &env, false).await;
+    // Once, not once for each repository: every other request would fail the same way.
+    assert_eq!(report.errors.len(), 1, "{report:?}");
+    assert!(report.errors[0].contains("budget is used up"));
 }
 
 #[tokio::test]

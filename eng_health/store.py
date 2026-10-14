@@ -110,6 +110,18 @@ class Store:
         with self._conn() as c:
             return dict(c.execute("SELECT id, name FROM people"))
 
+    def history(self, platform: str) -> tuple[int, int]:
+        """How many of a platform's repositories have been read back two years, of how many.
+        Short of all while a large organisation's first syncs fill in its history."""
+        with self._conn() as c:
+            done, total = c.execute(
+                "SELECT COUNT(s.repo_id) FILTER (WHERE s.cursor IS NULL), COUNT(*) "
+                "FROM repositories r LEFT JOIN repo_sync s USING (platform, repo_id) "
+                "WHERE r.platform = ?",
+                (platform,),
+            ).fetchone()
+        return int(done), int(total)
+
     def sync_state(self, platform: str) -> SyncState:
         with self._conn() as c:
             row = c.execute(

@@ -25,6 +25,9 @@ log = logging.getLogger("eng-health")
 
 EXIT_CONFIG = 2
 EXIT_INTERRUPTED = 130
+# How the engine words a sync that stopped because the API budget ran out (sync/src/http.rs).
+# Not a failure: the next sync continues where it stopped.
+BUDGET_SPENT = "API budget is used up"
 
 _LOCAL_BUILD = Path(__file__).resolve().parent.parent / "sync" / "target" / "release" / "eng-health"
 

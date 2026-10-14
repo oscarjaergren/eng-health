@@ -34,6 +34,20 @@ def test_reads_pull_requests_people_and_sync_state(tmp_path: Path) -> None:
     assert store.sync_state("azure_devops").last_sync is None
 
 
+def test_history_counts_the_repositories_read_back_two_years(tmp_path: Path) -> None:
+    db = WritableStore(tmp_path / "db.sqlite")
+    db.upsert_repositories(
+        {"platform": p, "repo_id": r, "name": r, "owner": "o", "is_archived": 0, "is_fork": 0}
+        for p, r in [("github", "1"), ("github", "2"), ("github", "3"), ("azure_devops", "a")]
+    )
+    db.set_bookmark("github", "1", NOW, None)  # all of it
+    db.set_bookmark("github", "2", NOW, "c2")  # older history still to read
+    # 3 not read at all yet.
+    store = Store(db.path)
+    assert store.history("github") == (1, 3)
+    assert store.history("azure_devops") == (0, 1)
+
+
 def test_version_follows_writes(tmp_path: Path) -> None:
     db = WritableStore(tmp_path / "db.sqlite")
     before = Store(db.path).version()
