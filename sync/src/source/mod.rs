@@ -57,11 +57,11 @@ pub trait Source: Send + Sync {
     /// Teams with their members and, where the platform links them, repositories.
     fn teams(&self) -> impl Future<Output = Result<Vec<Team>, SourceError>> + Send;
 
-    /// PRs changed since `since` (all of them when `None`).
+    /// PRs changed since `since`.
     fn pull_requests(
         &self,
         repo: &Repo,
-        since: Option<DateTime<Utc>>,
+        since: DateTime<Utc>,
     ) -> impl Future<Output = Result<Vec<Self::Item>, SourceError>> + Send;
 
     fn number(item: &Self::Item) -> i64;

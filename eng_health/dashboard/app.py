@@ -171,8 +171,8 @@ def main() -> None:
     raw, failures = load_pipelines(store) if github else (pd.DataFrame(), pd.DataFrame())
     if df.empty and raw.empty:
         st.info(
-            "Nothing synced yet. The first sync reads every PR and can take several minutes on "
-            "a large organisation."
+            "Nothing synced yet. The first sync reads two years of PRs and can take several "
+            "minutes on a large organisation."
         )
         st.button(
             "Sync now",

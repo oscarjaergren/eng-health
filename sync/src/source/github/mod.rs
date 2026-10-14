@@ -22,10 +22,13 @@ use types::{PrNode, PullData, PullsData, RateLimit, ReposData, Response};
 
 pub(crate) const API: &str = "https://api.github.com/graphql";
 
-/// PRs per page and items per nested list. Kept modest so each query stays
-/// cheap against GitHub's points budget; larger lists get a follow-up query.
+/// PRs per page and items per nested list. GitHub prices a query by how much it could return:
+/// each list under a list costs one request per parent, so review threads (each with its own
+/// comments) dominate. 10 threads a PR prices a page at 4 points where 30 cost 9. A PR with more
+/// gets a follow-up query, at 1 point.
 const PAGE_SIZE: i64 = 25;
 const NESTED: i64 = 30;
+const THREADS: i64 = 10;
 const NESTED_MAX: i64 = 100;
 
 const PR_FIELDS: &str = "
@@ -36,7 +39,7 @@ fragment PrFields on PullRequest {
   reviewRequests(first: 25) { nodes { requestedReviewer { ... on User { login } } } }
   reviews(first: $nested) { totalCount nodes { state submittedAt author { __typename login } } }
   comments(first: $nested) { totalCount nodes { createdAt author { __typename login } } }
-  reviewThreads(first: $nested) {
+  reviewThreads(first: $threads) {
     totalCount
     nodes { comments(first: $nested) { totalCount nodes { createdAt author { __typename login } } } }
   }
@@ -95,7 +98,7 @@ fn team_more(field: &str) -> String {
 }
 
 const PULLS: &str = "
-query($owner: String!, $name: String!, $cursor: String, $pageSize: Int!, $nested: Int!) {
+query($owner: String!, $name: String!, $cursor: String, $pageSize: Int!, $nested: Int!, $threads: Int!) {
   rateLimit { cost remaining resetAt }
   repository(owner: $owner, name: $name) {
     pullRequests(first: $pageSize, after: $cursor, orderBy: { field: UPDATED_AT, direction: DESC }) {
@@ -105,7 +108,7 @@ query($owner: String!, $name: String!, $cursor: String, $pageSize: Int!, $nested
 }";
 
 const PULL: &str = "
-query($owner: String!, $name: String!, $number: Int!, $nested: Int!) {
+query($owner: String!, $name: String!, $number: Int!, $nested: Int!, $threads: Int!) {
   repository(owner: $owner, name: $name) { pullRequest(number: $number) { ...PrFields } }
 }";
 
@@ -210,6 +213,11 @@ impl GitHub {
     /// Pause before the next query if it might not fit in what is left.
     async fn pace(&self, limit: Option<&RateLimit>) -> Result<(), SourceError> {
         let Some(limit) = limit else { return Ok(()) };
+        tracing::debug!(
+            "github: that page cost {} points, {} left",
+            limit.cost,
+            limit.remaining
+        );
         if limit.remaining > limit.cost * 2 {
             return Ok(());
         }
@@ -253,7 +261,8 @@ impl GitHub {
         nested: i64,
     ) -> Result<Option<PrNode>, SourceError> {
         let vars = json!({
-            "owner": self.settings.owner, "name": repo.name, "number": number, "nested": nested,
+            "owner": self.settings.owner, "name": repo.name, "number": number,
+            "nested": nested, "threads": nested,
         });
         let data: PullData = self.query(&format!("{PULL}{PR_FIELDS}"), vars).await?;
         Ok(data.repository.and_then(|r| r.pull_request))
@@ -344,14 +353,14 @@ impl Source for GitHub {
     async fn pull_requests(
         &self,
         repo: &Repo,
-        since: Option<DateTime<Utc>>,
+        since: DateTime<Utc>,
     ) -> Result<Vec<Item>, SourceError> {
         let mut out = Vec::new();
         let mut cursor: Option<String> = None;
         loop {
             let vars = json!({
                 "owner": self.settings.owner, "name": repo.name, "cursor": cursor,
-                "pageSize": PAGE_SIZE, "nested": NESTED,
+                "pageSize": PAGE_SIZE, "nested": NESTED, "threads": THREADS,
             });
             let data: PullsData = self.query(&format!("{PULLS}{PR_FIELDS}"), vars).await?;
             let page = data
@@ -362,9 +371,7 @@ impl Source for GitHub {
                 .pull_requests;
             for node in page.nodes {
                 let updated = parse_time(Some(&node.updated_at)).map(crate::model::Timestamp::get);
-                if let (Some(since), Some(updated)) = (since, updated)
-                    && updated < since
-                {
+                if updated.is_some_and(|u| u < since) {
                     return Ok(out); // newest first, so nothing older is new
                 }
                 out.push(Item::new(node));

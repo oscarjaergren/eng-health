@@ -18,6 +18,9 @@ use crate::store::{Store, StoreError};
 
 /// Re-read a little before the last sync so PRs that changed while it ran are not missed.
 pub const OVERLAP: Duration = Duration::hours(1);
+/// How far back a sync reads: the dashboard's longest view is 12 months, against the 12 before.
+/// Reading every PR ever made would cost a large organisation days of API budget.
+const HISTORY: Duration = Duration::days(2 * 365);
 const BATCH: usize = 50;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -101,10 +104,10 @@ pub async fn sync_platform<S: Source>(
     };
     let started = Utc::now();
     let state = db(store, move |s| s.sync_state(platform.as_str())).await?;
-    let since = if opts.full {
-        None
-    } else {
-        state.last_sync.map(|t| t - OVERLAP)
+    let floor = started - HISTORY;
+    let since = match state.last_sync {
+        Some(t) if !opts.full => (t - OVERLAP).max(floor),
+        _ => floor,
     };
     let say = |fraction: f64, message: String| {
         (opts.on_event)(Event::Progress {
@@ -161,7 +164,7 @@ async fn run<S: Source>(
     source: &S,
     store: &Shared,
     opts: &Options<'_>,
-    since: Option<chrono::DateTime<Utc>>,
+    since: chrono::DateTime<Utc>,
     report: &mut Report,
     say: &(dyn Fn(f64, String) + Sync),
 ) -> Result<Result<(), SourceError>, SyncError> {
@@ -185,7 +188,7 @@ async fn run<S: Source>(
         Err(e) => tracing::warn!("{platform}: could not read teams: {e}"),
     }
     tracing::info!(
-        "{platform}: {} repositories, listing PRs since {since:?}",
+        "{platform}: {} repositories, listing PRs since {since}",
         repos.len()
     );
     let cached: HashMap<String, PullRequest> = db(store, move |s| s.pull_requests(Some(platform)))

@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use eng_health::Store;
 use eng_health::parse_time;
 use eng_health::{Event, OVERLAP, Options, sync_platform};
@@ -38,7 +38,7 @@ struct Item {
 #[derive(Default)]
 struct Fake {
     prs: Mutex<HashMap<&'static str, Vec<Pr>>>,
-    since_seen: Mutex<Vec<Option<DateTime<Utc>>>>,
+    since_seen: Mutex<Vec<DateTime<Utc>>>,
     completed: Mutex<Vec<i64>>,
     failing_details: Mutex<Vec<i64>>,
     failing_repos: Mutex<Vec<&'static str>>,
@@ -101,7 +101,7 @@ impl Source for Fake {
     async fn pull_requests(
         &self,
         repo: &Repo,
-        since: Option<DateTime<Utc>>,
+        since: DateTime<Utc>,
     ) -> Result<Vec<Item>, SourceError> {
         self.since_seen.lock().unwrap().push(since);
         if self
@@ -211,6 +211,13 @@ async fn run(fake: &Fake, env: &Env, full: bool) -> eng_health::Report {
     sync_platform(fake, &env.store, &opts).await.unwrap()
 }
 
+/// Whether every listing reached back two years, give or take the test's own runtime.
+fn read_all_history(fake: &Fake) -> bool {
+    let floor = Utc::now() - Duration::days(730);
+    let seen = fake.since_seen.lock().unwrap();
+    !seen.is_empty() && seen.iter().all(|s| (*s - floor).num_seconds().abs() < 60)
+}
+
 fn comments(env: &Env) -> BTreeMap<String, BTreeMap<String, i64>> {
     env.store
         .lock()
@@ -233,7 +240,9 @@ async fn first_sync_saves_everything_and_keeps_same_numbers_apart() {
         (report.repositories, report.listed, report.saved),
         (2, 2, 2)
     );
-    assert_eq!(*fake.since_seen.lock().unwrap(), [None, None]);
+    // Two years back, not every PR ever: the dashboard shows 12 months against the 12 before.
+    assert!(read_all_history(&fake));
+    assert_eq!(fake.since_seen.lock().unwrap().len(), 2);
     assert_eq!(comments(&env).len(), 2);
     let db = rusqlite::Connection::open(env.dir.path().join("db.sqlite")).unwrap();
     let name: String = db
@@ -334,11 +343,11 @@ async fn incremental_sync_starts_before_the_last_success() {
         .unwrap();
     fake.since_seen.lock().unwrap().clear();
     run(&fake, &env, false).await;
-    assert_eq!(*fake.since_seen.lock().unwrap(), [Some(last - OVERLAP); 2]);
+    assert_eq!(*fake.since_seen.lock().unwrap(), [last - OVERLAP; 2]);
 
     fake.since_seen.lock().unwrap().clear();
     run(&fake, &env, true).await;
-    assert_eq!(*fake.since_seen.lock().unwrap(), [None, None]);
+    assert!(read_all_history(&fake));
 }
 
 #[tokio::test]
