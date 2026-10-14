@@ -96,6 +96,16 @@ class WritableStore(Store):
         with self._write() as c:
             c.execute("INSERT OR REPLACE INTO me VALUES (?, ?)", (platform, identity))
 
+    def set_bookmark(
+        self, platform: str, repo_id: str, synced: datetime, cursor: str | None
+    ) -> None:
+        """How far a repository's PRs have been read, as the engine's `repo_sync` keeps it."""
+        with self._write() as c:
+            c.execute(
+                "INSERT OR REPLACE INTO repo_sync VALUES (?, ?, ?, ?)",
+                (platform, repo_id, synced.isoformat(), cursor),
+            )
+
     def upsert_test_failures(self, rows: Iterable[tuple[str, int, str]]) -> None:
         with self._write() as c:
             c.executemany("INSERT OR IGNORE INTO test_failures VALUES (?, ?, ?)", list(rows))

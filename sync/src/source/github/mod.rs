@@ -414,7 +414,7 @@ impl Source for GitHub {
         match self.fetch_one(repo, item.node.number, NESTED_MAX).await {
             Ok(Some(node)) => Ok(Item::new(node)),
             Ok(None) => Ok(item),
-            Err(e @ SourceError::Auth(_)) => Err(e),
+            Err(e) if e.stops_the_sync() => Err(e),
             Err(e) => {
                 tracing::warn!("github: {} #{}: {e}", repo.name, item.node.number);
                 Ok(item)

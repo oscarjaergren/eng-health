@@ -37,8 +37,20 @@ pub enum SourceError {
     /// Credentials were rejected. Never retried: another attempt will not help.
     #[error("{0}")]
     Auth(String),
+    /// The API budget is used up for longer than a sync waits. The next sync continues.
+    #[error("{0}")]
+    Budget(String),
     #[error("{0}")]
     Api(String),
+}
+
+impl SourceError {
+    /// Whether every further request would fail the same way, so the sync stops instead of
+    /// reporting it once for each repository.
+    #[must_use]
+    pub fn stops_the_sync(&self) -> bool {
+        matches!(self, Self::Auth(_) | Self::Budget(_))
+    }
 }
 
 /// One page of a repository's PRs, the most recently changed first.

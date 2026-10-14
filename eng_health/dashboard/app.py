@@ -14,7 +14,7 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-from .. import metrics, prefs
+from .. import metrics, prefs, sync
 from .. import pipelines as pl
 from ..config import ConfigError, Settings
 from ..store import SchemaError, Store
@@ -47,8 +47,13 @@ def _browser_timezone() -> str:
 
 def _sync_status(settings: Settings, store: Store) -> str:
     states = [store.sync_state(p) for p in settings.platforms]
-    if any(s.last_error for s in states):
+    if any(s.last_error and sync.BUDGET_SPENT not in s.last_error for s in states):
         return ":red[Last sync failed: see Settings]"
+    read = [store.history(p) for p in settings.platforms]
+    done, total = sum(d for d, _ in read), sum(t for _, t in read)
+    if done < total:
+        # A large organisation's first syncs, each stopping when the API budget runs out.
+        return f"History {done / total:.0%} read"
     synced = [s.last_sync for s in states if s.last_sync]
     # The platform synced longest ago is the one the numbers might be stale for.
     return f"Synced {relative(min(synced))}" if len(synced) == len(states) else "Not synced yet"

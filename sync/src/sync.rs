@@ -264,8 +264,8 @@ async fn cached(
         .collect())
 }
 
-/// Read each repository's pass, several at once. Rejected credentials stop them all; any other
-/// failure is one repository's, which is reported while the rest go on.
+/// Read each repository's pass, several at once. Rejected credentials or a spent API budget stop
+/// them all; any other failure is one repository's, which is reported while the rest go on.
 async fn read_all<S: Source>(
     reader: &Reader<'_, S>,
     passes: Vec<(&Repo, Pass)>,
@@ -286,7 +286,7 @@ async fn read_all<S: Source>(
         report.incomplete += counts.incomplete;
         match outcome {
             Ok(()) => {}
-            Err(e @ SourceError::Auth(_)) => return Ok(Err(e)),
+            Err(e) if e.stops_the_sync() => return Ok(Err(e)),
             Err(e) => report.errors.push(format!("{}: {e}", repo.name)),
         }
     }

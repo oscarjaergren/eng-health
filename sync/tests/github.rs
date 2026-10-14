@@ -277,7 +277,8 @@ async fn a_spent_budget_holds_the_next_page_until_it_resets() {
         .pull_requests(&repo(), long_ago(), first.next.as_deref())
         .await
         .unwrap_err();
-    assert!(matches!(err, SourceError::Api(m) if m.contains("rate limit resets")));
+    // The dashboard tells this from a failure by these words (eng_health/sync.py).
+    assert!(matches!(err, SourceError::Budget(m) if m.contains("API budget is used up until")));
 }
 
 #[tokio::test]
@@ -348,6 +349,28 @@ async fn truncated_lists_are_completed_with_a_follow_up_query() {
     let item = gh.complete(&repo(), item).await.unwrap();
     assert!(item.complete);
     assert_eq!(item.node.comments.nodes.len(), 2);
+}
+
+#[tokio::test]
+async fn rejected_credentials_on_a_follow_up_are_not_swallowed() {
+    let server = MockServer::start().await;
+    Mock::given(body_string_contains("pullRequests(first"))
+        .respond_with(pulls_page(&[truncated_pr()], None))
+        .mount(&server)
+        .await;
+    Mock::given(body_string_contains("pullRequest(number"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+    let gh = client(&server, OwnerType::Org);
+    let item = gh
+        .pull_requests(&repo(), long_ago(), None)
+        .await
+        .unwrap()
+        .items
+        .remove(0);
+    let err = gh.complete(&repo(), item).await.unwrap_err();
+    assert!(matches!(err, SourceError::Auth(_)));
 }
 
 #[tokio::test]

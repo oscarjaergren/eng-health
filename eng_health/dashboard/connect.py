@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from .. import connections
+from .. import connections, sync
 from ..config import Settings
 from ..models import PLATFORM_NAMES
 from ..store import Store
@@ -126,10 +126,21 @@ def _sync(settings: Settings, store: Store) -> None:
     for key, name in rows:
         state = store.sync_state(key)
         st.markdown(f"{name} :gray[· {relative(state.last_sync)}]")
-        if state.last_error:
+        done, total = store.history(key)
+        if done < total:
+            st.caption(
+                f"Older history: {done} of {total} repositories read back two years. Each sync "
+                "continues where the last one stopped."
+            )
+        if state.last_error and sync.BUDGET_SPENT in state.last_error:
+            st.info(state.last_error, icon=None)
+        elif state.last_error:
             st.error(f"Last sync failed: {state.last_error}", icon=None)
     with st.expander("More sync options"):
-        st.caption("These re-read everything and can take a while.")
+        st.caption(
+            "These start over and read everything again, which on a large organisation takes "
+            "several syncs."
+        )
         if st.button("Re-read all PRs", width="stretch"):
             request_sync("full")
             show(False)

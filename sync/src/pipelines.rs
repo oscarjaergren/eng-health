@@ -397,7 +397,7 @@ async fn run(
                         .map(|r| (repo, r)),
                 );
             }
-            Err(e @ SourceError::Auth(_)) => return Ok(Err(e)),
+            Err(e) if e.stops_the_sync() => return Ok(Err(e)),
             Err(e) => report.errors.push(format!("{}: {e}", repo.name)),
         }
     }
@@ -442,7 +442,7 @@ async fn run(
                 jobs_batch.extend(jobs);
                 tests_batch.extend(tests.into_iter().map(|t| (repo.id.clone(), run_id, t)));
             }
-            Err(e @ SourceError::Auth(_)) => return Ok(Err(e)),
+            Err(e) if e.stops_the_sync() => return Ok(Err(e)),
             Err(e) => {
                 report.incomplete += 1;
                 report.errors.push(format!("{}: {e}", repo.name));

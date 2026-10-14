@@ -25,6 +25,8 @@ serde_json = "1"
 thiserror = "2"
 
 [dev-dependencies]
+# test-util: tests that wait out a rate limit run on a paused clock instead of sleeping.
+tokio = { version = "1", features = ["test-util"] }
 wiremock = "0.6"
 pretty_assertions = "1"
 tempfile = "3"

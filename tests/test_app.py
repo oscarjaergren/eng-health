@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -206,6 +207,31 @@ def test_sync_errors_are_shown(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     assert at.status[0].label == "Sync finished with errors"
     assert any("502" in e.value for e in at.error)
     assert "Last sync failed" in text(at)
+
+
+def test_a_spent_budget_shows_history_progress_not_a_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    live_github(monkeypatch, tmp_path)
+    db = WritableStore(tmp_path / "eng_health.db")
+    repo = {"platform": "github", "owner": "acme", "is_archived": 0, "is_fork": 0}
+    db.upsert_repositories({**repo, "repo_id": r, "name": r} for r in ["1", "2"])
+    now = datetime.now(UTC)
+    db.set_bookmark("github", "1", now, None)
+    db.set_bookmark("github", "2", now, "c2")
+    # As the engine words it (sync/src/http.rs).
+    budget = (
+        "github: the API budget is used up until 14:32 UTC. The next sync continues where "
+        "this one stopped."
+    )
+    db.record_sync("github", now, succeeded=False, error=budget)
+    at = run()
+    assert "History 50% read" in text(at)
+    assert "Last sync failed" not in text(at)
+    at.button(key="settings").click().run()
+    assert "1 of 2 repositories read back two years" in text(at)
+    assert budget in [i.value for i in at.info]
+    assert not at.error
 
 
 def test_sync_config_problem_is_shown(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
