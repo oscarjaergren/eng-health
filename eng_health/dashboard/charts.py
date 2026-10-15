@@ -23,8 +23,9 @@ AMBER = "#D09945"
 SERIES = [INK, HOT, AMBER, MID, LIGHT]
 _MUTED = "#8A877F"
 _GRID = "#EFEDE8"
-# Bars and lines are labelled by the bucket's local start: a day, a week or a month.
-TICKS = {"D": "%b %-d", "W": "%b %-d", "M": "%b"}
+# Bars and lines are labelled by the bucket's local start, as (tick, hover title): a day, a week
+# or a month.
+TICKS = {"D": ("%b %-d", "%a %b %-d"), "W": ("%b %-d", "Week of %b %-d"), "M": ("%b", "%B %Y")}
 # The units of a duration, as KPIs and charts name them, in hours.
 DURATIONS = {" h": 1.0, " min": 1 / 60}
 
@@ -141,7 +142,7 @@ def _values(frame: pd.DataFrame, unit: str) -> tuple[pd.DataFrame, pd.DataFrame,
     return hours / per, text, suffix
 
 
-def _style(fig: go.Figure, unit: str, suffix: str, ticks: str | None) -> go.Figure:
+def _style(fig: go.Figure, unit: str, suffix: str, ticks: tuple[str, str] | None) -> go.Figure:
     fig.update_layout(
         height=230,
         margin={"l": 0, "r": 0, "t": 4, "b": 0},
@@ -151,6 +152,9 @@ def _style(fig: go.Figure, unit: str, suffix: str, ticks: str | None) -> go.Figu
         showlegend=False,  # the card header carries it
         bargap=0.35,
         hovermode="x unified",
+        # Plotly gives the hover box the paper's colour, transparent so the card shows through, and
+        # the bars and lines showed through the box with it.
+        hoverlabel={"bgcolor": "#fff", "bordercolor": "#DDD9D0", "font": {"color": INK}},
     )
     fig.update_traces(hovertemplate="%{customdata}")
     # automargin makes room for the tick labels: with theme=None nothing else does. Plotly hides a
@@ -158,10 +162,13 @@ def _style(fig: go.Figure, unit: str, suffix: str, ticks: str | None) -> go.Figu
     fig.update_xaxes(
         showgrid=False,
         linecolor="#DDD9D0",
-        tickformat=ticks,
+        tickformat=ticks[0] if ticks else None,
+        hoverformat=ticks[1] if ticks else None,
         fixedrange=True,
         automargin=True,
         ticklabeloverflow="allow",
+        # The hover box says which bucket; a dotted line through the bar under it only hid the bar.
+        showspikes=False,
     )
     if ticks and fig.data:
         # Ticks on buckets only, counted back from the latest: left to plotly, a few months get one
@@ -189,7 +196,7 @@ def bars(
     stack: bool = False,
     highlight: Sequence[object] = (),
     unit: str = "",
-    ticks: str | None = None,
+    ticks: tuple[str, str] | None = None,
 ) -> go.Figure:
     """A bar per row of `frame` and column; `highlight` reddens those rows of a one-column chart.
     `unit` is a KPI's: "%", "$", or a duration's " h" or " min"."""
@@ -208,6 +215,10 @@ def bars(
         ]
     )
     fig.update_layout(barmode="stack" if stack else "group")
+    if ticks is None:
+        # Names wrap at their spaces rather than tilt.
+        names = [str(x) for x in frame.index]
+        fig.update_xaxes(tickvals=names, ticktext=[n.replace(" ", "<br>") for n in names])
     return _style(fig, unit, suffix, ticks)
 
 
@@ -217,7 +228,7 @@ def lines(
     *,
     dashed: Sequence[str] = (),
     unit: str = "",
-    ticks: str | None = None,
+    ticks: tuple[str, str] | None = None,
 ) -> go.Figure:
     """A line per column of `frame`; `dashed` columns are the secondary ones, like a percentile.
     `unit` as for `bars`."""
@@ -237,7 +248,14 @@ def lines(
             for col, color in zip(frame.columns, cycle(colors), strict=False)
         ]
     )
-    return _style(fig, unit, suffix, ticks)
+    _style(fig, unit, suffix, ticks)
+    # From zero, with room above the top: plotly fits a line's axis to its data, so the line
+    # touched the top, and a rise from 14 to 24 filled the whole height.
+    top = y.max().max()
+    fig.update_yaxes(range=[0, (top if top > 0 else 1) * 1.1])
+    # A thin line marks the bucket under the hover box.
+    fig.update_xaxes(showspikes=True, spikedash="solid", spikecolor=LIGHT, spikethickness=1)
+    return fig
 
 
 def _legend(fig: go.Figure) -> list[tuple[str, str]]:

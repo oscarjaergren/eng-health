@@ -12,7 +12,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from eng_health.cli import main as cli
-from eng_health.dashboard.charts import fmt, lines
+from eng_health.dashboard.charts import bars, fmt, lines
 from eng_health.dashboard.views import VIEWS
 from eng_health.mock import mock_pull_requests
 from eng_health.period import PERIODS
@@ -77,6 +77,15 @@ def test_numbers_read_the_same_everywhere() -> None:
     fig = lines(pd.DataFrame({"Median": [0.0712, 1.5, None]}), unit=" h")
     assert list(fig.data[0].customdata) == ["4.3 min", "90 min", "–"]
     assert (fig.data[0].y[0], fig.layout.yaxis.ticksuffix) == (pytest.approx(4.272), " min")
+
+
+def test_charts_read_cleanly() -> None:
+    # A line's axis starts at zero with room above the line, rather than hugging it.
+    assert list(lines(pd.DataFrame({"Open": [14, 24]})).layout.yaxis.range) == [0, 24 * 1.1]
+    # Names wrap rather than tilt, and the hover box hides what's under it.
+    fig = bars(pd.DataFrame({"Merged": [3]}, index=["Jack Taylor"]))
+    assert list(fig.layout.xaxis.ticktext) == ["Jack<br>Taylor"]
+    assert fig.layout.hoverlabel.bgcolor == "#fff"
 
 
 def test_the_url_picks_the_view_and_period() -> None:
