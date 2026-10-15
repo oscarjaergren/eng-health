@@ -6,7 +6,7 @@ import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cached_property, partial
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import pandas as pd
 import streamlit as st
@@ -17,6 +17,10 @@ from ..digest import Change, Move, Numbers
 from ..metrics import SIZE_LABELS
 from ..period import Period, between
 from . import filters
+
+if TYPE_CHECKING:
+    from plotly.graph_objects import Figure
+
 from .charts import (
     AMBER,
     HOT,
@@ -118,6 +122,29 @@ class Context:
     def ci(self) -> Numbers:
         stats = partial(digest.ci_stats, self.att, self.billed)
         return digest.numbers(stats, self.ci_period, self.now, self.tz)
+
+    @property
+    def ci_repo(self) -> str | None:
+        """The repository the CI runs are from when there is just one. Workflows and jobs only
+        compare within a repository, so the CI views drill into it; with several, they compare
+        repositories."""
+        repos = self.jobs["repository"].unique()
+        return str(repos[0]) if len(repos) == 1 else None
+
+    @cached_property
+    def stretches(self) -> pd.DataFrame:
+        return pl.broken(self.att, self.now)
+
+    def broken_hours(self, start: pd.Timestamp, end: pd.Timestamp) -> float:
+        """Hours main was broken in (start, end], summed over the repositories."""
+        return float(pl.broken_hours(self.stretches, start, end, self.now).sum())
+
+    @cached_property
+    def broken(self) -> pd.DataFrame:
+        """Hours main was broken, a row per chart bucket."""
+        return self.ci_period.each(
+            self.now, self.tz, lambda a, b: {"Broken": self.broken_hours(a, b)}
+        )
 
     @cached_property
     def moves(self) -> list[Move]:
@@ -642,20 +669,150 @@ def _flaky_rows(c: Context) -> list[list[str]]:
     return rows
 
 
+def _broken_change(c: Context) -> Change:
+    return Change(
+        "Time main was broken",
+        c.broken_hours(*c.window),
+        c.broken_hours(*c.period.window(c.now, back=1)),
+        " h",
+        True,
+        tuple(c.broken["Broken"]),
+    )
+
+
+def _ci_charts(c: Context) -> list[tuple[str, str, Figure]]:
+    """The charts that add up across repositories."""
+    t = c.ci.trend
+    outcomes = t[["passed", "passed_on_rerun", "failed"]].set_axis(
+        ["Passed", "Passed on a rerun", "Failed"], axis=1
+    )
+    return [
+        (
+            "Time main was broken",
+            f"default branch, {c.per}",
+            bars(c.broken, [HOT], unit=" h", ticks=c.ticks),
+        ),
+        (
+            "Runs by outcome",
+            f"all workflows, {c.per}",
+            bars(outcomes, [INK, AMBER, HOT], stack=True, ticks=c.ticks),
+        ),
+        (
+            "Time lost to reruns",
+            f"runner time, {c.per}",
+            bars(t[["rerun_hours"]].set_axis(["Lost"], axis=1), unit=" h", ticks=c.ticks),
+        ),
+    ]
+
+
 def ci(c: Context) -> None:
     if not _has_ci(c):
         return
+    if c.ci_repo is None:
+        _ci_repositories(c)
+    else:
+        _ci_repository(c, c.ci_repo)
+    table(
+        "Flaky jobs",
+        "A job failed, then passed on a re-run. Tests below it failed, then passed on the same "
+        "commit.",
+        ["Job / test", "Workflow", "Repository", "Flaky runs", "First seen", "Status"],
+        "minmax(0,2.4fr) 100px 130px 84px 84px 100px",
+        _flaky_rows(c),
+        right={3, 4},
+    )
+    if c.failures.empty:
+        st.caption(
+            "No test results found, so flaky tests can't be shown. eng-health reads JUnit or TRX "
+            "files from artifacts whose name contains test, junit, trx or result. For example, "
+            "after `dotnet test --logger trx`: `uses: actions/upload-artifact@v4` with `name: "
+            "test-results`, `path: '**/*.trx'` and `if: always()`."
+        )
+
+
+def _ci_repositories(c: Context) -> None:
+    """Several repositories: one row each, since their workflows don't compare."""
+    failure = c.ci.change("failure")
+    broken_now = c.stretches[c.stretches["end"].isna()]
+    n = c.jobs["repository"].nunique()
+    answer = (
+        f"{len(broken_now)} of {n} repositories have a broken main right now."
+        if len(broken_now)
+        else "Main is green in every repository."
+    )
+    if failure.now is not None:
+        answer += f" Default-branch runs failed {failure.now:.1f}% of the time in {c.last}."
+    _header(c, "CI", "Is CI slowing us down?", answer)
+    _kpis(
+        [
+            failure,
+            Change("Broken main now", float(len(broken_now)), None),
+            _broken_change(c),
+            c.ci.change("rerun_hours"),
+            c.ci.change("flaky"),
+        ]
+    )
+    grid(_ci_charts(c))
+
+    rows = []
+    for repo, r in pl.repositories(c.att, c.jobs, c.stretches, c.ci_period, c.now, c.tz).iterrows():
+        since = r["Broken since"]
+        broken = pd.notna(since)
+        rows.append(
+            [
+                linked(str(repo), c.repo_link(str(repo))),
+                cell(f"{r['Runs']:,.0f}", "n"),
+                cell(fmt(r["Failure rate"], "%"), "n"),
+                cell(fmt(r["Broken (h)"], " h"), "hot") if r["Broken (h)"] else cell("–", "na"),
+                cell(f"since {since.tz_convert(c.tz):%b %-d}", "hot-tag")
+                if broken
+                else cell("–", "na"),
+                cell(fmt(r["Lost to reruns (h)"], " h"), "n")
+                if r["Lost to reruns (h)"]
+                else cell("–", "na"),
+                cell(f"{r['Flaky jobs']:.0f}", "n"),
+                trend(r["Trend"], HOT if broken else MID),
+            ]
+        )
+    table(
+        "By repository",
+        f"{c.last}, broken first. Open one for its workflows and jobs.",
+        [
+            "Repository",
+            "Runs",
+            "Failure rate",
+            "Broken",
+            "Main now",
+            "Lost to reruns",
+            "Flaky",
+            "Broken trend",
+        ],
+        "minmax(0,1.6fr) 70px 100px 90px 110px 120px 70px 110px",
+        rows,
+        right={1, 2, 3, 5, 6, 7},
+    )
+
+
+def _ci_repository(c: Context, repo: str) -> None:
+    """One repository: its workflows and jobs side by side."""
     start, end = c.window
     slow = pl.durations(c.att[between(c.att["started"], start, end)])
     before = pl.durations(c.att[between(c.att["started"], *c.period.window(c.now, back=1))])
     failure = c.ci.change("failure")
+    broken = _broken_change(c)
+    since = c.stretches.loc[c.stretches["end"].isna(), "start"]
 
     answer = (
-        f"Default-branch runs failed {failure.now:.1f}% of the time in {c.last}."
-        if failure.now is not None
-        else f"No runs finished on the default branch in {c.last}."
+        f"In {repo}, main was broken for {fmt(broken.now, ' h')} in {c.last}"
+        if broken.now
+        else f"In {repo}, main wasn't broken in {c.last}"
     )
-    kpis = [failure]
+    answer += (
+        f", and has been since {since.iloc[0].tz_convert(c.tz):%b %-d}." if len(since) else "."
+    )
+    if failure.now is not None:
+        answer += f" Default-branch runs failed {failure.now:.1f}% of the time."
+    kpis = [failure, broken]
     charts = [
         (
             "Failure rate by workflow",
@@ -688,24 +845,7 @@ def ci(c: Context) -> None:
     kpis += [c.ci.change("rerun_hours"), c.ci.change("flaky")]
     _header(c, "CI", "Is CI slowing us down?", answer)
     _kpis(kpis)
-
-    t = c.ci.trend
-    outcomes = t[["passed", "passed_on_rerun", "failed"]].set_axis(
-        ["Passed", "Passed on a rerun", "Failed"], axis=1
-    )
-    charts += [
-        (
-            "Runs by outcome",
-            f"all workflows, {c.per}",
-            bars(outcomes, [INK, AMBER, HOT], stack=True, ticks=c.ticks),
-        ),
-        (
-            "Time lost to reruns",
-            f"runner time, {c.per}",
-            bars(t[["rerun_hours"]].set_axis(["Lost"], axis=1), unit=" h", ticks=c.ticks),
-        ),
-    ]
-    grid(charts)
+    grid(charts + _ci_charts(c))
 
     rows = []
     slowest = pl.slowest_jobs(c.jobs, c.ci_period, c.now, c.tz).head(10).reset_index()
@@ -729,22 +869,6 @@ def ci(c: Context) -> None:
         rows,
         right={2, 3, 4, 5},
     )
-    table(
-        "Flaky jobs",
-        "A job failed, then passed on a re-run. Tests below it failed, then passed on the same "
-        "commit.",
-        ["Job / test", "Workflow", "Repository", "Flaky runs", "First seen", "Status"],
-        "minmax(0,2.4fr) 100px 130px 84px 84px 100px",
-        _flaky_rows(c),
-        right={3, 4},
-    )
-    if c.failures.empty:
-        st.caption(
-            "No test results found, so flaky tests can't be shown. eng-health reads JUnit or TRX "
-            "files from artifacts whose name contains test, junit, trx or result. For example, "
-            "after `dotnet test --logger trx`: `uses: actions/upload-artifact@v4` with `name: "
-            "test-results`, `path: '**/*.trx'` and `if: always()`."
-        )
 
 
 def cost(c: Context) -> None:
@@ -755,10 +879,12 @@ def cost(c: Context) -> None:
     change = (
         f" ({spent.ratio:+.0%} on the {c.period.name} before)" if spent.ratio is not None else ""
     )
+    repo = c.ci_repo
     _header(
         c,
         "Cost",
         "What's it costing?",
+        f"{f'{repo}: ' if repo else ''}"
         f"{fmt(spent.now, '$')} in {c.last}{change}, across {minutes:,.0f} CI minutes. "
         f"Reruns cost {fmt(reruns, '$')} of it. Estimated at list price, before any minutes "
         "your plan includes.",
@@ -772,21 +898,32 @@ def cost(c: Context) -> None:
             Change("Yearly, at this pace", yearly, None, "$", None),
         ]
     )
-    repos = pl.cost_by_repository(c.billed, c.ci_period, c.now, c.tz)
-    costs = repos[["Est. cost ($)"]].sort_values("Est. cost ($)", ascending=False)
+    # One repository: its workflows. Several: the repositories, whose workflows don't compare.
+    by, label = ("pipeline", "workflow") if repo else ("repository", "repository")
+    spend = pl.cost_by(c.billed, by, c.ci_period, c.now, c.tz)
+    costs = spend[["Est. cost ($)"]].sort_values("Est. cost ($)", ascending=False)
+    minutes_chart = (
+        (
+            "Minutes by workflow",
+            c.per,
+            bars(
+                pl.minutes_by_pipeline(c.billed, c.ci_period, c.now, c.tz),
+                stack=True,
+                ticks=c.ticks,
+            ),
+        )
+        if repo
+        else (
+            "CI minutes",
+            c.per,
+            bars(c.ci.trend[["minutes"]].set_axis(["Minutes"], axis=1), ticks=c.ticks),
+        )
+    )
     grid(
         [
+            minutes_chart,
             (
-                "Minutes by workflow",
-                c.per,
-                bars(
-                    pl.minutes_by_pipeline(c.billed, c.ci_period, c.now, c.tz),
-                    stack=True,
-                    ticks=c.ticks,
-                ),
-            ),
-            (
-                "Cost by repository",
+                f"Cost by {label}",
                 f"US dollars, {c.last}",
                 bars(
                     costs.set_axis(["Est. cost"], axis=1),
@@ -798,19 +935,19 @@ def cost(c: Context) -> None:
     )
     rows = [
         [
-            linked(str(repo), c.repo_link(str(repo))),
+            cell(str(name)) if repo else linked(str(name), c.repo_link(str(name))),
             cell(f"{r['Minutes']:,.0f}", "n"),
             cell(fmt(r["Est. cost ($)"], "$"), "n"),
             cell(f"{r['Share']:.0%}", "n"),
             _change(r["Change"]),
             trend(r["Trend"], HOT if r["Change"] > 0.1 else MID),
         ]
-        for repo, r in repos.iterrows()
+        for name, r in spend.iterrows()
     ]
     table(
-        "By repository",
+        f"By {label}",
         c.last,
-        ["Repository", "Minutes", "Est. cost", "Share of minutes", "Change", "Trend"],
+        [label.capitalize(), "Minutes", "Est. cost", "Share of minutes", "Change", "Trend"],
         "minmax(0,1.6fr) 100px 100px 120px 90px 96px",
         rows,
         right={1, 2, 3, 4, 5},

@@ -64,6 +64,88 @@ def failure_rate(att: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str) 
     )
 
 
+def broken(att: pd.DataFrame, now: pd.Timestamp) -> pd.DataFrame:
+    """Each stretch a repository's default branch was broken: from a workflow failing there to it
+    passing again, with its workflows' overlapping stretches merged. `end` is NaT while it still
+    is. GitHub's own workflows (Dependabot, default CodeQL) are left out: theirs failing doesn't
+    mean the code is broken."""
+    runs = att[
+        att["final"]
+        & att["is_default_branch"]
+        & (att["conclusion"] != "cancelled")
+        & ~att["pipeline"].str.startswith("dynamic/")
+    ].dropna(subset=["finished"])
+    runs = runs.sort_values("finished")
+    keys = [runs["repository"], runs["pipeline"]]
+    # A failure after a pass starts a stretch, which ends when that workflow next passes.
+    starts = runs["failed"] & ~runs.groupby(keys)["failed"].shift(fill_value=False)
+    passes = runs["finished"].where(~runs["failed"]).groupby(keys).bfill()
+    s = pd.DataFrame({"repository": runs["repository"], "start": runs["finished"], "end": passes})
+    s = s[starts].assign(end=lambda d: d["end"].fillna(now)).sort_values(["repository", "start"])
+    if s.empty:
+        return pd.DataFrame({"repository": [], "start": [], "end": []}).astype(
+            {"start": "datetime64[ns, UTC]", "end": "datetime64[ns, UTC]"}
+        )
+    # A stretch that starts after every earlier one in its repository has ended starts a block.
+    reach = s.groupby("repository")["end"].cummax().groupby(s["repository"]).shift()
+    block = (s["start"] > reach) | reach.isna()
+    merged = s.groupby(["repository", block.cumsum()]).agg(
+        start=("start", "min"), end=("end", "max")
+    )
+    merged["end"] = merged["end"].mask(merged["end"] >= now)
+    return merged.reset_index(level="repository").reset_index(drop=True)
+
+
+def broken_hours(
+    stretches: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp, now: pd.Timestamp
+) -> pd.Series:
+    """Hours each repository's default branch was broken in (start, end]."""
+    until = stretches["end"].fillna(now)
+    until = until.mask(until > end, end)
+    since = stretches["start"].mask(stretches["start"] < start, start)
+    hours = ((until - since).dt.total_seconds() / 3600).clip(lower=0)
+    per_repository: pd.Series = hours.groupby(stretches["repository"]).sum()
+    return per_repository
+
+
+def repositories(
+    att: pd.DataFrame,
+    jobs: pd.DataFrame,
+    stretches: pd.DataFrame,
+    period: Period,
+    now: pd.Timestamp,
+    tz: str,
+) -> pd.DataFrame:
+    """Per repository, in the period: runs, the default branch's failure rate and hours broken,
+    since when it has been broken if it still is, time lost to reruns and flaky jobs; and hours
+    broken per bucket. Broken ones first."""
+    start, end = period.window(now)
+    a = att[between(att["started"], start, end)]
+    final = a[a["final"]]
+    done = final[final["is_default_branch"] & (final["conclusion"] != "cancelled")]
+    flaky = flaky_jobs(jobs[between(jobs["started_at"], start, end)])
+    out = pd.DataFrame(
+        {
+            "Runs": final.groupby("repository").size(),
+            "Failure rate": done.groupby("repository")["failed"].mean() * 100,
+            "Broken (h)": broken_hours(stretches, start, end, now),
+            "Lost to reruns (h)": a[~a["final"]].groupby("repository")["minutes"].sum() / 60,
+            "Flaky jobs": flaky.groupby("repository").size(),
+        }
+    ).rename_axis("repository")
+    counts = ["Runs", "Broken (h)", "Lost to reruns (h)", "Flaky jobs"]
+    out[counts] = out[counts].fillna(0)
+    still = stretches[stretches["end"].isna()].set_index("repository")["start"]
+    out["Broken since"] = still.reindex(out.index)
+    per_bucket = period.each(now, tz, lambda a, b: broken_hours(stretches, a, b, now))
+    out["Trend"] = sparklines(per_bucket.fillna(0), out.index)
+    return out.sort_values(
+        ["Broken since", "Broken (h)", "Failure rate"],
+        ascending=[True, False, False],
+        na_position="last",
+    )
+
+
 def run_times(
     att: pd.DataFrame, pipeline: str, period: Period, now: pd.Timestamp, tz: str
 ) -> pd.DataFrame:
@@ -165,15 +247,15 @@ def minutes_by_pipeline(
     ).fillna(0)
 
 
-def cost_by_repository(
-    billed: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str
+def cost_by(
+    billed: pd.DataFrame, by: str, period: Period, now: pd.Timestamp, tz: str
 ) -> pd.DataFrame:
-    """Per repository: billed minutes and estimated cost in the period, the share of all minutes,
-    the change in minutes on the period before, and minutes per bucket."""
+    """Per `by` (repository or pipeline): billed minutes and estimated cost in the period, the
+    share of all minutes, the change in minutes on the period before, and minutes per bucket."""
 
     def window(back: int) -> pd.DataFrame:
         b = billed[between(billed["started_at"], *period.window(now, back))]
-        return b.groupby("repository")[["billed", "cost"]].sum()
+        return b.groupby(by)[["billed", "cost"]].sum()
 
     now_, before = window(0), window(1)
     out = pd.DataFrame({"Minutes": now_["billed"], "Est. cost ($)": now_["cost"]})
@@ -183,9 +265,7 @@ def cost_by_repository(
     trend = period.each(
         now,
         tz,
-        lambda a, b: (
-            billed[between(billed["started_at"], a, b)].groupby("repository")["billed"].sum()
-        ),
+        lambda a, b: billed[between(billed["started_at"], a, b)].groupby(by)["billed"].sum(),
     )
     out["Trend"] = sparklines(trend.fillna(0), out.index)
-    return out.rename_axis("repository").sort_values("Minutes", ascending=False)
+    return out.rename_axis(by).sort_values("Minutes", ascending=False)

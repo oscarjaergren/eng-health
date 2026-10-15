@@ -116,10 +116,15 @@ became flaky in the period, and workflows whose median run time or CI minutes ch
 more, with at least 3 runs or 30 minutes in each period. ✓ marks an item handled for the rest
 of the browser session.
 
-CI and Cost (GitHub Actions, last 90 days):
+CI and Cost (GitHub Actions, last 90 days). Workflows and jobs only compare within one
+repository, so with several these views compare repositories; pick one (or click its name) for
+its workflows and jobs.
 
 - **Failure rate**: finished runs on the default branch whose final attempt failed.
   Cancelled runs are left out.
+- **Broken main**: from a workflow failing on the default branch to its next passing run,
+  with a repository's workflows' overlapping stretches merged. GitHub's own workflows
+  (Dependabot, default CodeQL) are left out: theirs failing doesn't mean the code is broken.
 - **Run time**: median and 90th percentile of successful runs, per workflow and job.
 - **Lost to reruns**: time spent in attempts that were then re-run.
 - **CI minutes**: every attempt of every job on every branch, each rounded up to a whole minute,
