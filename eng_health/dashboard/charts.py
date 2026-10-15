@@ -112,8 +112,9 @@ def head(
 
 
 def spark(values: Sequence[float], color: str = INK, width: int = 140, height: int = 22) -> str:
-    """A sparkline as inline SVG, ending in a dot."""
-    if len(values) < 2:
+    """A sparkline as inline SVG, ending in a dot. Buckets without a value are left out, so two
+    points would only draw a straight line between whichever two buckets had one."""
+    if len(values) < 3:
         return f'<svg class="spark" width="{width}" height="{height}"></svg>'
     low, high = min(values), max(values)
     span = high - low or 1
@@ -240,8 +241,11 @@ def lines(
                 y=y[col],
                 customdata=text[col],
                 name=str(col),
-                mode="lines",
-                connectgaps=True,
+                # An empty bucket is a gap, not a line through it; a value between two gaps has
+                # no line to sit on, so a dot shows it.
+                mode="lines+markers",
+                connectgaps=False,
+                marker={"size": _alone(y[col]).map({True: 6, False: 0}).tolist(), "color": color},
                 line={"color": color, "width": 1.5 if col in dashed else 2},
                 line_dash="dash" if col in dashed else None,
             )
@@ -256,6 +260,11 @@ def lines(
     # A thin line marks the bucket under the hover box.
     fig.update_xaxes(showspikes=True, spikedash="solid", spikecolor=LIGHT, spikethickness=1)
     return fig
+
+
+def _alone(values: pd.Series) -> pd.Series:
+    """Values with no value either side of them."""
+    return values.notna() & values.shift().isna() & values.shift(-1).isna()
 
 
 def _legend(fig: go.Figure) -> list[tuple[str, str]]:
@@ -341,7 +350,9 @@ def table(
     widths: str,
     rows: Sequence[Sequence[str]],
     right: Collection[int] = (),
+    count: int | None = None,
 ) -> None:
-    """A titled card holding a `table_html` table."""
+    """A titled card holding a `table_html` table, counting its rows unless told otherwise."""
+    count = len(rows) if count is None else count
     with card(title):
-        html(head(title, count=len(rows), note=note) + table_html(columns, widths, rows, right))
+        html(head(title, count=count, note=note) + table_html(columns, widths, rows, right))

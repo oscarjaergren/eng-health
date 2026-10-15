@@ -117,19 +117,21 @@ def _top_bar(settings: Settings, store: Store | None, scopes: dict[str, str]) ->
         bind="query-params",
         label_visibility="collapsed",
     )
-    st.space("stretch")
-    if store is None:
-        why = "MOCK_MODE is on" if settings.mock else "nothing is connected"
-        st.button(
-            "Sample data · Connect",
-            help=f"Showing sample data because {why}.",
-            key="sample",
-            on_click=connect.show,
-        )
-    else:
-        st.caption(_sync_status(settings, store), width="content")
-        st.button("Sync now", key="sync_now", on_click=connect.request_sync, args=("incremental",))
-    st.button(":material/settings:", help="Settings", key="settings", on_click=connect.show)
+    with st.container(horizontal=True, vertical_alignment="center", width="content", key="actions"):
+        if store is None:
+            why = "MOCK_MODE is on" if settings.mock else "nothing is connected"
+            st.button(
+                "Sample data · Connect",
+                help=f"Showing sample data because {why}.",
+                key="sample",
+                on_click=connect.show,
+            )
+        else:
+            st.caption(_sync_status(settings, store), width="content")
+            st.button(
+                "Sync now", key="sync_now", on_click=connect.request_sync, args=("incremental",)
+            )
+        st.button(":material/settings:", help="Settings", key="settings", on_click=connect.show)
     if st.session_state.get("settings_open"):
         connect.drawer(settings, store)
     return view, scope
