@@ -59,7 +59,7 @@ def test_sample_data_renders_every_view_in_every_period() -> None:
 def test_numbers_read_the_same_everywhere() -> None:
     hours = (0, 0.01, 0.0712, 1.5, 9.96, 50, 80)
     assert [fmt(h, " h") for h in hours] == [
-        "0 s",
+        "0 h",
         "36 s",
         "4.3 min",
         "90 min",

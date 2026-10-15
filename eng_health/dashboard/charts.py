@@ -34,7 +34,10 @@ def _short(n: float) -> str:
 
 
 def _time_unit(hours: float) -> tuple[float, str]:
-    """The unit people say a length of time in, as (its hours, its name): 90 min, not 1.5 h."""
+    """The unit people say a length of time in, as (its hours, its name): 90 min, not 1.5 h.
+    Nothing (zero, or no value at all) counts in hours, not seconds."""
+    if not hours > 0:
+        return 1, " h"
     if hours >= 72:
         return 24, " d"
     if hours >= 2:

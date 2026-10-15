@@ -89,6 +89,50 @@ def test_flaky_tests(jobs: pd.DataFrame) -> None:
     assert sorted(pl.flaky_tests(failures, att)["test_id"]) == ["Api.Retried", "Api.SameCommit"]
 
 
+def test_main_is_broken_from_a_failure_to_the_next_pass() -> None:
+    # Run n finishes at 11:10 on 7 September plus n days.
+    jobs = pl.prepare(
+        pd.DataFrame(
+            [
+                job(1, 1, "success"),
+                job(2, 1, "failure"),  # CI breaks on the 9th...
+                job(3, 1, "failure", pipeline="Nightly"),  # ...Nightly on the 10th...
+                job(4, 1, "success"),  # ...CI is fixed on the 11th...
+                job(5, 1, "success", pipeline="Nightly"),  # ...and Nightly on the 12th.
+                # GitHub's own workflows failing doesn't break the code.
+                job(6, 1, "failure", pipeline="dynamic/dependabot/update-graph"),
+                job(7, 1, "failure", repository="api", repo_id="2"),
+                job(8, 1, "cancelled", repository="api", repo_id="2"),  # fixes nothing
+                job(9, 1, "success", repository="api", repo_id="2", is_default_branch=0),
+            ]
+        )
+    )
+    att = pl.attempts(jobs)
+    now = pd.Timestamp("2026-09-20T00:00Z")
+
+    def at(day: int) -> pd.Timestamp:
+        return pd.Timestamp(f"2026-09-{day}T11:10Z")
+
+    stretches = pl.broken(att, now)
+    assert stretches.values.tolist() == [["api", at(14), pd.NaT], ["web", at(9), at(12)]]
+
+    hours = pl.broken_hours(stretches, pd.Timestamp("2026-09-10T00:00Z"), now, now)
+    assert hours.round(2).to_dict() == {"api": 132.83, "web": 59.17}
+
+    repos = pl.repositories(
+        att,
+        jobs,
+        stretches,
+        Period(30, "30 days", "D", 30),
+        now,
+        "UTC",
+    )
+    assert repos.index.tolist() == ["api", "web"]  # still broken first
+    assert repos["Broken since"].isna().tolist() == [False, True]
+    assert repos.loc["api", "Broken since"] == at(14)
+    assert repos.loc["web", "Broken (h)"] == pytest.approx(72)
+
+
 def test_durations_use_successful_final_attempts(jobs: pd.DataFrame) -> None:
     d = pl.durations(pl.attempts(jobs))
     assert d.loc["CI", "Runs"] == 2
@@ -120,6 +164,35 @@ def test_ci_view_renders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     assert shown["Default-branch failures"] == "50.0%"
     assert shown["Flaky jobs"] == "1"
     assert "No test results found" in text(at)
+
+
+def test_one_repository_has_its_workflows_and_broken_main(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    live(monkeypatch, tmp_path).upsert_jobs(recent(ROWS))
+    at = run("ci")
+    # Run 2 failed on the default branch and nothing has passed there since.
+    assert "In web, main was broken for" in text(at)
+    assert "and has been since" in text(at)
+    assert "Time main was broken" in numbers(at)
+    assert "Slowest jobs" in text(at)
+
+
+def test_several_repositories_are_compared_until_one_is_picked() -> None:
+    at = run("ci")  # sample data: three repositories with CI
+    assert "Broken main now" in numbers(at)
+    assert "By repository" in text(at)
+    assert "Slowest jobs" not in text(at)
+    at.segmented_control(key="view").set_value("cost").run()
+    assert "Cost by repository" in text(at)
+
+    at.multiselect(key="repo|0").set_value(["github:gi-data-pipeline"]).run()
+    assert "Cost by workflow" in text(at)
+    at.segmented_control(key="view").set_value("ci").run()
+    assert not at.exception, at.exception
+    assert "Slowest jobs" in text(at)
+    assert "Failure rate by workflow" in text(at)
+    assert "By repository" not in text(at)
 
 
 def test_ci_view_shows_flaky_tests(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -165,7 +238,7 @@ def test_billed_minutes_round_up_and_public_repos_run_free() -> None:
 
     # Runs 3 and 4 fall in the last 2 days, 1 and 2 in the 2 before.
     now = pd.Timestamp(rows[3]["started_at"]) + pd.Timedelta(hours=23)
-    table = pl.cost_by_repository(b, Period(2, "2 days", "D", 2), now, "UTC")
+    table = pl.cost_by(b, "repository", Period(2, "2 days", "D", 2), now, "UTC")
     assert table[["Minutes", "Share", "Change"]].values.tolist() == [[20, 1.0, 0.0]]
 
 
