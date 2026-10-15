@@ -277,6 +277,28 @@ def _inbox(c: Context) -> list[tuple[str, str, str, list[Item]]]:
     ]
     if c.jobs.empty:
         return groups
+    # First: a broken main blocks everyone working in that repository.
+    failing = pl.failing(c.att).groupby("repository")["pipeline"].agg(", ".join)
+    broken = c.stretches[c.stretches["end"].isna()].sort_values("start")
+    groups.insert(
+        0,
+        (
+            "Broken main",
+            "ci",
+            "CI detail",
+            [
+                Item(
+                    f"broken {r['repository']} {r['start']}",
+                    f"Main is broken in {r['repository']}",
+                    f"{failing.get(r['repository'], 'CI')} failing on the default branch",
+                    "Broken",
+                    "red",
+                    fmt((c.now - r["start"]).total_seconds() / 3600, " h"),
+                )
+                for r in broken.to_dict("records")
+            ],
+        ),
+    )
     this_week = c.period.days == 7
     new = digest.new_flaky_tests(c.failures, c.att, *c.window)
     groups.append(

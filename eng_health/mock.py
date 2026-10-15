@@ -257,6 +257,11 @@ def mock_pipelines(
         test_fails = workflow in ("CI", "Nightly") and rng.random() < 0.18
         # Most failures pass on a rerun (flaky); the rest are real breakages.
         flaky = test_fails and rng.random() < 0.65
+        if run_id == runs:
+            # The latest run breaks data-pipeline's main, so the sample has one still broken.
+            repo, workflow, default, test_fails, flaky = "data-pipeline", "CI", True, True, False
+            age = 0.05
+            start = now - timedelta(days=age)
         attempts = 2 if flaky else 1
         for attempt in range(1, attempts + 1):
             for i, name in enumerate(WORKFLOWS[workflow]):
