@@ -87,8 +87,8 @@ class Context:
         return self.period.window(self.now)
 
     @property
-    def ticks(self) -> str:
-        return "%a %-d" if self.period.days == 7 else TICKS[self.period.freq]
+    def ticks(self) -> tuple[str, str]:
+        return ("%a %-d", "%a %b %-d") if self.period.days == 7 else TICKS[self.period.freq]
 
     @property
     def per(self) -> str:
