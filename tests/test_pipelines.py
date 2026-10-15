@@ -115,6 +115,7 @@ def test_main_is_broken_from_a_failure_to_the_next_pass() -> None:
 
     stretches = pl.broken(att, now)
     assert stretches.values.tolist() == [["api", at(14), pd.NaT], ["web", at(9), at(12)]]
+    assert pl.failing(att).values.tolist() == [["api", "CI"]]  # what broke api's main
 
     hours = pl.broken_hours(stretches, pd.Timestamp("2026-09-10T00:00Z"), now, now)
     assert hours.round(2).to_dict() == {"api": 132.83, "web": 59.17}
@@ -176,6 +177,10 @@ def test_one_repository_has_its_workflows_and_broken_main(
     assert "and has been since" in text(at)
     assert "Time main was broken" in numbers(at)
     assert "Slowest jobs" in text(at)
+    # And Today puts it first among what needs a look.
+    at.segmented_control(key="view").set_value("today").run()
+    assert "Main is broken in web" in text(at)
+    assert "CI failing on the default branch" in text(at)
 
 
 def test_several_repositories_are_compared_until_one_is_picked() -> None:

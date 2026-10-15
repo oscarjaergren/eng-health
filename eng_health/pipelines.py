@@ -64,18 +64,30 @@ def failure_rate(att: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str) 
     )
 
 
-def broken(att: pd.DataFrame, now: pd.Timestamp) -> pd.DataFrame:
-    """Each stretch a repository's default branch was broken: from a workflow failing there to it
-    passing again, with its workflows' overlapping stretches merged. `end` is NaT while it still
-    is. GitHub's own workflows (Dependabot, default CodeQL) are left out: theirs failing doesn't
-    mean the code is broken."""
+def _verdicts(att: pd.DataFrame) -> pd.DataFrame:
+    """The default-branch runs that say whether the code works, oldest first: final attempts,
+    not cancelled, and not GitHub's own workflows (Dependabot, default CodeQL), whose failing
+    doesn't mean the code is broken."""
     runs = att[
         att["final"]
         & att["is_default_branch"]
         & (att["conclusion"] != "cancelled")
         & ~att["pipeline"].str.startswith("dynamic/")
-    ].dropna(subset=["finished"])
-    runs = runs.sort_values("finished")
+    ]
+    return runs.dropna(subset=["finished"]).sort_values("finished")
+
+
+def failing(att: pd.DataFrame) -> pd.DataFrame:
+    """The workflows whose latest default-branch run failed: what broke each broken main."""
+    latest = _verdicts(att).groupby(["repository", "pipeline"]).tail(1)
+    return latest.loc[latest["failed"], ["repository", "pipeline"]]
+
+
+def broken(att: pd.DataFrame, now: pd.Timestamp) -> pd.DataFrame:
+    """Each stretch a repository's default branch was broken: from a workflow failing there to it
+    passing again, with its workflows' overlapping stretches merged. `end` is NaT while it still
+    is."""
+    runs = _verdicts(att)
     keys = [runs["repository"], runs["pipeline"]]
     # A failure after a pass starts a stretch, which ends when that workflow next passes.
     starts = runs["failed"] & ~runs.groupby(keys)["failed"].shift(fill_value=False)
