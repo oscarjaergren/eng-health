@@ -11,8 +11,11 @@ header[data-testid="stHeader"] { display: none; }
 
 /* The white header, sticky and full width. Streamlit wraps it in a box of its own height, so
    the wrapper is what sticks. The shadows paint the background and the bottom border past the
-   page's side margins without widening the page. */
-[data-testid="stLayoutWrapper"]:has(> .st-key-header) { position: sticky; top: 0; z-index: 100; }
+   page's side margins without widening the page. Not on a narrow screen, where the header,
+   stacked, would cover most of it. */
+@media (min-width: 900px) {
+  [data-testid="stLayoutWrapper"]:has(> .st-key-header) { position: sticky; top: 0; z-index: 100; }
+}
 .st-key-header {
   background: #fff; padding: 10px 0 8px;
   box-shadow: 0 0 0 100vmax #fff, 0 1px 0 100vmax #E6E3DC;
@@ -20,13 +23,16 @@ header[data-testid="stHeader"] { display: none; }
   margin-bottom: 1.25rem;
 }
 .st-key-brand p { font-family: 'Geist Mono', monospace; font-weight: 500; font-size: 14px; margin-right: 1.5rem; }
+/* Sync status, Sync now and Settings, kept together on the right: when the row runs out of room
+   they move down as one, rather than leaving Settings alone on a line. */
+[data-testid="stLayoutWrapper"]:has(> .st-key-actions) { margin-left: auto; }
 
 /* The scope switcher next to the brand, outlined like the chips. */
 .st-key-scope [data-baseweb="select"] > div { background: #fff; border-color: #E6E3DC; min-height: 32px; font-weight: 500; }
 .st-key-scope [data-baseweb="select"] > div:hover { border-color: #1C1B19; }
 
 /* View tabs: plain text, the current one a dark pill. */
-.st-key-view [role="radiogroup"] { gap: 4px; }
+.st-key-view [role="radiogroup"] { gap: 4px; flex-wrap: wrap; }
 .st-key-view button[role="radio"] {
   border: none !important; background: transparent; color: #6E6C66;
   border-radius: 6px !important; padding: 6px 12px; min-height: 0;
@@ -107,7 +113,7 @@ header[data-testid="stHeader"] { display: none; }
 .tone-red { color: #BD4334; }
 .tone-gray { color: #6E6C66; }
 .delta { font-size: 13px; white-space: nowrap; }
-svg.spark { display: block; overflow: visible; }
+svg.spark { display: block; overflow: visible; max-width: 100%; }
 
 /* Inbox groups: a white list, rows divided by rules. */
 [class*="st-key-group-"] { background: #fff; border: 1px solid #E6E3DC; border-radius: 8px; overflow: hidden; gap: 0; }

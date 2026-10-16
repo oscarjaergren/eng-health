@@ -742,6 +742,7 @@ def ci(c: Context) -> None:
         "minmax(0,2.4fr) 100px 130px 84px 84px 100px",
         _flaky_rows(c),
         right={3, 4},
+        count=int(c.ci.now["flaky"] or 0),  # jobs, as the number above says, not their tests too
     )
     if c.failures.empty:
         st.caption(
@@ -758,7 +759,8 @@ def _ci_repositories(c: Context) -> None:
     broken_now = c.stretches[c.stretches["end"].isna()]
     n = c.jobs["repository"].nunique()
     answer = (
-        f"{len(broken_now)} of {n} repositories have a broken main right now."
+        f"{len(broken_now)} of {n} repositories {'has' if len(broken_now) == 1 else 'have'} a "
+        "broken main right now."
         if len(broken_now)
         else "Main is green in every repository."
     )
@@ -899,7 +901,10 @@ def cost(c: Context) -> None:
     spent = c.ci.change("cost")
     minutes, reruns = c.ci.now["minutes"] or 0, c.ci.now["rerun_cost"]
     change = (
-        f" ({spent.ratio:+.0%} on the {c.period.name} before)" if spent.ratio is not None else ""
+        f" ({abs(spent.ratio):.0%} {'more' if spent.ratio > 0 else 'less'} than the "
+        f"{c.period.name} before)"
+        if spent.ratio
+        else ""
     )
     repo = c.ci_repo
     _header(
@@ -995,12 +1000,15 @@ def people(c: Context) -> None:
     p = c.people
     answer = f"{c.pr.now['authors'] or 0:.0f} people opened or merged PRs in {c.last}."
     for column, did in (("Merged", "merged"), ("Reviews", "reviewed")):
-        if p[column].sum():
-            top = str(p[column].idxmax())
-            answer += f" {c.name(top)} {did} the most ({p.loc[top, column]})."
+        most = p[column].max()
+        leaders = p.index[p[column] == most]
+        # Only one person can have done the most: on a tie, nobody is named.
+        if most and len(leaders) == 1:
+            answer += f" {c.name(str(leaders[0]))} {did} the most ({most})."
     _header(c, "People", "Who's doing what?", answer)
     _kpis([c.pr.change(k) for k in ("authors", "per_person", "added", "deleted")])
-    top8 = p.nlargest(8, "Merged").rename(index=c.name)
+    # Reviewers who opened nothing would only be an empty slot in a chart of PRs.
+    top8 = p[p["Merged"] + p["Opened"] > 0].nlargest(8, "Merged").rename(index=c.name)
     lines_written = top8[["Lines added", "Lines deleted"]].dropna(how="all")
     charts = [("PRs merged", f"top 8, {c.last}", bars(top8[["Merged", "Opened"]], [INK, LIGHT]))]
     if not lines_written.empty:

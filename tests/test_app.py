@@ -12,7 +12,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from eng_health.cli import main as cli
-from eng_health.dashboard.charts import bars, fmt, lines
+from eng_health.dashboard.charts import bars, fmt, lines, spark
 from eng_health.dashboard.views import VIEWS
 from eng_health.mock import mock_pull_requests
 from eng_health.period import PERIODS
@@ -86,6 +86,11 @@ def test_charts_read_cleanly() -> None:
     fig = bars(pd.DataFrame({"Merged": [3]}, index=["Jack Taylor"]))
     assert list(fig.layout.xaxis.ticktext) == ["Jack<br>Taylor"]
     assert fig.layout.hoverlabel.bgcolor == "#fff"
+    # An empty bucket is a gap, and a value between two gaps a dot, not part of a line through.
+    line = lines(pd.DataFrame({"Median": [1.0, None, 2.0, 3.0]})).data[0]
+    assert (line.connectgaps, list(line.marker.size)) == (False, [6, 0, 0, 0])
+    # Two points would be a straight line between whichever buckets had a value.
+    assert "polyline" not in spark([1.0, 2.0])
 
 
 def test_the_url_picks_the_view_and_period() -> None:
