@@ -4,11 +4,12 @@ filtered view can be shared."""
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from .. import metrics
+from .. import metrics, prefs
 from ..metrics import Filters
 from ..models import PLATFORM_NAMES
 from ..period import PERIODS, Period
@@ -139,12 +140,17 @@ def _span(period: Period, now: pd.Timestamp, tz: str) -> str:
     )
 
 
+def _remember_period(data_dir: Path) -> None:
+    prefs.save(data_dir, period=st.session_state["period"])
+
+
 def bar(
     df: pd.DataFrame,
     names: dict[str, str],
     repos: pd.DataFrame,
     now: pd.Timestamp,
     tz: str,
+    data_dir: Path,
     scope: tuple[str, ...] = (),
     scope_name: str = "All",
 ) -> tuple[Period, Filters]:
@@ -154,7 +160,9 @@ def bar(
     chips_row = st.container(horizontal=True, vertical_alignment="center", gap="xsmall")
     toggles_row = st.container(horizontal=True, vertical_alignment="center")
     with chips_row:
-        period, chosen, hidden = _chips(df, names, repos, now, tz, scope_name if scope else "All")
+        period, chosen, hidden = _chips(
+            df, names, repos, now, tz, data_dir, scope_name if scope else "All"
+        )
     with toggles_row:
         drafts = st.toggle("Drafts", value=True, key="drafts", bind="query-params")
         bots = st.toggle("Dependabot & Renovate PRs", value=False, key="bots", bind="query-params")
@@ -194,17 +202,22 @@ def _chips(
     repos: pd.DataFrame,
     now: pd.Timestamp,
     tz: str,
+    data_dir: Path,
     everywhere: str,
 ) -> tuple[Period, tuple[list[str], list[str], list[str], list[str]], tuple[str, ...]]:
+    # 30 days unless another was picked last time: 7 leaves most charts a few sparse points.
+    remembered = prefs.load(data_dir).get("period", "30d")
     period = PERIODS[
         st.segmented_control(
             "Period",
             list(PERIODS),
             format_func=str.upper,
-            default="7d",
+            default=remembered if remembered in PERIODS else "30d",
             required=True,
             key="period",
             bind="query-params",
+            on_change=_remember_period,
+            args=(data_dir,),
             label_visibility="collapsed",
         )
     ]

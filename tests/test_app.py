@@ -4,19 +4,21 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from eng_health.cli import main as cli
 from eng_health.dashboard.charts import bars, fmt, lines, spark
-from eng_health.dashboard.views import VIEWS
+from eng_health.dashboard.views import VIEWS, _delta
+from eng_health.digest import Change
 from eng_health.mock import mock_pull_requests
+from eng_health.models import State
 from eng_health.period import PERIODS
 
+from .helpers import make_pr
 from .seed import WritableStore
 from .test_sync import fake_binary
 
@@ -109,9 +111,51 @@ def test_handled_items_move_to_cleared_and_back() -> None:
     done = next(b for b in at.button if b.key and b.key.startswith("done "))
     done.click().run()
     assert at.title[0].value.startswith(f"{count - 1} ")
-    restore = next(b for b in at.button if b.key and b.key.startswith("restore "))
+    # Still handled in a new session: a reload, or a teammate on the same data folder.
+    again = run()
+    assert again.title[0].value.startswith(f"{count - 1} ")
+    restore = next(b for b in again.button if b.key and b.key.startswith("restore "))
     restore.click().run()
-    assert at.title[0].value.startswith(f"{count} ")
+    assert again.title[0].value.startswith(f"{count} ")
+
+
+def test_today_sorts_open_prs_by_who_they_wait_on_and_leaves_stale_ones_out(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    now = datetime.now(UTC)
+    opened = {"state": State.OPEN, "closed_at": None, "created_at": now - timedelta(days=5)}
+    WritableStore(tmp_path / "eng_health.db").upsert(
+        [
+            make_pr(1, **opened),
+            make_pr(2, **opened, rejecters=["bob"]),
+            make_pr(3, **opened, approvers=["bob"]),
+            make_pr(4, **opened | {"created_at": now - timedelta(days=90)}),  # idle 90 days
+        ]
+    )
+    monkeypatch.setenv("GITHUB_OWNER", "acme")
+    monkeypatch.setenv("GITHUB_TOKEN", "tok")
+    at = run()
+    shown = text(at)
+    for group in ("Waiting on review", "Waiting on the author", "Approved, not merged"):
+        assert group in shown, group
+    assert at.title[0].value == "3 things need a look"  # not the stale one
+    assert "1 open PR untouched for 30 days or more left out" in shown
+
+
+def test_the_period_starts_at_30_days_and_is_remembered() -> None:
+    at = run()
+    assert "vs prior 30 days" in text(at)
+    at.segmented_control(key="period").set_value("90d").run()
+    assert "vs prior 90 days" in text(run())
+
+
+def test_small_counts_change_by_a_number_not_a_percentage() -> None:
+    assert _delta(Change("PRs merged", 3, 11, "", False)) == ("↓ 8", "red")
+    assert _delta(Change("PRs merged", 30, 40, "", False)) == ("↓ 25%", "red")
+    assert _delta(Change("Lines added", None, 40, "", None, empty="GitHub only")) == (
+        "GitHub only",
+        "gray",
+    )
 
 
 def test_clear_filters_resets_them() -> None:
@@ -275,15 +319,38 @@ def test_azure_devops_alone_has_no_ci(monkeypatch: pytest.MonkeyPatch, tmp_path:
     assert "Connect GitHub" in text(at)
 
 
+def test_numbers_only_github_reports_say_so_without_github(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prs, people = mock_pull_requests(count=60)
+    azure = [p for p in prs if p.platform == "azure_devops"]
+    WritableStore(tmp_path / "eng_health.db").upsert(azure, people)
+    monkeypatch.setenv("AZURE_DEVOPS_ORGANIZATION", "org")
+    monkeypatch.setenv("AZURE_DEVOPS_PAT", "pat")
+    at = run("shipping")
+    assert numbers(at)["Median PR size"] == "–"
+    assert "GitHub only" in text(at)
+
+
+def test_the_prs_behind_merged_without_review_are_listed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    now = datetime.now(UTC)
+    merged = {"created_at": now - timedelta(days=3), "closed_at": now - timedelta(days=2)}
+    WritableStore(tmp_path / "eng_health.db").upsert(
+        [
+            make_pr(1, **merged, title="Skipped review"),
+            make_pr(2, **merged, approvers=["bob"]),
+        ]
+    )
+    monkeypatch.setenv("GITHUB_OWNER", "acme")
+    monkeypatch.setenv("GITHUB_TOKEN", "tok")
+    at = run("review")
+    assert numbers(at)["Merged without review"] == "1"
+    assert "Skipped review" in text(at)
+
+
 def test_bad_config_is_shown_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITHUB_TOKEN", "tok")
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert "GITHUB_OWNER" in at.error[0].value
-
-
-def test_cli_export(tmp_path: Path) -> None:
-    prs, people = mock_pull_requests(count=20)
-    WritableStore(tmp_path / "eng_health.db").upsert(prs, people)
-    out = tmp_path / "prs.csv"
-    assert cli(["export", str(out)]) == 0
-    assert len(pd.read_csv(out)) == 20

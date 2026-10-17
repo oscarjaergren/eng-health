@@ -40,6 +40,8 @@ METRICS: dict[str, tuple[str, str, bool | None]] = {
 }
 
 Stats = dict[str, float | None]
+# Numbers only GitHub reports (Azure DevOps has no line counts).
+GITHUB_ONLY = frozenset({"size", "depth", "added", "deleted"})
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,8 @@ class Change:
     lower_is_better: bool | None = True
     # One value per chart bucket, for a sparkline.
     trend: tuple[float, ...] = ()
+    # Said in place of a change when there is no value, e.g. why there is none.
+    empty: str = ""
 
     @property
     def ratio(self) -> float | None:
@@ -92,7 +96,7 @@ def pr_stats(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> Stats:
     merged = metrics.merged_in(df, start, end)
     sized = merged[merged["lines"].notna()]
     lines = sized["lines"].sum()
-    reviewed = merged["approvers"].map(len).gt(0) | merged["first_review_at"].notna()
+    reviewed = metrics.reviewed(merged)
     still_open = (df["created_at"] <= end) & ~(df["closed_at"] <= end)
     return {
         "opened": float(len(opened)),

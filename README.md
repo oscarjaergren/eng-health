@@ -50,8 +50,7 @@ mise run sync    # build the sync engine and sync; or press Sync now in the dash
 mise run dev     # the dashboard, on http://localhost:8501
 ```
 
-`sync/target/release/eng-health status` shows when each platform last synced. `uv run main.py export prs.csv`
-writes every stored PR to a CSV file.
+`sync/target/release/eng-health status` shows when each platform last synced.
 
 ## Configuration
 

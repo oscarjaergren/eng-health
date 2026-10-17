@@ -34,7 +34,7 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.23,source=/uv,target=/bin/uv \
 COPY --from=engine /repo/sync/target/release/eng-health /usr/local/bin/eng-health
 COPY sync/schema.sql ./sync/
 COPY eng_health ./eng_health
-COPY main.py dashboard_main.py ./
+COPY dashboard_main.py ./
 COPY .streamlit ./.streamlit
 # UID 1000 matches the usual host user, so the ./data bind mount stays writable.
 RUN useradd --create-home --uid 1000 app && mkdir -p /app/data && chown app /app/data

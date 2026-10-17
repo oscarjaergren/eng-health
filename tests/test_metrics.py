@@ -151,7 +151,7 @@ def test_mine_is_where_i_opened_reviewed_or_still_have_a_pr_open() -> None:
     }
 
 
-def test_scopes_put_mine_and_my_teams_first_and_skip_empty_teams() -> None:
+def test_scopes_put_mine_and_all_first_and_mark_my_teams() -> None:
     now = T0 + timedelta(days=10)
     df = frame(
         pr(1, repo_id="web", author="me", created_at=T0 + timedelta(days=9)),
@@ -165,8 +165,9 @@ def test_scopes_put_mine_and_my_teams_first_and_skip_empty_teams() -> None:
     ]
     found = metrics.scopes(df, {"me"}, teams, now)
     assert list(found) == [
-        "mine", "team:github:zed", "all", "team:azure_devops:ops", "team:azure_devops:zed",
+        "mine", "all", "team:github:zed", "team:azure_devops:ops", "team:azure_devops:zed",
     ]  # fmt: skip
+    assert found["team:github:zed"][0] == "Zed · your team"
     assert found["team:azure_devops:ops"] == ("Ops", {"github:api"})
     assert found["team:azure_devops:zed"][0] == "Zed (Azure DevOps)"
     assert found["all"] == ("All repositories", None)
@@ -201,10 +202,17 @@ def test_waiting_skips_drafts_and_new_prs_and_says_where_review_stands() -> None
     }
 
 
-def test_export_table_uses_display_names() -> None:
-    out = metrics.export_table(frame(pr(1, approvers=["bob"])), {"alice": "Alice", "bob": "Bob"})
-    row = out.iloc[0]
-    assert (row["Platform"], row["Author"], row["Approved by"]) == ("GitHub", "Alice", "Bob")
+def test_idle_counts_from_the_latest_sign_of_life() -> None:
+    now = T0 + timedelta(days=40)
+    opened = {"state": State.OPEN, "closed_at": None}
+    df = frame(
+        pr(1, **opened),  # nothing since it opened
+        pr(2, **opened, updated_at=now - timedelta(days=3)),  # GitHub says when it changed
+        # Azure DevOps doesn't: its newest first response is the latest sign there is.
+        pr(3, **opened, platform="azure_devops", first_responses={"bob": now - timedelta(days=5)}),
+    )
+    idle = metrics.waiting(df, now).set_index("title")["idle"].to_dict()
+    assert idle == {"PR 1": 40, "PR 2": 3, "PR 3": 5}
 
 
 def test_size_buckets_and_depth() -> None:

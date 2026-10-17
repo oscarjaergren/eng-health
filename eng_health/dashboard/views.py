@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property, partial
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import pandas as pd
 import streamlit as st
 
-from .. import digest, metrics
+from .. import digest, metrics, prefs
 from .. import pipelines as pl
 from ..digest import Change, Move, Numbers
 from ..metrics import SIZE_LABELS
@@ -76,8 +77,10 @@ class Context:
     tz: str
     no_ci: str  # why `jobs` is empty
     has_ci: bool  # whether there are runs at all, before the filters
-    repo_link: Callable[[str], str | None]  # repository name -> its page
+    # Repository name, and optionally a view other than this one -> that repository's page.
+    repo_link: Callable[..., str | None]
     picked: tuple[str, ...]  # repository names picked in the Repository chip, if any
+    data_dir: Path  # where choices are remembered, such as what has been handled
 
     def name(self, person: str) -> str:
         return self.names.get(person, person)
@@ -169,13 +172,22 @@ def _change(ratio: float) -> str:
     return cell(f"{ratio:+.0%}".replace("-", "−"), kind)
 
 
+# Below this, a percentage overstates a change: 11 to 3 is "8 fewer", not "down 73%".
+_SMALL = 20
+
+
 def _delta(c: Change) -> tuple[str | None, Literal["green", "red", "gray"]]:
     """The change on the period before, as text, and green when it is good news."""
-    if c.now is None or c.before is None:
+    if c.now is None:
+        return c.empty or None, "gray"
+    if c.before is None:
         return None, "gray"
     if c.unit == "%":
         change = c.now - c.before
         text = f"{abs(change):.1f} pt" if round(change, 1) else ""
+    elif not c.unit and max(c.now, c.before) < _SMALL:
+        change = c.now - c.before
+        text = fmt(abs(change)) if round(change, 1) else ""
     elif c.ratio is None:
         return None, "gray"
     else:
@@ -187,6 +199,17 @@ def _delta(c: Change) -> tuple[str | None, Literal["green", "red", "gray"]]:
     if c.lower_is_better is None:
         return f"{arrow} {text}", "gray"
     return f"{arrow} {text}", "green" if (change < 0) == c.lower_is_better else "red"
+
+
+def _pr_kpis(c: Context, keys: Sequence[str]) -> list[Change]:
+    """The PR numbers for `keys`. One only GitHub reports says so when every PR shown is Azure
+    DevOps's, rather than a bare blank."""
+    azure_only = not c.prs["platform"].eq("github").any()
+    changes = [c.pr.change(k) for k in keys]
+    return [
+        replace(ch, empty="GitHub only") if azure_only and k in digest.GITHUB_ONLY else ch
+        for k, ch in zip(keys, changes, strict=True)
+    ]
 
 
 def _kpis(changes: Sequence[Change], views: Sequence[str] = ()) -> None:
@@ -251,29 +274,32 @@ def _day(t: pd.Timestamp, c: Context) -> str:
 
 
 def _inbox(c: Context) -> list[tuple[str, str, str, list[Item]]]:
-    """(title, view, link text, items) for each group."""
+    """(title, view, link text, items) for each group. Open PRs go by who they wait on, idlest
+    first; stale ones are left out (see `today`)."""
     waiting = metrics.waiting(c.prs, c.now)
-    waiting = waiting.assign(urgency=waiting["status"].map(_URGENCY)).sort_values(
-        ["urgency", "age"], ascending=[True, False]
+    active = waiting[waiting["idle"] < metrics.STALE_DAYS]
+    active = active.assign(urgency=active["status"].map(_URGENCY)).sort_values(
+        ["urgency", "idle"], ascending=[True, False]
     )
+
+    def prs(*statuses: str) -> list[Item]:
+        return [
+            Item(
+                f"pr {r['url']}",
+                r["title"],
+                f"{r['repository']} · {c.name(r['author'])}",
+                r["status"],
+                _TONES.get(r["status"], "gray"),
+                f"{r['idle']} d",
+                r["url"],
+            )
+            for r in active[active["status"].isin(statuses)].to_dict("records")
+        ]
+
     groups = [
-        (
-            "Waiting on review",
-            "review",
-            "All open PRs",
-            [
-                Item(
-                    f"pr {r['url']}",
-                    r["title"],
-                    f"{r['repository']} · {c.name(r['author'])}",
-                    r["status"],
-                    _TONES.get(r["status"], "gray"),
-                    f"{r['age']} d",
-                    r["url"],
-                )
-                for r in waiting.to_dict("records")
-            ],
-        )
+        ("Waiting on review", "review", "All open PRs", prs("No review", "Commented")),
+        ("Waiting on the author", "review", "All open PRs", prs("Changes requested")),
+        ("Approved, not merged", "review", "All open PRs", prs("Approved, not merged")),
     ]
     if c.jobs.empty:
         return groups
@@ -294,6 +320,7 @@ def _inbox(c: Context) -> list[tuple[str, str, str, list[Item]]]:
                     "Broken",
                     "red",
                     fmt((c.now - r["start"]).total_seconds() / 3600, " h"),
+                    c.repo_link(r["repository"], "ci") or "",
                 )
                 for r in broken.to_dict("records")
             ],
@@ -310,7 +337,8 @@ def _inbox(c: Context) -> list[tuple[str, str, str, list[Item]]]:
                 Item(
                     f"test {r['repository']} {r['pipeline']} {r['test_id']}",
                     r["test_id"],
-                    f"{r['repository']} · {r['pipeline']} · {r['flaky_runs']} flaky runs",
+                    f"{r['repository']} · {r['pipeline']} · {r['flaky_runs']} flaky "
+                    f"{'run' if r['flaky_runs'] == 1 else 'runs'}",
                     "New",
                     "orange",
                     _day(r["first_seen"], c),
@@ -331,7 +359,7 @@ def _inbox(c: Context) -> list[tuple[str, str, str, list[Item]]]:
                     m.detail,
                     m.tag,
                     "red" if abs(m.change) >= 0.4 else "orange",
-                    f"{m.change:+.0%}",
+                    f"{m.change:+.0%}".replace("-", "−"),
                 )
                 for m in c.moves
                 if m.worse
@@ -341,15 +369,31 @@ def _inbox(c: Context) -> list[tuple[str, str, str, list[Item]]]:
     return groups
 
 
-def _handle(key: str, title: str) -> None:
-    st.session_state["handled"][key] = title
+def _handled(data_dir: Path) -> dict[str, dict[str, str]]:
+    """Items marked handled, by key: their title, and when. Remembered in dashboard.json, so they
+    stay handled after a reload, for everyone sharing the data folder."""
+    saved = prefs.load(data_dir).get("handled", {})
+    return saved if isinstance(saved, dict) else {}
 
 
-def _restore(key: str) -> None:
-    st.session_state["handled"].pop(key, None)
+def _handle(data_dir: Path, key: str, title: str) -> None:
+    now = pd.Timestamp.now(tz="UTC")
+    # A year on, the PR is long closed: no need to keep remembering it.
+    kept = {
+        k: v
+        for k, v in _handled(data_dir).items()
+        if pd.Timestamp(v["at"]) > now - pd.Timedelta(days=365)
+    }
+    prefs.save(data_dir, handled=kept | {key: {"title": title, "at": now.isoformat()}})
 
 
-def _row(i: Item, view: str, key: str) -> None:
+def _restore(data_dir: Path, key: str) -> None:
+    handled = _handled(data_dir)
+    handled.pop(key, None)
+    prefs.save(data_dir, handled=handled)
+
+
+def _row(i: Item, view: str, key: str, data_dir: Path) -> None:
     with st.container(horizontal=True, vertical_alignment="center", gap="small", key=key):
         html(
             f'<div class="item"><span class="dot dot-{i.tone}"></span><div style="min-width:0">'
@@ -365,7 +409,7 @@ def _row(i: Item, view: str, key: str) -> None:
             st.link_button("Open", i.url)
         else:
             st.button("Open", key=f"open {i.key}", on_click=go, args=(view,))
-        st.button("✓", key=f"done {i.key}", on_click=_handle, args=(i.key, i.title))
+        st.button("✓", key=f"done {i.key}", on_click=_handle, args=(data_dir, i.key, i.title))
 
 
 def _review_load(c: Context) -> pd.DataFrame:
@@ -394,8 +438,10 @@ def _load_bars(load: pd.DataFrame) -> str:
 
 
 def today(c: Context) -> None:
-    handled: dict[str, str] = st.session_state.setdefault("handled", {})
+    handled = _handled(c.data_dir)
     groups = [(t, v, a, [i for i in items if i.key not in handled]) for t, v, a, items in _inbox(c)]
+    waiting = metrics.waiting(c.prs, c.now)
+    stale = int((waiting["idle"] >= metrics.STALE_DAYS).sum())
     count = sum(len(items) for *_, items in groups)
     with st.container(horizontal=True, gap=None, vertical_alignment="center", key="crumbs"):
         html(
@@ -436,7 +482,15 @@ def today(c: Context) -> None:
                 _link(view, action, key=f"all {title}")
             with st.container(gap=None, key=f"group-{g}"):
                 for r, item in enumerate(items[:5]):
-                    _row(item, view, f"row-{g}-{r}")
+                    _row(item, view, f"row-{g}-{r}", c.data_dir)
+        if stale:
+            with st.container(horizontal=True, vertical_alignment="center"):
+                html(
+                    f'<div class="item-meta">{stale} open {"PR" if stale == 1 else "PRs"} '
+                    f"untouched for {metrics.STALE_DAYS} days or more left out: they want "
+                    "closing, not reviewing.</div>"
+                )
+                _link("review", "See them", key="stale")
         if not count:
             html(
                 '<div class="empty">Inbox clear. Nothing needs a look until something changes.'
@@ -445,14 +499,16 @@ def today(c: Context) -> None:
     with right:
         cleared = "this week" if c.period.days == 7 else f"in {c.last}"
         html(f"<div><b>Cleared {esc(cleared)}</b></div>")
-        for key, title in handled.items():
+        start, _ = c.window
+        recent = {k: v for k, v in handled.items() if pd.Timestamp(v["at"]) > start}
+        for key, entry in recent.items():
             st.button(
-                f":green[✓] {md(title)}",
+                f":green[✓] {md(entry['title'])}",
                 key=f"restore {key}",
                 type="tertiary",
                 help="Click to restore",
                 on_click=_restore,
-                args=(key,),
+                args=(c.data_dir, key),
             )
         better = [m for m in c.moves if not m.worse][:5]
         for m in better:
@@ -460,7 +516,7 @@ def today(c: Context) -> None:
                 f'<div class="cleared"><span class="tone-green">✓</span>'
                 f"<span>{esc(m.title)}: {esc(m.detail)}</span></div>"
             )
-        if not handled and not better:
+        if not recent and not better:
             html('<div class="item-meta">Nothing yet.</div>')
         load = _review_load(c)
         if load["Reviews given"].sum():
@@ -501,7 +557,7 @@ def shipping(c: Context) -> None:
         f"{queue}: {still_open:.0f} are open now, and {before['open'] or 0:.0f} were "
         f"{c.period.name} ago.",
     )
-    _kpis([c.pr.change(k) for k in ("merged", "opened", "open", "size")])
+    _kpis(_pr_kpis(c, ("merged", "opened", "open", "size")))
     t = c.pr.trend
     unit = {"D": "day", "W": "week", "M": "month"}[c.period.freq]
     charts = [
@@ -582,7 +638,7 @@ def review(c: Context) -> None:
         share = load["Reviews given"].iloc[:2].sum() / total
         answer += f" {load.index[0]} and {load.index[1]} gave {share:.0%} of all reviews."
     _header(c, "Review", "Is review the bottleneck?", answer)
-    _kpis([c.pr.change(k) for k in ("wait", "ttm", "depth", "unreviewed")])
+    _kpis(_pr_kpis(c, ("wait", "ttm", "depth", "unreviewed")))
 
     t = c.pr.trend
     charts = [
@@ -625,18 +681,39 @@ def review(c: Context) -> None:
             cell(c.name(r["author"]), "m"),
             cell(r["status"], "hot-tag" if r["status"] == "No review" else "tag"),
             cell(f"{r['age']} d", "hot" if r["status"] == "No review" else "n"),
+            cell(f"{r['idle']} d", "na" if r["idle"] >= metrics.STALE_DAYS else "n"),
             cell(r["url"], "link"),
         ]
         for r in metrics.waiting(c.prs, c.now).to_dict("records")
     ]
     table(
         "Open PRs waiting",
-        "open 2 days or more, oldest first",
-        ["Pull request", "Repository", "Author", "State", "Age", ""],
-        "minmax(0,2fr) 140px 140px 160px 64px 48px",
+        "open 2 days or more, oldest first. Idle: since anything last happened on it.",
+        ["Pull request", "Repository", "Author", "State", "Open", "Idle", ""],
+        "minmax(0,2fr) 140px 140px 160px 64px 64px 48px",
         rows,
-        right={4},
+        right={4, 5},
     )
+    merged = metrics.merged_in(c.prs, *c.window)
+    unreviewed = merged[~metrics.reviewed(merged)].sort_values("closed_at", ascending=False)
+    if len(unreviewed):
+        table(
+            "Merged without review",
+            f"{c.last}: no approval, and no one but the author commented",
+            ["Pull request", "Repository", "Author", "Merged", ""],
+            "minmax(0,2fr) 140px 140px 80px 48px",
+            [
+                [
+                    cell(r["title"]),
+                    linked(r["repository"], c.repo_link(r["repository"]), "m"),
+                    cell(c.name(r["author"]), "m"),
+                    cell(_day(r["closed_at"], c), "n"),
+                    cell(r["url"], "link"),
+                ]
+                for r in unreviewed.to_dict("records")
+            ],
+            right={3},
+        )
 
 
 def _flaky_rows(c: Context) -> list[list[str]]:
@@ -1006,7 +1083,7 @@ def people(c: Context) -> None:
         if most and len(leaders) == 1:
             answer += f" {c.name(str(leaders[0]))} {did} the most ({most})."
     _header(c, "People", "Who's doing what?", answer)
-    _kpis([c.pr.change(k) for k in ("authors", "per_person", "added", "deleted")])
+    _kpis(_pr_kpis(c, ("authors", "per_person", "added", "deleted")))
     # Reviewers who opened nothing would only be an empty slot in a chart of PRs.
     top8 = p[p["Merged"] + p["Opened"] > 0].nlargest(8, "Merged").rename(index=c.name)
     lines_written = top8[["Lines added", "Lines deleted"]].dropna(how="all")

@@ -52,6 +52,11 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
                 "created_at": pr.created_at,
                 "closed_at": pr.closed_at,
                 "first_review_at": min(responses.values(), default=None),
+                # The latest sign of life: GitHub says when a PR last changed; for Azure DevOps,
+                # which doesn't, the newest first response is the closest there is.
+                "last_activity_at": max(
+                    t for t in (pr.created_at, pr.updated_at, *responses.values()) if t
+                ),
                 "url": pr.url,
                 "reviewers": sorted({one(p) for p in pr.reviewers}),
                 "approvers": sorted({one(p) for p in pr.approvers}),
@@ -63,7 +68,7 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
             }
         )
     df = pd.DataFrame(rows, columns=_COLUMNS)
-    for col in ("created_at", "closed_at", "first_review_at"):
+    for col in ("created_at", "closed_at", "first_review_at", "last_activity_at"):
         df[col] = pd.to_datetime(df[col], utc=True)
     merged = df["state"] == State.MERGED.value
     df["cycle_hours"] = ((df["closed_at"] - df["created_at"]).dt.total_seconds() / 3600).where(
@@ -106,7 +111,7 @@ SIZE_LABELS = ["XS (≤10)", "S (≤100)", "M (≤400)", "L (≤1000)", "XL (>10
 _COLUMNS = [
     "key", "platform", "repo_id", "repository", "number", "title", "author", "state", "is_draft",
     "is_infrastructure", "additions", "deletions", "changed_files", "details_complete",
-    "created_at", "closed_at", "first_review_at",
+    "created_at", "closed_at", "first_review_at", "last_activity_at",
     "url", "reviewers", "approvers", "rejecters", "comment_counts", "comments", "first_responses",
 ]  # fmt: skip
 
@@ -182,8 +187,8 @@ Scopes = dict[str, tuple[str, set[str] | None]]
 
 def scopes(df: pd.DataFrame, me: Collection[str], teams: Iterable[Team], now: datetime) -> Scopes:
     """What the dashboard can be about: key -> (label, repository keys, or None for all).
-    Mine and your teams first, then all repositories, then everyone else's teams. Empty ones
-    are left out."""
+    Mine, all repositories, your teams (marked), then everyone else's. Empty ones are left
+    out."""
     mine_ = mine(df, me, now) if me else set()
     found: Scopes = {"mine": ("Mine", mine_)} if mine_ else {}
     yours: list[Team] = []
@@ -191,19 +196,19 @@ def scopes(df: pd.DataFrame, me: Collection[str], teams: Iterable[Team], now: da
     for t in sorted(teams, key=lambda t: t.name.lower()):
         (yours if t.members & set(me) else others).append(t)
 
-    def add(team: Team) -> None:
+    def add(team: Team, mark: str = "") -> None:
         repos = team_repos(df, team, now)
         if not repos:
             return
         label = team.name
-        if any(label == name for name, _ in found.values()):  # the same name on both platforms
+        if any(name.startswith(label) for name, _ in found.values()):  # same name, two platforms
             platform = team.key.split(":", 1)[0]
             label = f"{team.name} ({PLATFORM_NAMES.get(platform, platform)})"
-        found[f"team:{team.key}"] = (label, repos)
+        found[f"team:{team.key}"] = (label + mark, repos)
 
-    for t in yours:
-        add(t)
     found["all"] = ("All repositories", None)
+    for t in yours:
+        add(t, " · your team")
     for t in others:
         add(t)
     return found
@@ -243,6 +248,11 @@ def repo_options(
     return out.drop(columns="hidden")
 
 
+def reviewed(df: pd.DataFrame) -> pd.Series:
+    """Whether each PR was reviewed: approved, or answered by someone other than its author."""
+    return df["approvers"].map(len).gt(0) | df["first_review_at"].notna()
+
+
 def review_status(df: pd.DataFrame) -> pd.Series:
     """Where each PR's review stands. An approval outranks an earlier change request."""
     approved = df["approvers"].map(len).gt(0)
@@ -254,14 +264,22 @@ def review_status(df: pd.DataFrame) -> pd.Series:
     return pd.Series(status, index=df.index)
 
 
+# An open PR untouched this long has stopped waiting on anyone; it wants closing, not reviewing.
+STALE_DAYS = 30
+
+
 def waiting(df: pd.DataFrame, now: datetime, min_days: int = 2) -> pd.DataFrame:
-    """Open, non-draft PRs open for `min_days` or more, oldest first."""
+    """Open, non-draft PRs open for `min_days` or more, oldest first: how many days each has been
+    open (`age`) and since anything happened on it (`idle`)."""
     open_ = df[(df["state"] == State.OPEN.value) & ~df["is_draft"]]
+    at = pd.Timestamp(now)
     open_ = open_.assign(
-        status=review_status(open_), age=(pd.Timestamp(now) - open_["created_at"]).dt.days
+        status=review_status(open_),
+        age=(at - open_["created_at"]).dt.days,
+        idle=(at - open_["last_activity_at"]).dt.days,
     )
     out = open_[open_["age"] >= min_days].sort_values("age", ascending=False)
-    return out[["title", "repository", "author", "status", "age", "url"]]
+    return out[["title", "repository", "author", "status", "age", "idle", "url"]]
 
 
 def reviews_given(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:
@@ -318,40 +336,6 @@ def people(df: pd.DataFrame, period: Period, now: pd.Timestamp, tz: str) -> pd.D
     ].astype(float)
     out["Trend"] = sparklines(_merges(df, period, now, tz, "author"), out.index)
     return out.sort_values(["Merged", "Reviews"], ascending=False)
-
-
-EXPORT_COLUMNS = {
-    "platform": "Platform",
-    "repository": "Repository",
-    "number": "Number",
-    "title": "Title",
-    "author": "Author",
-    "state": "State",
-    "is_draft": "Draft",
-    "created_at": "Created",
-    "closed_at": "Closed",
-    "first_review_at": "First review",
-    "cycle_hours": "Hours to merge",
-    "first_review_hours": "Hours to first review",
-    "reviewers": "Reviewers",
-    "approvers": "Approved by",
-    "rejecters": "Changes requested by",
-    "url": "Link",
-}
-
-
-def export_table(df: pd.DataFrame, people: Mapping[str, str]) -> pd.DataFrame:
-    """Flat, human-readable table for display and CSV export."""
-
-    def names(ps: list[str]) -> str:
-        return ", ".join(people.get(p, p) for p in ps)
-
-    out = df[list(EXPORT_COLUMNS)].copy()
-    out["platform"] = out["platform"].map(PLATFORM_NAMES)
-    out["author"] = out["author"].map(lambda p: people.get(p, p))
-    for col in ("reviewers", "approvers", "rejecters"):
-        out[col] = out[col].map(names)
-    return out.rename(columns=EXPORT_COLUMNS).sort_values("Created", ascending=False)
 
 
 def by_size(df: pd.DataFrame) -> pd.DataFrame:

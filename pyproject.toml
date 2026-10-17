@@ -54,7 +54,6 @@ ignore = [
     "S101",  # assert is how pytest checks
     "S608",  # seeding builds INSERTs from fixed column names
 ]
-"eng_health/cli.py" = ["T20"]     # printing is the command line's output
 "tests/fake_sync.py" = ["T20"]    # stands in for the engine, which prints JSON events
 "eng_health/mock.py" = ["S311"]   # sample data, not secrets
 # The dashboard is the only code that draws; metrics stay testable without it.
@@ -79,7 +78,7 @@ source = ["eng_health"]
 
 [tool.mypy]
 python_version = "3.14"
-files = ["eng_health", "tests", "main.py", "dashboard_main.py"]
+files = ["eng_health", "tests", "dashboard_main.py"]
 strict = true
 warn_unreachable = true
 
@@ -88,7 +87,7 @@ module = ["plotly", "plotly.*"]
 ignore_missing_imports = true  # plotly ships no type information
 
 [tool.vulture]
-paths = ["eng_health", "tests", "main.py", "dashboard_main.py"]
+paths = ["eng_health", "tests", "dashboard_main.py"]
 # 60 reports unused functions, classes and attributes; higher only finds unused imports.
 min_confidence = 60
 ignore_names = [
