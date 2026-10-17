@@ -133,6 +133,8 @@ pub fn convert(
         deletions: None,
         changed_files: None,
         updated_at: None,
+        // Azure DevOps doesn't say when a draft was published.
+        ready_at: None,
         reviewers,
         approvers: approvers.into_iter().collect(),
         rejecters: rejecters.into_iter().collect(),

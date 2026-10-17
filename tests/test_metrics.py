@@ -45,6 +45,16 @@ def test_cycle_and_first_review_hours() -> None:
     assert df["first_review_hours"].tolist()[0] == 2
 
 
+def test_review_timings_start_when_a_draft_was_marked_ready() -> None:
+    ready = {"ready_at": T0 + timedelta(hours=5)}  # a draft for its first five hours
+    df = frame(
+        pr(1, **ready, first_responses={"bob": T0 + timedelta(hours=6)}),
+        pr(2, **ready, first_responses={"bob": T0 + timedelta(hours=1)}),  # on the draft
+    )
+    assert df["first_review_hours"].tolist() == [1, 0]
+    assert df["cycle_hours"].tolist() == [5, 5]  # merged at 10 hours, ready at 5
+
+
 def test_filters_hide_bots_and_infrastructure_by_default() -> None:
     df = frame(
         pr(1),

@@ -24,6 +24,7 @@
     "is_infrastructure": false,
     "number": 1,
     "platform": "azure_devops",
+    "ready_at": null,
     "rejecters": [],
     "repo_id": "repo-1",
     "repository": "api",

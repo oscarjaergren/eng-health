@@ -72,9 +72,11 @@ Setting only half of a platform's pair is reported as an error rather than ignor
 
 ## What is counted
 
-- **Time to merge**: from opening a PR to merging it. Shown as the median.
-- **Time to review**: from opening a PR to the first comment, vote or review by anyone other
-  than the author.
+- **Time to merge**: from a PR being ready for review to merging it. Shown as the median.
+- **Time to review**: from a PR being ready for review to the first comment, vote or review by
+  anyone other than the author.
+- **Ready for review**: when the PR opened, or for a GitHub draft, when it was marked ready, so
+  time spent as a draft doesn't count. Azure DevOps doesn't say when a draft was published.
 - **Approvals**: anyone who approved at any point. On Azure DevOps this includes votes that
   were reset by later pushes.
 - **Comments**: text comments by people. System messages and bots are left out, and so are

@@ -37,6 +37,7 @@ fragment PrFields on PullRequest {
   number title url isDraft state createdAt updatedAt closedAt mergedAt
   additions deletions changedFiles files(first: 100) { totalCount nodes { path additions deletions } }
   author { __typename login }
+  timelineItems(itemTypes: [READY_FOR_REVIEW_EVENT], first: 1) { nodes { ... on ReadyForReviewEvent { createdAt } } }
   reviewRequests(first: 25) { nodes { requestedReviewer { ... on User { login } } } }
   reviews(first: $nested) { totalCount nodes { state submittedAt author { __typename login } } }
   comments(first: $nested) { totalCount nodes { createdAt author { __typename login } } }
