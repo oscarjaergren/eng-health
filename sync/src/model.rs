@@ -138,6 +138,10 @@ pub struct PullRequest {
     pub changed_files: Option<i64>,
     /// GitHub exposes this and we use it to skip unchanged PRs; Azure DevOps does not.
     pub updated_at: Option<Timestamp>,
+    /// When a draft was marked ready for review, where the platform says (GitHub). Review
+    /// timings start here, so time spent as a draft isn't counted as waiting for review.
+    #[serde(default)]
+    pub ready_at: Option<Timestamp>,
     pub reviewers: Vec<String>,
     pub approvers: Vec<String>,
     pub rejecters: Vec<String>,

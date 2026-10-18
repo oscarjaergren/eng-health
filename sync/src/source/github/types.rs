@@ -127,6 +127,16 @@ pub struct PrNode {
     pub changed_files: Option<i64>,
     #[serde(default)]
     pub files: Option<Connection<FileChange>>,
+    /// When a draft was first marked ready for review; empty for a PR opened ready.
+    #[serde(default)]
+    pub timeline_items: Option<Connection<ReadyEvent>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadyEvent {
+    #[serde(default)]
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

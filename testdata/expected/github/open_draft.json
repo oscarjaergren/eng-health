@@ -17,6 +17,7 @@
     "is_infrastructure": true,
     "number": 3,
     "platform": "github",
+    "ready_at": null,
     "rejecters": [],
     "repo_id": "101",
     "repository": "web",

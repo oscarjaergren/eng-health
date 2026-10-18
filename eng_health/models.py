@@ -47,6 +47,8 @@ class PullRequest:
     changed_files: int | None = None
     # GitHub exposes this and we use it to skip unchanged PRs; Azure DevOps does not.
     updated_at: datetime | None = None
+    # When a draft was marked ready for review (GitHub only): review timings start here.
+    ready_at: datetime | None = None
     reviewers: list[str] = field(default_factory=list)
     approvers: list[str] = field(default_factory=list)
     rejecters: list[str] = field(default_factory=list)
@@ -66,7 +68,7 @@ class PullRequest:
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["state"] = self.state.value
-        for k in ("created_at", "closed_at", "updated_at"):
+        for k in ("created_at", "closed_at", "updated_at", "ready_at"):
             d[k] = d[k].isoformat() if d[k] else None
         d["first_responses"] = {p: t.isoformat() for p, t in self.first_responses.items()}
         return d
@@ -75,7 +77,7 @@ class PullRequest:
     def from_dict(cls, d: dict[str, Any]) -> PullRequest:
         d = dict(d)
         d["state"] = State(d["state"])
-        for k in ("created_at", "closed_at", "updated_at"):
+        for k in ("created_at", "closed_at", "updated_at", "ready_at"):
             d[k] = datetime.fromisoformat(d[k]) if d.get(k) else None
         d["first_responses"] = {
             p: datetime.fromisoformat(t) for p, t in d.get("first_responses", {}).items()

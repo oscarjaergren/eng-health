@@ -15,6 +15,8 @@
 -- 6: teams, team_members and team_repos. And again.
 -- 7: repo_sync. The engine fills it from each platform's last sync, so an existing database
 --    doesn't read its history again.
+-- 8: ready_at in the PR JSON. Records without it time review from when the PR opened, as
+--    before; each is filled in when its PR next changes.
 
 CREATE TABLE IF NOT EXISTS pull_requests (
     key TEXT PRIMARY KEY,
@@ -113,4 +115,4 @@ CREATE TABLE IF NOT EXISTS repo_sync (
     cursor TEXT,
     PRIMARY KEY (platform, repo_id)
 );
-PRAGMA user_version = 7;
+PRAGMA user_version = 8;

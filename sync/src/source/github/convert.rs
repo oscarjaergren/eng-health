@@ -134,6 +134,11 @@ pub fn convert(node: &PrNode, repo: &Repo, complete: bool, people: &mut People) 
         deletions,
         changed_files,
         updated_at: parse_time(Some(&node.updated_at)),
+        ready_at: node
+            .timeline_items
+            .as_ref()
+            .and_then(|t| t.nodes.first())
+            .and_then(|e| parse_time(e.created_at.as_deref())),
         reviewers,
         approvers: approvers.into_iter().collect(),
         rejecters: rejecters.into_iter().collect(),

@@ -27,6 +27,7 @@
     "is_infrastructure": false,
     "number": 2,
     "platform": "azure_devops",
+    "ready_at": null,
     "rejecters": [
       "carol@example.com",
       "erin@example.com"

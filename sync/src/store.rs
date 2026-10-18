@@ -11,7 +11,7 @@ use crate::model::{Platform, PullRequest, Repo, Team, Timestamp};
 use crate::pipelines::Job;
 
 /// The version at the end of `schema.sql`; a test checks they agree.
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 /// The last version whose records changed shape. A database older than it is re-synced in full.
 const RECORDS_CHANGED: i64 = 3;
 

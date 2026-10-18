@@ -218,6 +218,7 @@ impl Source for Fake {
             deletions: None,
             changed_files: None,
             updated_at: Some(Timestamp::new(item.pr.updated)),
+            ready_at: None,
             reviewers: vec![],
             approvers: vec![],
             rejecters: vec![],

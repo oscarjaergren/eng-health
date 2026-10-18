@@ -51,6 +51,7 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
                 "details_complete": pr.details_complete,
                 "created_at": pr.created_at,
                 "closed_at": pr.closed_at,
+                "ready_at": pr.ready_at,
                 "first_review_at": min(responses.values(), default=None),
                 # The latest sign of life: GitHub says when a PR last changed; for Azure DevOps,
                 # which doesn't, the newest first response is the closest there is.
@@ -68,13 +69,17 @@ def to_frame(prs: Iterable[PullRequest], aliases: Mapping[str, str] | None = Non
             }
         )
     df = pd.DataFrame(rows, columns=_COLUMNS)
-    for col in ("created_at", "closed_at", "first_review_at", "last_activity_at"):
+    for col in ("created_at", "closed_at", "ready_at", "first_review_at", "last_activity_at"):
         df[col] = pd.to_datetime(df[col], utc=True)
     merged = df["state"] == State.MERGED.value
-    df["cycle_hours"] = ((df["closed_at"] - df["created_at"]).dt.total_seconds() / 3600).where(
-        merged
+    # Review timings start when the PR was ready for review: time spent as a draft is the
+    # author's, not reviewers' (GitHub; Azure DevOps doesn't say, so it opened ready).
+    ready = df["ready_at"].fillna(df["created_at"])
+    df["cycle_hours"] = ((df["closed_at"] - ready).dt.total_seconds() / 3600).where(merged)
+    # A comment on the draft is a response before it was ready: no wait at all.
+    df["first_review_hours"] = ((df["first_review_at"] - ready).dt.total_seconds() / 3600).clip(
+        lower=0
     )
-    df["first_review_hours"] = (df["first_review_at"] - df["created_at"]).dt.total_seconds() / 3600
     for col in ("additions", "deletions", "changed_files"):
         df[col] = pd.to_numeric(df[col]).astype("Float64")
     df["lines"] = df["additions"] + df["deletions"]
@@ -111,7 +116,7 @@ SIZE_LABELS = ["XS (≤10)", "S (≤100)", "M (≤400)", "L (≤1000)", "XL (>10
 _COLUMNS = [
     "key", "platform", "repo_id", "repository", "number", "title", "author", "state", "is_draft",
     "is_infrastructure", "additions", "deletions", "changed_files", "details_complete",
-    "created_at", "closed_at", "first_review_at", "last_activity_at",
+    "created_at", "closed_at", "ready_at", "first_review_at", "last_activity_at",
     "url", "reviewers", "approvers", "rejecters", "comment_counts", "comments", "first_responses",
 ]  # fmt: skip
 
