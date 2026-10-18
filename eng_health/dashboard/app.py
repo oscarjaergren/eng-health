@@ -95,9 +95,12 @@ def _repo_links(df: pd.DataFrame, jobs: pd.DataFrame) -> Callable[[str], str | N
         keys = dict(zip(jobs["repository"], "github:" + jobs["repo_id"], strict=True)) | keys
     params = {k: st.query_params.get_all(k) for k in st.query_params}
 
-    def link(name: str) -> str | None:
+    def link(name: str, view: str | None = None) -> str | None:
         key = keys.get(name)
-        return f"?{urlencode(params | {'repo': [key]}, doseq=True)}" if key else None
+        if not key:
+            return None
+        to = params | {"repo": [key]} | ({"view": [VIEWS[view]]} if view else {})
+        return f"?{urlencode(to, doseq=True)}"
 
     return link
 
@@ -201,7 +204,7 @@ def main() -> None:
     with bar:
         label, in_scope = scopes[scope]
         period, chosen = filters.bar(
-            df, names, repos, now, tz, tuple(sorted(in_scope or ())), label
+            df, names, repos, now, tz, settings.data_dir, tuple(sorted(in_scope or ())), label
         )
     jobs = pl.prepare(raw) if not raw.empty else raw
     # Charts start at the oldest record synced, before any filter, so filtering doesn't move them.
@@ -238,5 +241,6 @@ def main() -> None:
             )
             if filters.picked("repo")
             else (),
+            data_dir=settings.data_dir,
         )
     )

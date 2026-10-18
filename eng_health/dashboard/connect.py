@@ -141,7 +141,7 @@ def _sync(settings: Settings, store: Store) -> None:
             "These start over and read everything again, which on a large organisation takes "
             "several syncs."
         )
-        if st.button("Re-read all PRs", width="stretch"):
+        if st.button("Re-read the last two years of PRs", width="stretch"):
             request_sync("full")
             show(False)
             st.rerun()

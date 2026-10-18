@@ -25,7 +25,7 @@ struct Cli {
 enum Command {
     /// Fetch new and changed pull requests.
     Sync {
-        /// Re-read every pull request, not just recent ones.
+        /// Forget how far each repository was read and read its last two years again.
         #[arg(long)]
         full: bool,
         /// Delete the local data first (implies --full).

@@ -139,7 +139,11 @@ pub fn failed_tests(zip_bytes: &[u8]) -> Vec<String> {
         let Ok(mut file) = archive.by_index(i) else {
             continue;
         };
-        let ext = std::path::Path::new(file.name())
+        // An entry whose name zip won't vouch for (not UTF-8, or escaping the archive) is no report.
+        let Ok(name) = file.name().map(std::borrow::Cow::into_owned) else {
+            continue;
+        };
+        let ext = std::path::Path::new(&name)
             .extension()
             .map(|e| e.to_string_lossy().to_lowercase());
         if !matches!(ext.as_deref(), Some("xml" | "trx")) {
@@ -151,7 +155,7 @@ pub fn failed_tests(zip_bytes: &[u8]) -> Vec<String> {
             .read_to_string(&mut text);
         match read {
             Ok(n) if n as u64 <= MAX_RESULTS_FILE_BYTES => out.extend(failures_in(&text)),
-            Ok(_) => tracing::warn!(file = file.name(), "skipped a test results file over 20 MB"),
+            Ok(_) => tracing::warn!(file = name, "skipped a test results file over 20 MB"),
             Err(_) => {} // not UTF-8, so not a report
         }
     }

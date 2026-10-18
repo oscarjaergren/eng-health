@@ -5,7 +5,6 @@
 !rust-toolchain.toml
 !sync/schema.sql
 !eng_health/
-!main.py
 !dashboard_main.py
 !.streamlit/
 !sync/Cargo.toml
